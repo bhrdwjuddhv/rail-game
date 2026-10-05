@@ -1,0 +1,20 @@
+{
+  "id": "western-ghats",
+  "name": "Western Ghats",
+  "ground": ["#4f6f2f", "#5d7a35", "#3f5f2a"],
+  "crops": [
+    { "name": "paddy", "color": "#7fae3e" },
+    { "name": "green", "color": "#5b8a34" }
+  ],
+  "hillAmpNear": 3,
+  "hillAmpFar": 70,
+  "hillFreq": 0.0024,
+  "sideSlope": 0.24,
+  "treeTypes": ["forest", "forest", "palm", "mango"],
+  "treeDensity": 0.62,
+  "pondsPerKm2": 0.2,
+  "kilnsPerKm2": 0,
+  "villagesPerKm2": 0.25,
+  "stationStyle": "stone",
+  "regionalScript": "kannada"
+}

@@ -1,0 +1,129 @@
+{
+  "about": "Texture manifest. Put source images at public/assets/<file> and run `npm run textures`. Missing files fall back to the built-in procedural textures, so any entry can be added before its image exists. tilingM = how many metres one copy of a tileable texture covers. 'processed' is written by scripts/process-textures.mjs.",
+  "textures": {
+    "terrain/ground": {
+      "file": "textures/terrain/ground.png",
+      "tilingM": 6,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "terrain"
+      ]
+    },
+    "track/ballast": {
+      "file": "textures/track/ballast.png",
+      "tilingM": 2,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "ballast"
+      ]
+    },
+    "track/sleeper": {
+      "file": "textures/track/sleeper.png",
+      "tilingM": 2.75,
+      "tileable": false,
+      "normal": true,
+      "materials": [
+        "sleeper"
+      ]
+    },
+    "structure/brick": {
+      "file": "textures/structure/brick.png",
+      "tilingM": 1.5,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "brick"
+      ]
+    },
+    "structure/stone": {
+      "file": "textures/structure/stone.png",
+      "tilingM": 2,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "stone"
+      ]
+    },
+    "structure/concrete": {
+      "file": "textures/structure/concrete.png",
+      "tilingM": 2,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "concrete"
+      ]
+    },
+    "structure/roof-tiles": {
+      "file": "textures/structure/roof-tiles.png",
+      "tilingM": 1.5,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "roof"
+      ]
+    },
+    "structure/metal-sheet": {
+      "file": "textures/structure/metal-sheet.png",
+      "tilingM": 1,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "sheet"
+      ]
+    },
+    "structure/tunnel-rock": {
+      "file": "textures/structure/tunnel-rock.png",
+      "tilingM": 4,
+      "tileable": true,
+      "normal": true,
+      "materials": [
+        "tunnel"
+      ]
+    },
+    "building/facade": {
+      "file": "textures/building/facade.png",
+      "tilingM": 12.4,
+      "tileable": true,
+      "normal": false,
+      "materials": [
+        "facade"
+      ]
+    },
+    "vegetation/grass": {
+      "file": "textures/vegetation/grass-blades.png",
+      "tilingM": 1,
+      "tileable": false,
+      "normal": false,
+      "alphaTest": 0.4,
+      "materials": [
+        "grass"
+      ]
+    },
+    "vegetation/tree-impostor": {
+      "file": "textures/vegetation/tree-impostor.png",
+      "tilingM": 1,
+      "tileable": false,
+      "normal": false,
+      "alphaTest": 0.45,
+      "materials": [
+        "impostor"
+      ]
+    },
+    "signage/ads": {
+      "file": "textures/signage/ads-atlas.png",
+      "tilingM": 1,
+      "tileable": false,
+      "normal": false,
+      "materials": [
+        "billboard"
+      ]
+    }
+  },
+  "ui": {
+    "mainMenuBg": "ui/main-menu-bg",
+    "loadingBg": "ui/loading-bg",
+    "logo": "ui/game-logo"
+  }
+}

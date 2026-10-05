@@ -1,0 +1,102 @@
+{
+  "id": "start-train",
+  "title": { "en": "How to start the train" },
+  "conditionsHelp": "complete: {manual} | {after: seconds} | {field, op, value} | {all: [...]} | {any: [...]}. Fields: pantoPos, vcb, headlight, reverser, signalAspect, bp, trainBrake, locoBrake, hornSounded, notch, speedKmph, underLimitSeconds, stoppedAfterMoving",
+  "steps": [
+    {
+      "id": "welcome",
+      "text": { "en": "You are in the driver's cab of an electric locomotive, standing at the platform with the brakes on. Let's get the train moving. Drag with the mouse to look around." },
+      "key": null,
+      "highlight": null,
+      "complete": { "manual": true }
+    },
+    {
+      "id": "pantograph",
+      "text": { "en": "Raise the pantograph so the loco can draw power from the overhead wire. Watch the OHE voltage gauge rise to about 25 kV." },
+      "key": "P",
+      "highlight": "panto",
+      "showMe": "gauge:kv",
+      "complete": { "field": "pantoPos", "op": ">=", "value": 0.99 }
+    },
+    {
+      "id": "vcb",
+      "text": { "en": "Close the main circuit breaker (VCB). The VCB OPEN lamp goes out and the transformer starts humming." },
+      "key": "O",
+      "highlight": "vcb",
+      "complete": { "field": "vcb", "op": "==", "value": true }
+    },
+    {
+      "id": "headlights",
+      "text": { "en": "Turn on the headlight. Press once for dim, twice for bright." },
+      "key": "L",
+      "highlight": "headlight",
+      "complete": { "field": "headlight", "op": ">=", "value": 1 }
+    },
+    {
+      "id": "reverser",
+      "text": { "en": "Set the reverser to Forward. It decides which way the traction motors drive the train." },
+      "key": "W",
+      "highlight": "reverser",
+      "complete": { "field": "reverser", "op": "==", "value": 1 }
+    },
+    {
+      "id": "signal",
+      "text": { "en": "Check the signal ahead. You may only start on a yellow, double yellow or green aspect. Red means stop: wait for it to clear." },
+      "key": null,
+      "highlight": "signal",
+      "complete": { "field": "signalAspect", "op": "in", "value": ["Y", "YY", "G"] }
+    },
+    {
+      "id": "train-brake",
+      "text": { "en": "Release the automatic train brake: press ; until the handle reaches Running and the brake pipe (BP) needle climbs to about 5 kg/cm2." },
+      "key": ";",
+      "highlight": "trainBrake",
+      "showMe": "gauge:bpbc",
+      "complete": { "all": [{ "field": "bp", "op": ">=", "value": 4.8 }, { "field": "trainBrake", "op": "<=", "value": 1 }] }
+    },
+    {
+      "id": "loco-brake",
+      "text": { "en": "Release the independent loco brake with [ until the SA9 handle is fully off." },
+      "key": "[",
+      "highlight": "locoBrake",
+      "complete": { "field": "locoBrake", "op": "==", "value": 0 }
+    },
+    {
+      "id": "horn",
+      "text": { "en": "Sound the horn before moving off to warn anyone on or near the track." },
+      "key": "Space",
+      "highlight": "hornLow",
+      "complete": { "field": "hornSounded", "op": "==", "value": true }
+    },
+    {
+      "id": "throttle",
+      "text": { "en": "Apply power gently: press D to notch up two or three notches. A long train takes a few seconds to start rolling - watch the speedometer." },
+      "key": "D",
+      "highlight": "throttle",
+      "showMe": "gauge:speed",
+      "complete": { "all": [{ "field": "notch", "op": ">=", "value": 1 }, { "field": "speedKmph", "op": ">=", "value": 2 }] }
+    },
+    {
+      "id": "limit",
+      "text": { "en": "Stay under the speed limit shown in the red circle on the HUD and on the driver display. Keep driving for a little while." },
+      "key": null,
+      "highlight": "hud:limit",
+      "showMe": "display",
+      "complete": { "field": "underLimitSeconds", "op": ">=", "value": 12 }
+    },
+    {
+      "id": "stop",
+      "text": { "en": "Now stop: notch down to 0 with A, then apply the train brake gently with ' (one or two service positions). Release the brake once you have stopped." },
+      "key": "A then '",
+      "highlight": "trainBrake",
+      "complete": { "field": "stoppedAfterMoving", "op": "==", "value": true }
+    },
+    {
+      "id": "done",
+      "text": { "en": "You've driven your first train! Press Esc any time for the menu, F1 for all the controls." },
+      "key": "Esc",
+      "highlight": null,
+      "complete": { "manual": true }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "morning-local",
+  "name": "Morning Local",
+  "difficulty": "Easy",
+  "description": "A short passenger working from Sonagarh to Nadikinara in clear morning light. Three intermediate stops, gentle plains running. Learn the controls, stop on the marks and keep to time.",
+  "route": "ghat-express",
+  "start": { "km": 1.0, "line": "main", "atPlatform": "SNGH" },
+  "consist": { "loco": "ep-7", "coaches": [ { "type": "general", "count": 4 }, { "type": "sleeper", "count": 4 } ], "loaded": true },
+  "time": "07:08",
+  "timeScale": 1,
+  "weather": "clear",
+  "timetable": [
+    { "station": "SNGH", "dep": "07:12", "line": "main" },
+    { "station": "KSRP", "arr": "07:24", "dep": "07:25", "line": "main" },
+    { "station": "RNPJ", "arr": "07:37", "dep": "07:40", "line": "loop1" },
+    { "station": "NDKN", "arr": "07:53", "line": "main" }
+  ],
+  "aiTrains": [],
+  "endStation": "NDKN",
+  "rules": true
+}

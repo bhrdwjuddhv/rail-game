@@ -1,0 +1,14 @@
+{
+  "id": "general",
+  "name": "General Second (GS)",
+  "massEmptyT": 46,
+  "massLoadedT": 58,
+  "lengthM": 23.54,
+  "bogieCentresM": 14.9,
+  "axleSpacingM": 2.56,
+  "maxBrakeForceKN": 26,
+  "resistance": { "aN": 900, "bNperMs": 25, "cNperMs2": 1.0 },
+  "livery": { "body": "#2a4f8f", "band": "#e8c547", "roof": "#7d8287", "window": "#1a1f24" },
+  "windows": "open",
+  "interiorLight": "#ffe6b0"
+}

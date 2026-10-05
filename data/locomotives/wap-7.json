@@ -1,0 +1,130 @@
+{
+  "id": "wap7",
+  "name": "WAP-7",
+  "operator": "Indian Railways",
+  "number": "30259",
+  "type": "electric",
+
+  "prototype": {
+    "class": "WAP-7",
+    "manufacturer": "Chittaranjan Locomotive Works",
+    "wheelArrangement": "Co-Co",
+    "gaugeMM": 1676,
+    "tractionSystem": "25 kV 50 Hz AC",
+    "service": "Passenger"
+  },
+
+  "massT": 123,
+  "axleLoadT": 20.5,
+
+  "dimensions": {
+    "lengthM": 20.562,
+    "widthM": 3.152,
+    "wheelbaseM": 15.7,
+    "bogieWheelbaseM": 3.7,
+    "bogieCentresM": 12.0,
+    "axleSpacingM": 1.85,
+    "wheelDiameterM": 1.092
+  },
+
+  "axles": 6,
+  "bogies": 2,
+
+  "performance": {
+    "maxPowerKW": 4560,
+    "continuousPowerKW": 4560,
+    "maxSpeedKmph": 140,
+    "startingTractiveEffortKN": 322,
+    "continuousTractiveEffortKN": 228
+  },
+
+  "traction": {
+    "tractionMotor": "6FRA 6068",
+    "motorCount": 6,
+    "motorType": "3-phase squirrel-cage induction",
+    "motorPowerKW": 850,
+    "gearRatio": "72:20",
+    "gearRatioValue": 3.6,
+    "transmission": "electric",
+    "tractionControl": "3-phase AC"
+  },
+
+  "notches": 8,
+
+  "regen": {
+    "enabled": true,
+    "maxEffortKN": 260,
+    "maxPowerKW": 4560,
+    "fadeStartKmph": 15,
+    "fadeEndKmph": 3,
+    "notches": 8
+  },
+
+  "brakes": {
+    "type": "air + regenerative",
+    "maxBrakeForceKN": 110,
+    "independentMaxBarKgcm2": 3.5,
+    "trainBrake": "air"
+  },
+
+  "resistance": {
+    "aN": 1800,
+    "bNperMs": 40,
+    "cNperMs2": 7.0
+  },
+
+  "adhesion": {
+    "dry": 0.33,
+    "wet": 0.22,
+    "damp": 0.27,
+    "sanderBonus": 0.07
+  },
+
+  "electrical": {
+    "lineVoltageKV": 25,
+    "frequencyHz": 50,
+    "motorCount": 6,
+    "tractionMotorVoltageV": 2180
+  },
+
+  "pantograph": {
+    "count": 2,
+    "type": "25kV AC pantograph",
+    "activePantograph": "rear"
+  },
+
+  "livery": {
+    "body": "#f1f0e8",
+    "band": "#e8752a",
+    "roof": "#b9b9b5",
+    "underframe": "#292929",
+    "bogie": "#303030",
+    "windowFrame": "#3c3c3c",
+    "cabFront": "#e8e6dc",
+    "logoText": "INDIAN RAILWAYS",
+    "classText": "WAP-7",
+    "numberText": "30259"
+  },
+
+  "cabLayout": "wap7-indian-railways",
+
+  "visualProfile": {
+    "frontShape": "WAP-7 angular cab",
+    "noseStyle": "sloped",
+    "windshield": "split front windshield",
+    "sideWindows": "rectangular sliding cab windows",
+    "roofEquipment": "transformer, insulators and dual pantographs",
+    "bodySide": "long flat locomotive body with orange horizontal stripe",
+    "bogieStyle": "Co-Co Flexicoil",
+    "headlights": "dual front headlights",
+    "bufferBeams": true
+  },
+
+  "soundProfile": {
+    "motorBaseHz": 38,
+    "motorHzPerKmph": 7.2,
+    "hornLowHz": [247, 311],
+    "hornHighHz": [370, 466],
+    "blowerHz": 100
+  }
+}

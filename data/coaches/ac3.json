@@ -1,0 +1,14 @@
+{
+  "id": "ac3",
+  "name": "AC Three Tier (3A)",
+  "massEmptyT": 52,
+  "massLoadedT": 58,
+  "lengthM": 23.54,
+  "bogieCentresM": 14.9,
+  "axleSpacingM": 2.56,
+  "maxBrakeForceKN": 27,
+  "resistance": { "aN": 950, "bNperMs": 25, "cNperMs2": 1.0 },
+  "livery": { "body": "#7a2230", "band": "#c9ccd1", "roof": "#8a8f94", "window": "#20303c" },
+  "windows": "sealed",
+  "interiorLight": "#e9f2ff"
+}

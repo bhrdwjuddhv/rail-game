@@ -1,0 +1,14 @@
+{
+  "id": "sleeper",
+  "name": "Sleeper Class (SL)",
+  "massEmptyT": 48,
+  "massLoadedT": 57,
+  "lengthM": 23.54,
+  "bogieCentresM": 14.9,
+  "axleSpacingM": 2.56,
+  "maxBrakeForceKN": 26,
+  "resistance": { "aN": 900, "bNperMs": 25, "cNperMs2": 1.0 },
+  "livery": { "body": "#3d5a6e", "band": "#d7dde2", "roof": "#7d8287", "window": "#1a1f24" },
+  "windows": "open",
+  "interiorLight": "#f3f7ff"
+}

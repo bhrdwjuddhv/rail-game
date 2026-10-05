@@ -1,0 +1,23 @@
+{
+  "id": "north-plains",
+  "name": "Northern Plains",
+  "ground": ["#8c8a4a", "#a39a5c", "#7c8a3e"],
+  "crops": [
+    { "name": "wheat", "color": "#c9b25a" },
+    { "name": "mustard", "color": "#d8c21e" },
+    { "name": "green", "color": "#6f9a3a" },
+    { "name": "fallow", "color": "#8b6f4e" },
+    { "name": "sugarcane", "color": "#4f8a35" }
+  ],
+  "hillAmpNear": 1.2,
+  "hillAmpFar": 9,
+  "hillFreq": 0.0016,
+  "sideSlope": 0,
+  "treeTypes": ["mango", "neem", "palm"],
+  "treeDensity": 0.18,
+  "pondsPerKm2": 1.6,
+  "kilnsPerKm2": 0.25,
+  "villagesPerKm2": 0.9,
+  "stationStyle": "brick",
+  "regionalScript": "gujarati"
+}

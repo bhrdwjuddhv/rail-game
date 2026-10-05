@@ -1,0 +1,14 @@
+{
+  "id": "goods",
+  "name": "Covered Goods Wagon (AI)",
+  "massEmptyT": 27,
+  "massLoadedT": 81,
+  "lengthM": 10.7,
+  "bogieCentresM": 6.5,
+  "axleSpacingM": 2.0,
+  "maxBrakeForceKN": 30,
+  "resistance": { "aN": 1100, "bNperMs": 20, "cNperMs2": 0.8 },
+  "livery": { "body": "#6b4a32", "band": "#6b4a32", "roof": "#59616a", "window": "#6b4a32" },
+  "windows": "none",
+  "interiorLight": "#000000"
+}
