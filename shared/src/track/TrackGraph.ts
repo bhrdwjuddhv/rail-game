@@ -1,8 +1,9 @@
 import { smoothstep } from '../util';
 
 /**
- * Track topology. The route has one main line; parallel lines (station loops)
- * sit at a constant lateral offset from it. Switches connect two offsets via a
+ * Track topology. The route has one or two running lines (a single line at
+ * offset 0, or Up and Down either side of the centreline); other lines (station
+ * loops) sit at a constant lateral offset. Switches connect two offsets via a
  * lateral "ramp" (the turnout curve). This keeps every track position a simple
  * pair (km along route, lateral offset) while still giving real facing and
  * trailing turnouts, loop lines and crossovers.
@@ -23,36 +24,55 @@ export interface SwitchDef {
   rampEnd: number;   // km
 }
 
+/** The physical point machine: shared by every view of the same switch (Up and Down routes see one set of points). */
+export interface Points {
+  state: 'normal' | 'reverse';
+  /** 0 = normal, 1 = reverse; animated by the owning interlocking */
+  throw: number;
+  /** keys of the routes holding the points locked */
+  holders: Set<string>;
+}
+
 export class Switch {
-  state: 'normal' | 'reverse' = 'normal';
-  /** 0 = normal, 1 = reverse; animated by the interlocking. */
-  throw = 0;
-  locked = false;
-  constructor(readonly def: SwitchDef) {}
-  get moving() { return Math.abs(this.throw - (this.state === 'reverse' ? 1 : 0)) > 1e-3; }
+  /**
+   * `primary` = this view animates the points. A mirrored view (or a render
+   * copy) shares the same Points but never steps them, so they move once.
+   */
+  constructor(readonly def: SwitchDef, readonly points: Points = { state: 'normal', throw: 0, holders: new Set() }, readonly primary = true) {}
+  get state() { return this.points.state; }
+  set state(s: 'normal' | 'reverse') { this.points.state = s; }
+  get throw() { return this.points.throw; }
+  get locked() { return this.points.holders.size > 0; }
+  lock(key: string) { this.points.holders.add(key); }
+  unlock(key: string) { this.points.holders.delete(key); }
+  get moving() { return Math.abs(this.points.throw - (this.points.state === 'reverse' ? 1 : 0)) > 1e-3; }
   update(dt: number) {
-    const target = this.state === 'reverse' ? 1 : 0;
-    const d = target - this.throw;
+    if (!this.primary) return;
+    const p = this.points;
+    const target = p.state === 'reverse' ? 1 : 0;
+    const d = target - p.throw;
     const step = dt / 3.5; // ~3.5 s for the point machine
-    this.throw = Math.abs(d) <= step ? target : this.throw + Math.sign(d) * step;
+    p.throw = Math.abs(d) <= step ? target : p.throw + Math.sign(d) * step;
   }
 }
 
 export interface Ramp { start: number; end: number; from: number; to: number; switchId: string }
+
+export interface RunningLine { id: string; offset: number }
 
 export class TrackGraph {
   readonly lines: LineDef[] = [];
   readonly switches: Switch[] = [];
   readonly byId = new Map<string, Switch>();
 
-  constructor(readonly lengthKm: number) {
-    this.lines.push({ id: 'main', offset: 0, fromKm: 0, toKm: lengthKm });
+  constructor(readonly lengthKm: number, running: RunningLine[] = [{ id: 'main', offset: 0 }]) {
+    for (const r of running) this.lines.push({ id: r.id, offset: r.offset, fromKm: 0, toKm: lengthKm });
   }
 
   addLine(l: LineDef) { this.lines.push(l); }
 
-  addSwitch(d: SwitchDef) {
-    const s = new Switch(d);
+  addSwitch(d: SwitchDef, points?: Points, primary = true) {
+    const s = new Switch(d, points, primary);
     this.switches.push(s);
     this.byId.set(d.id, s);
     this.switches.sort((a, b) => a.def.rampStart - b.def.rampStart);

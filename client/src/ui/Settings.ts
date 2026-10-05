@@ -1,4 +1,5 @@
 import { ACTIONS, Action, applyPreset, DEFAULT_KEYS, PRESETS, Quality, settings } from '../core/Settings';
+import { isTouch } from '../input/Device';
 
 /** Settings panel: graphics, audio, controls (rebinding), units, clock speed. */
 export function settingsPanel(onClose: () => void, captureKey: (cb: (code: string) => void) => void): HTMLElement {
@@ -24,9 +25,10 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
         <h3>General</h3>
         <label>Units <select data-s="units"><option value="kmh" ${s.units === 'kmh' ? 'selected' : ''}>km/h</option><option value="mph" ${s.units === 'mph' ? 'selected' : ''}>mph</option></select></label>
         <label>Free-roam clock speed <input type="range" min="1" max="120" step="1" value="${s.dayNightSpeed}" data-s="dayNightSpeed"><output>${s.dayNightSpeed}x</output></label>
-        <label>Mouse sensitivity <input type="range" min="0.3" max="3" step="0.1" value="${s.mouseSensitivity}" data-s="mouseSensitivity"><output>${s.mouseSensitivity}</output></label>
+        <label>${isTouch ? 'Look sensitivity' : 'Mouse sensitivity'} <input type="range" min="0.3" max="3" step="0.1" value="${s.mouseSensitivity}" data-s="mouseSensitivity"><output>${s.mouseSensitivity}</output></label>
+        ${isTouch ? `<h3>Touch</h3><label class="tog"><input type="checkbox" ${s.touchAutoHide ? 'checked' : ''} data-s="touchAutoHide"><span>Fade controls after 4 s without a touch</span></label>` : ''}
       </section>
-      <section class="keys"><h3>Controls <button data-a="resetKeys">Reset</button></h3>
+      <section class="keys"${isTouch ? ' hidden' : ''}><h3>Controls <button data-a="resetKeys">Reset</button></h3>
         ${(Object.keys(ACTIONS) as Action[]).map(a => `<div class="key"><span>${ACTIONS[a]}</span><button data-key="${a}">${pretty(s.keys[a])}</button></div>`).join('')}
         <p class="note">Cameras: 1-7. Mouse: drag to look, click cab controls (right-click = decrease), wheel to zoom/adjust.</p>
       </section>

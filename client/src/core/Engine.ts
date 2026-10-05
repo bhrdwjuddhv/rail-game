@@ -21,6 +21,9 @@ export class Engine {
     this.step = 1 / hz;
   }
 
+  /** forget the last frame time (after the loop was stopped), so the next frame starts fresh */
+  resetClock() { this.last = -1; }
+
   tick(nowMs: number) {
     if (this.failed) return;
     try { this.tickInner(nowMs); } catch (e) {

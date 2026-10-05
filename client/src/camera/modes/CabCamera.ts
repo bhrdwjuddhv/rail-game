@@ -35,12 +35,15 @@ export class CabCamera implements CameraMode {
     const t = ctx.time;
     const ride = Math.min(1, v / 10);
     const bob = Math.sin(t * (2 + v * 0.15)) * 0.004 * Math.min(1, v / 15) + (Math.sin(t * 23.1) * 0.0012 + Math.sin(t * 37.3) * 0.0008) * ride;
-    this.v.set(ctx.eye.x - ctx.slack * 0.6, ctx.eye.y + bob, ctx.eye.z + this.sway);
+    // pressure wave of a passing train: quick lateral buffet
+    const k = ctx.shake;
+    const buffet = k * (Math.sin(t * 29.3) * 0.012 + Math.sin(t * 47.9) * 0.007);
+    this.v.set(ctx.eye.x - ctx.slack * 0.6, ctx.eye.y + bob + k * Math.sin(t * 41.7) * 0.004, ctx.eye.z + this.sway + buffet);
     const m = ctx.train.vehicleMatrices[0];
     out.pos.copy(this.v).applyMatrix4(m);
     m.decompose(this.tp, this.bodyQ, this.ts);
     // camera looks down -Z; loco forward is +X
-    this.e.set(this.pitch + ctx.jolt * 0.02, this.yaw - Math.PI / 2, this.sway * 0.4 + ctx.lateralAccel * 0.004, 'YXZ');
+    this.e.set(this.pitch + ctx.jolt * 0.02, this.yaw - Math.PI / 2, this.sway * 0.4 + ctx.lateralAccel * 0.004 + buffet * 0.6, 'YXZ');
     this.q.setFromEuler(this.e);
     out.quat.copy(this.bodyQ).multiply(this.q);
     out.fov = this.fov;

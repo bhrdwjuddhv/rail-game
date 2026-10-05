@@ -5,9 +5,19 @@ import { TrackPath } from '../track/TrackGraph';
 import type { StopPlan, WorkedTrain } from './Timetable';
 
 export interface AITrainDef {
+  /**
+   * startKm / despawnKm are in the km of the route view the train runs in
+   * (scenario files give surveyed km; the game converts for Up trains).
+   * `line`: station line it starts on (or the running line); `track`: running line
+   * (UP / DOWN) on a double line, default the player's.
+   */
   id: string; name: string; startKm: number; line: string; maxKmph: number; wagons: number;
   stops: { station: string; line: string; dwellS: number }[];
   despawnKm: number;
+  track?: string;
+  /** vehicle length incl. coupling gap (default: a goods wagon) */
+  carLengthM?: number;
+  kind?: 'goods' | 'passenger';
 }
 
 export const AI_LOCO_LEN = 20.56;
@@ -30,10 +40,10 @@ export class AITrain implements WorkedTrain {
 
   constructor(readonly def: AITrainDef, private route: Route, private block: BlockSystem) {
     this.id = def.id;
-    this.length = AI_LOCO_LEN + def.wagons * (AI_WAGON_LEN + 0.6);
+    this.length = AI_LOCO_LEN + def.wagons * (def.carLengthM ?? AI_WAGON_LEN + 0.6);
     this.headKm = def.startKm;
     const st = route.stations.find(s => s.lineInfo.some(l => l.id === def.line) && def.startKm > s.entryKm && def.startKm < s.exitKm);
-    const off = st?.lineInfo.find(l => l.id === def.line)?.offset ?? 0;
+    const off = st?.lineInfo.find(l => l.id === def.line)?.offset ?? route.running.offset;
     this.path = new TrackPath(route.graph, this.headKm, this.tailKm, off);
     for (const s of def.stops) this.plan.set(s.station, { station: s.station, line: s.line, stop: true, dwellS: s.dwellS });
     this.speed = def.maxKmph * KMPH * 0.6;
@@ -48,7 +58,7 @@ export class AITrain implements WorkedTrain {
     const off = this.path.offsetAt(head);
     let limit = this.def.maxKmph;
     for (let km = this.tailKm; km <= head + 0.4; km += 0.1) limit = Math.min(limit, this.route.speedLimitAt(km));
-    if (off !== 0) limit = Math.min(limit, 30);
+    if (Math.abs(off - this.route.running.offset) > 0.3) limit = Math.min(limit, 30); // loops, turnouts, wrong line
     let target = limit * KMPH;
     const b = 0.35;
     // stop for red signals

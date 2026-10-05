@@ -15,11 +15,14 @@ export type Condition =
 
 export interface TutorialStep {
   id: string;
+  /** desktop wording (keys) */
   text: Partial<Record<Lang, string>> & { en: string };
   key: string | null;
   highlight: string | null;
   showMe?: string;
   complete: Condition;
+  /** touch-device wording and the on-screen control to pulse (TouchControls data-tid) */
+  touch?: { text: Partial<Record<Lang, string>> & { en: string }; highlight?: string | null };
 }
 
 export interface TutorialData { id: string; title: Partial<Record<Lang, string>> & { en: string }; steps: TutorialStep[] }
@@ -68,11 +71,17 @@ export class Tutorial {
   onStep?: (step: TutorialStep, index: number) => void;
   onFinish?: (completed: boolean) => void;
 
-  constructor(readonly data: TutorialData, readonly lang: Lang = 'en') {}
+  /** `touch`: use each step's touch wording (no keys) where the data has it */
+  constructor(readonly data: TutorialData, readonly lang: Lang = 'en', readonly touch = false) {}
 
   get step() { return this.data.steps[this.index]; }
   get count() { return this.data.steps.length; }
-  text(step = this.step) { return step.text[this.lang] ?? step.text.en; }
+  text(step = this.step) {
+    const t = this.touch && step.touch ? step.touch.text : step.text;
+    return t[this.lang] ?? t.en;
+  }
+  /** key hint for the card (none on touch) */
+  key(step = this.step) { return this.touch ? null : step.key; }
 
   start() { this.go(0); }
 

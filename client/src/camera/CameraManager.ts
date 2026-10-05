@@ -16,6 +16,8 @@ export interface CameraContext {
   lateralAccel: number;   // m/s^2 (curve centripetal)
   slack: number;          // coupler slack displacement (m)
   jolt: number;           // recent jolt magnitude 0..1
+  /** buffeting from a train passing on the other line, 0..1 */
+  shake: number;
   eye: THREE.Vector3;     // cab eye in loco-body local coords
   keys: (code: string) => boolean;
   /** max distance (m) the free camera may fly from the train (God Mode can unlock) */

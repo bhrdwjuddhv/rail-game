@@ -14,7 +14,11 @@ export class TrackProfile {
     parent.appendChild(this.canvas);
   }
 
-  draw(route: Route, block: BlockSystem, headKm: number, limitAt: (km: number) => number, pathOffset: (km: number) => number) {
+  /**
+   * `route` is the player's direction view. `oncoming`: head km (same view) of
+   * trains on the other line, drawn on a row of their own.
+   */
+  draw(route: Route, block: BlockSystem, headKm: number, limitAt: (km: number) => number, pathOffset: (km: number) => number, oncoming: number[] = []) {
     const g = this.g, W = 640, H = 110;
     g.clearRect(0, 0, W, H);
     g.fillStyle = 'rgba(10,14,18,0.72)'; g.fillRect(0, 0, W, H);
@@ -78,8 +82,15 @@ export class TrackProfile {
       g.fillStyle = c; g.beginPath(); g.arc(x, 52, 4, 0, Math.PI * 2); g.fill();
       if (s.aspect === 'YY') { g.beginPath(); g.arc(x, 62, 4, 0, Math.PI * 2); g.fill(); }
     }
+    // trains on the other line, heading toward us
+    for (const km of oncoming) {
+      if (km < k0 || km > k1) continue;
+      const x = X(km);
+      g.fillStyle = '#4da3ff';
+      g.beginPath(); g.moveTo(x, 78); g.lineTo(x + 7, 74); g.lineTo(x + 7, 82); g.closePath(); g.fill();
+    }
     // train head marker
     g.fillStyle = '#fff'; g.fillRect(X(headKm) - 1, 0, 2, H);
-    g.fillText('YOU', X(headKm) + 3, 106);
+    g.fillText(route.double ? `YOU · ${route.running.id}` : 'YOU', X(headKm) + 3, 106);
   }
 }

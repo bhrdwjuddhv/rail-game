@@ -165,6 +165,7 @@ export class Menus {
     const el = html(`<div class="menu free"><h2>Free roam</h2>
       <div class="cols"><section><h3>Start</h3>
         <label>Station <select data-f="station">${route.stations.map(s => `<option value="${s.code}">${esc(s.name)} (${s.code}, km ${s.km})</option>`).join('')}</select></label>
+        ${route.lines && route.lines.length > 1 ? `<label>Line <select data-f="track"><option value="DOWN">Down line (towards ${esc(route.stations[route.stations.length - 1].name)})</option><option value="UP">Up line (towards ${esc(route.stations[0].name)})</option></select></label>` : ''}
         <label>Time <input type="time" value="${fr.time}" data-f="time"></label>
         <label>Weather <select data-f="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}">${WEATHER[w].name}</option>`).join('')}</select></label>
         <label>Locomotive <select data-f="loco">${Object.values(LOCOS).map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
@@ -192,7 +193,8 @@ export class Menus {
         const { coaches, loaded, n } = read();
         if (n > 24) return;
         const v = (k: string) => (el.querySelector(`[data-f="${k}"]`) as HTMLInputElement).value;
-        this.cb.start('free-roam', { startStation: v('station'), time: v('time'), weather: v('weather') as WeatherId, consist: { loco: v('loco'), coaches, loaded } });
+        const track = (el.querySelector('[data-f="track"]') as HTMLSelectElement | null)?.value;
+        this.cb.start('free-roam', { startStation: v('station'), track, time: v('time'), weather: v('weather') as WeatherId, consist: { loco: v('loco'), coaches, loaded } });
       }
     });
     this.show(el);

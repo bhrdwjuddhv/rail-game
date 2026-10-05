@@ -134,10 +134,27 @@ export function validateRoute(file: string, raw: any, regions: Record<string, un
     if (!(s.lengthM > 0)) issues.push({ file, level: 'error', message: `segments[${i}].lengthM must be > 0` });
     if (s.type === 'curve' && !(s.radiusM > 50)) issues.push({ file, level: 'error', message: `segments[${i}].radiusM must be > 50 for a curve` });
   });
+  // running lines: omitted / one line = single line "main"; two = double line, which must be UP and DOWN
+  const double = Array.isArray(raw?.lines) && raw.lines.length > 1;
+  if (raw?.lines !== undefined && !Array.isArray(raw.lines)) issues.push({ file, level: 'error', message: '"lines" must be a list like ["UP", "DOWN"]' });
+  if (double && (raw.lines.length !== 2 || !raw.lines.includes('UP') || !raw.lines.includes('DOWN'))) issues.push({ file, level: 'error', message: `"lines" ${JSON.stringify(raw.lines)}: a double line must be exactly ["UP", "DOWN"]` });
+  if (raw?.lineSpacingM !== undefined && !(raw.lineSpacingM >= 4 && raw.lineSpacingM <= 8)) issues.push({ file, level: 'error', message: `lineSpacingM ${raw.lineSpacingM} must be between 4 and 8 (broad gauge: about 5.3)` });
+  const running: string[] = double ? ['UP', 'DOWN'] : [raw?.lines?.[0] ?? 'main'];
+  const checkXo = (c: any, where: string, known: string[]) => {
+    if (typeof c?.km !== 'number' || !known.includes(c.fromLine) || !known.includes(c.toLine)) issues.push({ file, level: 'error', message: `${where}: crossover needs numeric "km" and lines from ${known.join('/')}` });
+  };
   raw?.stations?.forEach((s: any, i: number) => {
+    const where = `stations[${i}] (${s?.code})`;
     if (!s.code || typeof s.km !== 'number') issues.push({ file, level: 'error', message: `stations[${i}] needs "code" and numeric "km"` });
-    if (!Array.isArray(s.lines) || !s.lines.some((l: any) => l.id === 'main')) issues.push({ file, level: 'error', message: `stations[${i}] (${s.code}) needs a "main" line` });
+    if (!Array.isArray(s.lines)) { issues.push({ file, level: 'error', message: `${where} needs a "lines" list (loops; [] for none)` }); return; }
+    if (!double && !s.lines.some((l: any) => l.id === running[0])) issues.push({ file, level: 'error', message: `${where} needs a "${running[0]}" line` });
+    const known = [...running, ...s.lines.map((l: any) => l.id)];
+    for (const p of s.platforms ?? []) for (const l of p.lines ?? []) {
+      if (!known.includes(l)) issues.push({ file, level: 'error', message: `${where} platform ${p.num} serves unknown line "${l}"` });
+    }
+    for (const c of s.crossovers ?? []) checkXo(c, where, known);
   });
+  for (const c of raw?.crossovers ?? []) checkXo(c, 'crossovers', running);
   raw?.regions?.forEach((r: any, i: number) => {
     if (!regions[r.region]) issues.push({ file, level: 'error', message: `regions[${i}].region "${r.region}" has no data/regions file` });
   });

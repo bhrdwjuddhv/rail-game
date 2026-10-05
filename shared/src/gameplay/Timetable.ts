@@ -15,11 +15,12 @@ export interface StopPlan {
 
 export interface TimetableEntry { station: string; arr?: string; dep?: string; line?: string; dwellS?: number }
 
+/** `line` defaults to the running line of the train's direction (resolved by the Dispatcher). */
 export function planFromTimetable(entries: TimetableEntry[]): Map<string, StopPlan> {
   const m = new Map<string, StopPlan>();
   for (const e of entries) {
     m.set(e.station, {
-      station: e.station, line: e.line ?? 'main', stop: true,
+      station: e.station, line: e.line ?? '', stop: true,
       arr: e.arr ? parseClock(e.arr) : undefined, dep: e.dep ? parseClock(e.dep) : undefined, dwellS: e.dwellS,
     });
   }
@@ -77,22 +78,29 @@ export class Dispatcher {
 
   stationState(trainId: string, code: string) { return this.state.get(trainId)?.get(code); }
 
-  update(dt: number, trains: WorkedTrain[], clock: number) {
+  /** Line a plan asks for at a station, or this direction's running line. */
+  private planLine(st: StationInfo, line: string | undefined) {
+    return line && st.lineInfo.some(l => l.id === line) ? line : this.route.running.id;
+  }
+
+  /** `occupants`: every train on the railway (defaults to `trains`), for line-clear checks. */
+  update(dt: number, trains: WorkedTrain[], clock: number, occupants: Occupant[] = trains) {
     for (const t of trains) {
       for (const st of this.route.stations) {
         if (st.exitKm < t.tailKm - 0.01 || st.entryKm - 3.5 > t.headKm) continue;
         const s = this.st(t.id, st.code);
         if (s.departed) continue;
-        const plan = t.plan.get(st.code) ?? { station: st.code, line: 'main', stop: false };
+        const plan = t.plan.get(st.code) ?? { station: st.code, line: '', stop: false };
+        const line = this.planLine(st, plan.line);
         const interlocked = st.type !== 'halt';
 
         if (interlocked && t.headKm < st.entryKm) {
-          const r = this.interlocking.requestReception(t.id, st, [plan.line], trains);
+          const r = this.interlocking.requestReception(t.id, st, [line], occupants);
           const home = this.block.stationSignals(st.code).find(x => x.def.kind === 'home');
           if (!r && home) {
             const nearHome = home.km - t.headKm < 0.4 && home.km > t.headKm;
             s.waitHome = nearHome && Math.abs(t.speed) < 0.1 ? s.waitHome + dt : 0;
-            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, plan.line);
+            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line);
           }
         }
 

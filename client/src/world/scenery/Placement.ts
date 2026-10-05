@@ -78,7 +78,7 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       const km = info.km[k];
       if (info.road[k] < 7) continue;
       const W = dist < 300 ? route.formationHalfWidth(km) : 0;
-      if (dist < W + 7 || dist < 13) continue;
+      if (dist < W + 7 || dist < 13 + route.halfSpacing) continue;
       const g = field.ghatAt(km);
       const zone = dist < 1800 ? route.zoneAt(km).zone : g > 0.5 ? 'ghats' : 'fields';
       const y = hAt(x, z);
@@ -102,7 +102,7 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
 
       if (zone === 'town') {
         const roadNear = info.road[k] < 30;
-        if (dist > 22 && r < (roadNear ? 0.3 : 0.16) && dist < 600) {
+        if (dist > 22 + route.halfSpacing && r < (roadNear ? 0.3 : 0.16) && dist < 600) {
           if (level === 'impostor' && rand() < 0.5) continue;
           const sel = rand();
           const t: PropType = sel < 0.45 ? 'building2' : sel < 0.85 ? 'building4' : 'building7';
@@ -114,7 +114,7 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
           continue;
         }
         if (near && r > 0.997) { const t: PropType = rand() < 0.5 ? 'temple' : rand() < 0.6 ? 'mosque' : 'church'; out.push(t, x, y, z, -heading, 1, 1, 1, [1, 1, 1]); continue; }
-        if (near && dist > 18 && dist < 45 && r > 0.985) { out.push('billboard', x, y, z, -heading - Math.PI / 2 * Math.sign(info.d[k]), 1, 1, 1, [1, 1, 1]); continue; }
+        if (near && dist > 18 + route.halfSpacing && dist < 45 && r > 0.985) { out.push('billboard', x, y, z, -heading - Math.PI / 2 * Math.sign(info.d[k]), 1, 1, 1, [1, 1, 1]); continue; }
         if (r > 0.94) tree(x, y, z, g, near, rand);
         continue;
       }
@@ -149,7 +149,7 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       if (r < reg.treeDensity * 0.09) { tree(x, y, z, g, near, rand); continue; }
       if (!near) continue;
       if (r > 0.9985) { out.push('tubewell', x, y, z, rand() * 6.28, 1, 1, 1, [1, 1, 1]); continue; }
-      if (dist > 14 && dist < 45 && r > 0.996) { out.push(rand() < 0.6 ? 'cow' : 'buffalo', x, y, z, rand() * 6.28, 1, 1, 1, tint(rand, [1, 1, 1], 0.1)); continue; }
+      if (dist > 14 + route.halfSpacing && dist < 45 && r > 0.996) { out.push(rand() < 0.6 ? 'cow' : 'buffalo', x, y, z, rand() * 6.28, 1, 1, 1, tint(rand, [1, 1, 1], 0.1)); continue; }
       if (r > 0.993 && r < 0.996) { out.push('haystack', x, y, z, 0, 1, 1, 1, [1, 1, 1]); continue; }
     }
   }

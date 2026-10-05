@@ -1,3 +1,4 @@
+import { isTouch } from '../input/Device';
 import { safeStorageGet, safeStorageSet } from './storage';
 import { Store } from './Store';
 
@@ -64,6 +65,8 @@ export interface SettingsData {
   renderer: 'webgl' | 'webgpu' | 'webgpu-gl';
   maxPixelRatio: number;
   adaptiveQuality: boolean;
+  /** touch devices: fade the on-screen controls after a few seconds without a touch */
+  touchAutoHide: boolean;
 }
 
 const KEY = 'railbharat.settings.v1';
@@ -72,6 +75,7 @@ const defaults = (): SettingsData => ({
   quality: 'high', renderScale: 1, shadows: 'high', drawDistance: 3400, bloom: true, fogMultiplier: 1,
   volumes: { master: 0.8, train: 0.9, horn: 0.8, env: 0.7, ui: 0.6 },
   units: 'kmh', keys: { ...DEFAULT_KEYS }, dayNightSpeed: 10, mouseSensitivity: 1, autoDetected: false, renderer: 'webgl', maxPixelRatio: 1.5, adaptiveQuality: true,
+  touchAutoHide: true,
 });
 
 export const settings = new Store<SettingsData>((() => {
@@ -87,10 +91,33 @@ export function applyPreset(q: Quality) {
   settings.set({ quality: q, renderScale: p.renderScale, shadows: p.shadows, drawDistance: p.drawDistance, bloom: p.bloom });
 }
 
-/** Effective preset = chosen quality with user overrides. */
+/**
+ * Phones and tablets: whatever preset is chosen, keep grass, close scenery,
+ * shadows and draw distance within what a mid-range phone GPU can hold at
+ * 30 FPS (the user can still lower them further).
+ */
+const MOBILE_CAPS = { drawDistance: 2400, sceneryRange: 300, impostorRange: 1100, grassDensity: 0.5, grassRadius: 55 };
+
+/** Effective preset = chosen quality with user overrides (capped on touch devices). */
 export function effective(): QualityPreset {
   const s = settings.get();
-  return { ...PRESETS[s.quality], renderScale: s.renderScale, shadows: s.shadows, drawDistance: s.drawDistance, bloom: s.bloom };
+  const p = { ...PRESETS[s.quality], renderScale: s.renderScale, shadows: s.shadows, drawDistance: s.drawDistance, bloom: s.bloom };
+  if (isTouch) {
+    p.drawDistance = Math.min(p.drawDistance, MOBILE_CAPS.drawDistance);
+    p.sceneryRange = Math.min(p.sceneryRange, MOBILE_CAPS.sceneryRange);
+    p.impostorRange = Math.min(p.impostorRange, MOBILE_CAPS.impostorRange);
+    p.grassDensity = Math.min(p.grassDensity, MOBILE_CAPS.grassDensity);
+    p.grassRadius = Math.min(p.grassRadius, MOBILE_CAPS.grassRadius);
+    if (p.shadows === 'high') p.shadows = 'low';
+  }
+  return p;
+}
+
+/** First run on a phone/tablet: Low or Medium (never higher), pixel ratio 1.0-1.25, no bloom. */
+export function applyMobileDefaults(detected: Quality) {
+  const q: Quality = detected === 'low' ? 'low' : 'medium';
+  applyPreset(q);
+  settings.set({ maxPixelRatio: q === 'low' ? 1 : 1.25, bloom: false, renderScale: q === 'low' ? 0.75 : 0.85 });
 }
 
 // ---- save data (best scores) ----

@@ -12,8 +12,6 @@ lerna-debug.log*
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Runtime data
-client/test/
-client/scripts/
 pids
 *.pid
 *.seed
@@ -152,8 +150,26 @@ vite.config.ts.timestamp-*
 # Turbo Repo
 .turbo
 
-# Dev-only diagnostics (headless Chrome benchmarks, UI checks, repro tools) and their output.
-# scripts/process-textures.mjs stays tracked: `npm run textures` uses it.
-client/scripts/*.mjs
-!scripts/process-textures.mjs
-scripts/out/
+# ---------- Rail Bharat: dev-only, not needed to build or deploy ----------
+# Tests (every package) and test-only config
+test/
+tests/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+# Dev scripts (headless benchmarks, UI checks, repro tools, texture processing) and their output
+client/scripts/
+
+# Cloudflare Wrangler local state and local secrets (real secrets go in `wrangler secret put`)
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { GeoBatch, mat } from '../core/GeoBatch';
 import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
+import type { Railway } from '@rail/shared/track/Railway';
 
 export const CONTACT_H = 5.55; // contact wire above rail top
 const SYSTEM_H = 1.4;
@@ -23,18 +24,19 @@ export function mastPositions(route: Route): number[] {
   return m;
 }
 
-/** Track offsets electrified at chainage s. */
-export function wiredOffsets(route: Route, s: number) {
+/** Track offsets electrified at chainage s (every line of both directions). */
+export function wiredOffsets(railway: Railway, s: number) {
   const km = s / 1000;
-  const o = [0];
-  for (const l of route.graph.lines) if (l.id !== 'main' && km >= l.fromKm && km <= l.toKm) o.push(l.offset);
-  return o;
+  const o: number[] = [];
+  for (const l of railway.layout.lines) if (km >= l.fromKm && km <= l.toKm && !o.includes(l.offset)) o.push(l.offset);
+  return o.sort((a, b) => a - b);
 }
 
 export const wireMaterial = new THREE.LineBasicMaterial({ color: 0x1d1d1d });
 
 /** OHE for chunk [s0,s1): masts, cantilevers/portals into `batch`, wires into `lines`. */
-export function buildOHE(route: Route, s0: number, s1: number, ox: number, oz: number, batch: GeoBatch, lines: number[]) {
+export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, oz: number, batch: GeoBatch, lines: number[]) {
+  const route = railway.main;
   const masts = mastPositions(route);
   const f = newFrame(), g = newFrame();
   for (let i = 0; i < masts.length; i++) {
@@ -44,29 +46,40 @@ export function buildOHE(route: Route, s0: number, s1: number, ox: number, oz: n
     const tunnel = route.inTunnel(km);
     route.alignment.sample(s, f);
     const rail = f.y + RAIL_TOP;
-    const offs = wiredOffsets(route, s);
+    const offs = wiredOffsets(railway, s);
     const minO = Math.min(...offs), maxO = Math.max(...offs);
+    // portals over loops, along platforms (no room for masts between the faces) and on bridges
+    const st = route.stations.find(x => km >= x.platformFromKm - 0.02 && km <= x.platformToKm + 0.02);
+    const onBridge = route.structureAt(km)?.type === 'bridge';
+    const portal = offs.length > 2 || ((!!st || onBridge) && offs.length > 1);
+    let lo = minO - 3.3, hi = maxO + 3.3;
+    if (st) for (const p of st.platforms) for (const e of [p.from, p.to]) { if (e < 0) lo = Math.min(lo, e - 0.8); else hi = Math.max(hi, e + 0.8); }
     const at = (lat: number, y: number) => ({ x: f.x - Math.sin(f.heading) * lat - ox, y, z: f.z + Math.cos(f.heading) * lat - oz });
     const ry = -f.heading;
     if (!tunnel) {
-      if (offs.length > 1) {
+      if (portal) {
         // portal spanning all tracks
-        for (const lat of [minO - 3.3, maxO + 3.3]) { const p = at(lat, rail); batch.box(0.35, 8.4, 0.35, mat(p.x, rail + 4.2 - 0.6, p.z, ry), '#7b8086', 'metal'); }
-        const c = at((minO + maxO) / 2, rail);
-        batch.box(0.3, 0.5, maxO - minO + 6.9, mat(c.x, rail + 7.7, c.z, ry), '#7b8086', 'metal');
+        for (const lat of [lo, hi]) { const p = at(lat, rail); batch.box(0.35, 8.4, 0.35, mat(p.x, rail + 4.2 - 0.6, p.z, ry), '#7b8086', 'metal'); }
+        const c = at((lo + hi) / 2, rail);
+        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + 7.7, c.z, ry), '#7b8086', 'metal');
         for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + 7.2, p.z, ry), '#555', 'metal'); }
       } else {
-        const side = -1;
-        const lat = side * 3.3;
-        const p = at(lat, rail);
-        batch.box(0.32, 8.2, 0.32, mat(p.x, rail + 4.1 - 0.6, p.z, ry), '#7b8086', 'metal');
-        batch.box(0.6, 0.4, 0.6, mat(p.x, rail - 0.6, p.z, ry), '#9a968e'); // foundation
-        // cantilever: top tube + bracket + registration arm
-        const mid = at(lat / 2, rail);
-        batch.box(0.07, 0.07, 3.6, mat(mid.x, rail + CONTACT_H + SYSTEM_H, mid.z, ry), '#8c8f93', 'metal');
-        batch.box(0.07, 0.07, 3.7, mat(mid.x, rail + CONTACT_H + 0.65, mid.z, ry, 0.2), '#8c8f93', 'metal');
-        const ins = at(lat + 0.4, rail);
-        batch.cyl(0.08, 0.08, 0.5, 8, mat(ins.x, rail + CONTACT_H + SYSTEM_H, ins.z, ry, Math.PI / 2), '#6b4d3a');
+        // a mast outside each outer track, its cantilever reaching over that track
+        // (single line: one mast on the left; double line: one each side)
+        const sides = offs.length > 1 ? [-1, 1] : [-1];
+        for (const side of sides) {
+          const track = side < 0 ? minO : maxO;
+          const lat = track + side * 3.3;
+          const p = at(lat, rail);
+          batch.box(0.32, 8.2, 0.32, mat(p.x, rail + 4.1 - 0.6, p.z, ry), '#7b8086', 'metal');
+          batch.box(0.6, 0.4, 0.6, mat(p.x, rail - 0.6, p.z, ry), '#9a968e'); // foundation
+          // cantilever: top tube + bracket + registration arm
+          const mid = at(track + side * 1.65, rail);
+          batch.box(0.07, 0.07, 3.6, mat(mid.x, rail + CONTACT_H + SYSTEM_H, mid.z, ry), '#8c8f93', 'metal');
+          batch.box(0.07, 0.07, 3.7, mat(mid.x, rail + CONTACT_H + 0.65, mid.z, ry, 0.2 * -side), '#8c8f93', 'metal');
+          const ins = at(lat - side * 0.4, rail);
+          batch.cyl(0.08, 0.08, 0.5, 8, mat(ins.x, rail + CONTACT_H + SYSTEM_H, ins.z, ry, Math.PI / 2), '#6b4d3a');
+        }
       }
     }
     // wires to the next mast
@@ -76,7 +89,7 @@ export function buildOHE(route: Route, s0: number, s1: number, ox: number, oz: n
     const rail2 = g.y + RAIL_TOP;
     const stag = (i % 2 ? 0.2 : -0.2), stag2 = -stag;
     for (const o of offs) {
-      if (!wiredOffsets(route, s2).includes(o)) continue;
+      if (!wiredOffsets(railway, s2).includes(o)) continue;
       const a1 = at(o + stag, rail + CONTACT_H);
       const pB = { x: g.x - Math.sin(g.heading) * (o + stag2) - ox, y: rail2 + CONTACT_H, z: g.z + Math.cos(g.heading) * (o + stag2) - oz };
       lines.push(a1.x, a1.y, a1.z, pB.x, pB.y, pB.z);

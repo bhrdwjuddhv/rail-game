@@ -1,16 +1,18 @@
 import { Alignment, newFrame } from './Chainage';
 import { formatGradient, parseGradient, ProfilePoint } from './Gradient';
 import { SegmentDef } from './TrackSegment';
-import { RAMP_M, TrackGraph } from './TrackGraph';
+import { RAMP_M, RunningLine, TrackGraph } from './TrackGraph';
 
 // ---------- data file shapes ----------
+export interface CrossoverData { km: number; fromLine: string; toLine: string }
 export interface StationData {
   name: string; nameHi: string; nameRegional: string; code: string; km: number;
   type: 'halt' | 'wayside' | 'junction' | 'terminal';
   platformLengthM: number; buildingSide: 1 | -1;
+  /** loop lines (running lines may be listed too; they are implicit) */
   lines: { id: string; offset: number }[];
   platforms: { num: string; from: number; to: number; lines: string[] }[];
-  crossovers?: { km: number; fromLine: string; toLine: string }[];
+  crossovers?: CrossoverData[];
 }
 export interface StructureData {
   type: 'bridge' | 'tunnel'; style?: 'girder' | 'steel-truss' | 'arch-viaduct';
@@ -20,17 +22,27 @@ export interface StructureData {
 export interface ZoneData { fromKm: number; toKm: number; zone: string; roadOffset?: number }
 export interface RouteData {
   id: string; name: string; operator: string; lengthKm: number; startElevationM: number;
+  /**
+   * Running lines. Omitted (or one line) = single line "main". ["UP","DOWN"] =
+   * double line: DOWN trains run toward increasing km on the left-hand line,
+   * UP trains toward decreasing km; the lines sit lineSpacingM apart either
+   * side of the surveyed centreline.
+   */
+  lines?: string[];
+  lineSpacingM?: number;
   regions: { fromKm: number; toKm: number; region: string }[];
   segments: SegmentDef[];
   profile: ProfilePoint[];
   stations: StationData[];
   autoSignalSpacingKm: number;
-  signals: { km: number; type: string; aspects?: number; offset?: number }[];
+  signals: { km: number; type: string; aspects?: number; offset?: number; line?: string }[];
   speedLimits: { fromKm: number; toKm: number; kmph: number }[];
   structures: StructureData[];
   levelCrossings: { km: number; manned: boolean }[];
   scenery: ZoneData[];
   features: { type: string; km: number }[];
+  /** crossovers between running lines away from stations */
+  crossovers?: CrossoverData[];
 }
 export interface RegionData {
   id: string; name: string; ground: string[]; crops: { name: string; color: string }[];
@@ -47,7 +59,11 @@ export interface SignalDef {
 }
 export interface StationInfo extends StationData {
   platformFromKm: number; platformToKm: number;
-  entryKm: number; exitKm: number; // switch toes (loops) or platform ends (halts)
+  /** station limits for this direction: switch toes of its loops (or platform ends) */
+  entryKm: number; exitKm: number;
+  /** the whole yard, both directions (world building) */
+  yardFromKm: number; yardToKm: number;
+  /** lines this direction can be routed into: its running line, then its loops */
   lineInfo: { id: string; offset: number; fromKm: number; toKm: number }[];
   regionId: string;
 }
@@ -57,7 +73,29 @@ export interface RoadDef { id: string; kind: 'lc' | 'parallel'; km: number; ax: 
 
 export const STOP_MARKER_COACHES = [8, 12, 16, 20, 24];
 export const LOCO_LENGTH_DEFAULT = 20.56;
+export const DEFAULT_LINE_SPACING_M = 5.3;
 
+export interface RouteOptions {
+  /** running line this view is for (default: DOWN on a double line, main on a single line) */
+  running?: string;
+  /** data and alignment are the far-end-first mirror of the surveyed route (Up direction) */
+  mirrored?: boolean;
+  alignment?: Alignment;
+}
+
+/** Running lines of a route in surveyed (+km) coordinates: DOWN on the left of +km travel. */
+export function runningLinesOf(data: RouteData): RunningLine[] {
+  if (!data.lines || data.lines.length < 2) return [{ id: data.lines?.[0] ?? 'main', offset: 0 }];
+  const h = (data.lineSpacingM ?? DEFAULT_LINE_SPACING_M) / 2;
+  return [{ id: 'DOWN', offset: -h }, { id: 'UP', offset: h }];
+}
+
+/**
+ * One direction's view of a route. On a single line there is one view; on a
+ * double line each running direction gets its own, with chainage counted in
+ * its direction of travel (the Up view is the route mirrored end to end), so
+ * signalling, physics and AI all simply move toward increasing km.
+ */
 export class Route {
   readonly alignment: Alignment;
   readonly graph: TrackGraph;
@@ -69,49 +107,81 @@ export class Route {
   readonly roads: RoadDef[] = [];
   readonly tunnels: StructureData[];
   readonly bridges: StructureData[];
+  readonly mirrored: boolean;
+  /** all running lines, in this view's coordinates */
+  readonly runningLines: RunningLine[];
+  /** this view's running line */
+  readonly running: RunningLine;
+  readonly double: boolean;
+  /** half the track-centre spacing (0 on a single line): everything lineside moves out by this */
+  readonly halfSpacing: number;
 
-  constructor(readonly data: RouteData, readonly regions: Record<string, RegionData>) {
-    this.alignment = new Alignment(data.segments, data.profile, data.startElevationM);
+  constructor(readonly data: RouteData, readonly regions: Record<string, RegionData>, opts: RouteOptions = {}) {
+    this.mirrored = !!opts.mirrored;
+    this.alignment = opts.alignment ?? new Alignment(data.segments, data.profile, data.startElevationM);
     this.lengthKm = this.alignment.length / 1000;
-    this.graph = new TrackGraph(this.lengthKm);
+    const lines = runningLinesOf(data);
+    this.double = lines.length > 1;
+    this.halfSpacing = this.double ? Math.abs(lines[0].offset) : 0;
+    this.runningLines = this.mirrored ? lines.map(l => ({ id: l.id, offset: -l.offset })) : lines;
+    const want = opts.running ?? (this.double ? (this.mirrored ? 'UP' : 'DOWN') : this.runningLines[0].id);
+    this.running = this.runningLines.find(l => l.id === want) ?? this.runningLines[0];
+    this.graph = new TrackGraph(this.lengthKm, this.runningLines);
     this.tunnels = data.structures.filter(s => s.type === 'tunnel');
     this.bridges = data.structures.filter(s => s.type === 'bridge');
     for (const s of data.stations) this.compileStation(s);
+    (data.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `XO${i}`, undefined, []));
     this.compileSignals();
     this.compileBoards();
-    this.compileRivers();
-    this.compileRoads();
+    if (!this.mirrored) { this.compileRivers(); this.compileRoads(); }
+  }
+
+  /** Surveyed km (as on the km posts) of a km in this view, and back. */
+  canonicalKm(km: number) { return this.mirrored ? this.lengthKm - km : km; }
+  viewKm(canonicalKm: number) { return this.mirrored ? this.lengthKm - canonicalKm : canonicalKm; }
+
+  private isRunning(id: string) { return this.runningLines.some(l => l.id === id); }
+  /** Running line a loop at `offset` branches from (the nearest one). */
+  private parentOf(offset: number) {
+    return this.runningLines.reduce((b, l) => (Math.abs(l.offset - offset) < Math.abs(b.offset - offset) ? l : b));
   }
 
   // ---------------- stations & switches ----------------
   private compileStation(s: StationData) {
     const half = s.platformLengthM / 2000;
+    const run = this.running;
+    const loops = s.lines.filter(l => !this.isRunning(l.id));
+    const own = loops.filter(l => this.parentOf(l.offset).id === run.id);
     const st: StationInfo = {
       ...s,
       platformFromKm: s.km - half, platformToKm: s.km + half,
-      entryKm: s.km - half, exitKm: s.km + half, lineInfo: [],
+      entryKm: s.km - half, exitKm: s.km + half,
+      yardFromKm: s.km - half - (loops.length ? 0.25 : 0), yardToKm: s.km + half + (loops.length ? 0.25 : 0),
+      lineInfo: [{ id: run.id, offset: run.offset, fromKm: 0, toKm: this.lengthKm }],
       regionId: this.regionIdAt(s.km),
     };
-    const loops = s.lines.filter(l => l.offset !== 0);
-    if (loops.length) {
+    if (own.length) {
       st.entryKm = s.km - half - 0.25;
       st.exitKm = s.km + half + 0.25;
     }
     const r = RAMP_M / 1000;
-    for (const l of s.lines) {
-      if (l.offset === 0) { st.lineInfo.push({ id: l.id, offset: 0, fromKm: 0, toKm: this.lengthKm }); continue; }
+    for (const l of own) {
       const li = { id: l.id, offset: l.offset, fromKm: st.entryKm + r, toKm: st.exitKm - r };
       st.lineInfo.push(li);
       this.graph.addLine({ ...li, id: `${s.code}-${l.id}`, station: s.code });
-      this.graph.addSwitch({ id: `${s.code}-${l.id}-E`, station: s.code, kind: 'facing', from: 0, to: l.offset, rampStart: st.entryKm, rampEnd: st.entryKm + r });
-      this.graph.addSwitch({ id: `${s.code}-${l.id}-X`, station: s.code, kind: 'trailing', from: l.offset, to: 0, rampStart: st.exitKm - r, rampEnd: st.exitKm });
+      this.graph.addSwitch({ id: `${s.code}-${l.id}-E`, station: s.code, kind: 'facing', from: run.offset, to: l.offset, rampStart: st.entryKm, rampEnd: st.entryKm + r });
+      this.graph.addSwitch({ id: `${s.code}-${l.id}-X`, station: s.code, kind: 'trailing', from: l.offset, to: run.offset, rampStart: st.exitKm - r, rampEnd: st.exitKm });
     }
-    for (const c of s.crossovers ?? []) {
-      const from = s.lines.find(l => l.id === c.fromLine)!.offset;
-      const to = s.lines.find(l => l.id === c.toLine)!.offset;
-      this.graph.addSwitch({ id: `${s.code}-XO-${c.fromLine}`, station: s.code, kind: 'crossover', from, to, rampStart: c.km, rampEnd: c.km + r });
-    }
+    (s.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `${s.code}-XO${i}`, s.code, own));
     this.stations.push(st);
+  }
+
+  /** A crossover ramp; only built in views that have both of its lines. */
+  private addCrossover(c: CrossoverData, id: string, station: string | undefined, own: { id: string; offset: number }[]) {
+    const off = (lineId: string) => this.runningLines.find(l => l.id === lineId)?.offset ?? own.find(l => l.id === lineId)?.offset;
+    const from = off(c.fromLine), to = off(c.toLine);
+    if (from === undefined || to === undefined) return;
+    this.graph.addSwitch({ id, station, kind: 'crossover', from, to, rampStart: c.km, rampEnd: c.km + RAMP_M / 1000 });
   }
 
   station(code: string) { return this.stations.find(s => s.code === code); }
@@ -129,22 +199,27 @@ export class Route {
 
   // ---------------- signals ----------------
   private compileSignals() {
+    const run = this.running;
+    const ro = run.offset;
+    // per-line numbering on a double line: D7 / U7, RNPJ-DH / RNPJ-UH
+    const p = this.double ? run.id[0] : '';
+    const sid = (code: string, k: string) => `${code}-${p}${k}`;
     const sig: SignalDef[] = [];
     for (const st of this.stations) {
       if (st.type === 'halt') continue;
       const home = st.entryKm - 0.18;
-      if (home - 1.2 > 0.05) sig.push({ id: `${st.code}-D`, km: home - 1.2, kind: 'distant', offset: 0, aspects: 4, station: st.code });
-      if (home > 0.05) sig.push({ id: `${st.code}-H`, km: home, kind: 'home', offset: 0, aspects: 4, station: st.code, callingOn: true, routeIndicator: st.type === 'junction' });
+      if (home - 1.2 > 0.05) sig.push({ id: sid(st.code, 'D'), km: home - 1.2, kind: 'distant', offset: ro, aspects: 4, station: st.code });
+      if (home > 0.05) sig.push({ id: sid(st.code, 'H'), km: home, kind: 'home', offset: ro, aspects: 4, station: st.code, callingOn: true, routeIndicator: st.type === 'junction' });
       for (const l of st.lineInfo) {
-        sig.push({ id: `${st.code}-S-${l.id}`, km: st.platformToKm + 0.03, kind: 'starter', offset: l.offset, aspects: 4, station: st.code, line: l.id });
+        sig.push({ id: sid(st.code, `S-${l.id}`), km: st.platformToKm + 0.03, kind: 'starter', offset: l.offset, aspects: 4, station: st.code, line: l.id });
       }
       if (st.type !== 'terminal' && st.exitKm + 0.4 < this.lengthKm - 0.2) {
-        sig.push({ id: `${st.code}-AS`, km: st.exitKm + 0.4, kind: 'advanced-starter', offset: 0, aspects: 4, station: st.code });
+        sig.push({ id: sid(st.code, 'AS'), km: st.exitKm + 0.4, kind: 'advanced-starter', offset: ro, aspects: 4, station: st.code });
       }
     }
     // automatic block signals fill the gaps between station limits
     const spacing = this.data.autoSignalSpacingKm;
-    const anchors = sig.filter(s => s.offset === 0).map(s => s.km).sort((a, b) => a - b);
+    const anchors = sig.filter(s => Math.abs(s.offset - ro) < 0.01).map(s => s.km).sort((a, b) => a - b);
     const bounds = [0, ...anchors, this.lengthKm - 0.3];
     let n = 0;
     for (let i = 0; i < bounds.length - 1; i++) {
@@ -159,11 +234,12 @@ export class Route {
         let km = a + (gap * k) / (count + 1);
         const halt = this.stations.find(st => st.type === 'halt' && km > st.platformFromKm - 0.15 && km < st.platformToKm + 0.05);
         if (halt) km = halt.platformToKm + 0.05;
-        sig.push({ id: `A${++n}`, km, kind: 'automatic', offset: 0, aspects: 4 });
+        sig.push({ id: this.double ? `${p}${++n}` : `A${++n}`, km, kind: 'automatic', offset: ro, aspects: 4 });
       }
     }
     for (const s of this.data.signals) {
-      sig.push({ id: `X${s.km}`, km: s.km, kind: (s.type as SignalKind) || 'automatic', offset: s.offset ?? 0, aspects: (s.aspects as 3 | 4) ?? 4 });
+      if (s.line && s.line !== run.id) continue;
+      sig.push({ id: `X${p}${s.km}`, km: s.km, kind: (s.type as SignalKind) || 'automatic', offset: s.offset ?? ro, aspects: (s.aspects as 3 | 4) ?? 4 });
     }
     sig.sort((a, b) => a.km - b.km);
     this.signals.push(...sig);
@@ -172,30 +248,36 @@ export class Route {
   // ---------------- boards ----------------
   private compileBoards() {
     const B = this.boards;
-    for (let k = 1; k < this.lengthKm; k++) B.push({ kind: 'km', km: k, text: String(k), offset: -3.6 });
-    for (const lc of this.data.levelCrossings) B.push({ kind: 'whistle', km: lc.km - 0.6, text: 'W/L', offset: -3.4 });
-    for (const t of this.tunnels) B.push({ kind: 'whistle', km: t.fromKm - 0.5, text: 'W', offset: -3.4 });
+    // boards stand on the outer (left) side of this direction's line
+    const left = (d: number) => this.running.offset - d;
+    for (let k = 1; k < this.lengthKm; k++) B.push({ kind: 'km', km: this.viewKm(k), text: String(k), offset: left(3.6) });
+    for (const lc of this.data.levelCrossings) B.push({ kind: 'whistle', km: lc.km - 0.6, text: 'W/L', offset: left(3.4) });
+    for (const t of this.tunnels) B.push({ kind: 'whistle', km: t.fromKm - 0.5, text: 'W', offset: left(3.4) });
     const lim = [...this.data.speedLimits].sort((a, b) => a.fromKm - b.fromKm);
     for (let i = 1; i < lim.length; i++) {
       const prev = lim[i - 1], cur = lim[i];
       if (cur.kmph < prev.kmph) {
-        if (cur.fromKm - 1 > 0) B.push({ kind: 'caution', km: cur.fromKm - 1, text: String(cur.kmph), offset: -3.4 });
-        B.push({ kind: 'speed', km: cur.fromKm, text: String(cur.kmph), offset: -3.4 });
+        if (cur.fromKm - 1 > 0) B.push({ kind: 'caution', km: cur.fromKm - 1, text: String(cur.kmph), offset: left(3.4) });
+        B.push({ kind: 'speed', km: cur.fromKm, text: String(cur.kmph), offset: left(3.4) });
       } else if (cur.kmph > prev.kmph) {
-        B.push({ kind: 'termination', km: cur.fromKm, text: 'T', offset: -3.4 });
+        B.push({ kind: 'termination', km: cur.fromKm, text: 'T', offset: left(3.4) });
       }
     }
     const prof = [...this.data.profile].sort((a, b) => a.km - b.km);
     for (const p of prof) {
       if (p.km <= 0) continue;
       const g = parseGradient(p.gradient);
-      B.push({ kind: 'gradient', km: p.km, text: g === 0 ? 'LEVEL' : formatGradient(g).replace('1 in ', '1/').replace(' up', ' ↑').replace(' down', ' ↓'), offset: 3.6 });
+      // single line: right-hand side as before; double line: the right side is the other track
+      B.push({
+        kind: 'gradient', km: p.km + (this.double ? 0.012 : 0), offset: this.double ? left(3.6) : this.running.offset + 3.6,
+        text: g === 0 ? 'LEVEL' : formatGradient(g).replace('1 in ', '1/').replace(' up', ' ↑').replace(' down', ' ↓'),
+      });
     }
     const ghat = this.data.regions.find(r => this.regions[r.region]?.sideSlope > 0);
-    if (ghat) B.push({ kind: 'ghat', km: ghat.fromKm + 0.15, text: 'GHAT SECTION', offset: -3.6 });
+    if (ghat) B.push({ kind: 'ghat', km: Math.max(0.05, ghat.fromKm) + 0.15, text: 'GHAT SECTION', offset: left(3.6) });
     for (const st of this.stations) {
-      if (st.platformFromKm - 1 > 0) B.push({ kind: 'approach', km: st.platformFromKm - 1, text: st.code, offset: -3.6 });
-      const pf = st.platforms.find(p => p.lines.includes('main')) ?? st.platforms[0];
+      if (st.platformFromKm - 1 > 0) B.push({ kind: 'approach', km: st.platformFromKm - 1, text: st.code, offset: left(3.6) });
+      const pf = st.platforms.find(p => p.lines.includes(this.running.id)) ?? st.platforms[0];
       const side = Math.sign(pf.from) || 1;
       for (const c of STOP_MARKER_COACHES) {
         B.push({ kind: 'stop', km: this.markerKm(st, c), text: String(c), offset: side * (Math.abs(pf.from) + 0.5) });
@@ -204,7 +286,7 @@ export class Route {
     B.sort((a, b) => a.km - b.km);
   }
 
-  // ---------------- rivers & roads ----------------
+  // ---------------- rivers & roads (surveyed view only: they are world features) ----------------
   private compileRivers() {
     const f = newFrame();
     for (const b of this.bridges) {
@@ -269,14 +351,17 @@ export class Route {
     return null;
   }
   inTunnel(km: number) { return this.tunnels.some(t => km >= t.fromKm && km <= t.toKm); }
+  /** Station whose yard (either direction) covers km. */
   stationAt(km: number, margin = 0) {
-    return this.stations.find(s => km >= s.entryKm - margin && km <= s.exitKm + margin);
+    return this.stations.find(s => km >= s.yardFromKm - margin && km <= s.yardToKm + margin);
   }
+  /** Half-width of the cleared formation (both lines, loops, platforms, station area). */
   formationHalfWidth(km: number) {
+    const base = 6.5 + this.halfSpacing;
     const st = this.stationAt(km, 0.05);
-    if (!st) return 6.5;
-    let w = 6.5;
-    for (const l of st.lineInfo) w = Math.max(w, Math.abs(l.offset) + 4);
+    if (!st) return base;
+    let w = base;
+    for (const l of st.lines) w = Math.max(w, Math.abs(l.offset) + 4);
     if (km >= st.platformFromKm - 0.06 && km <= st.platformToKm + 0.06) {
       for (const p of st.platforms) w = Math.max(w, Math.abs(p.from) + 1, Math.abs(p.to) + 1);
       w += 22; // station building / circulating area

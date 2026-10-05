@@ -101,6 +101,15 @@ export class TrainAudio {
     setTimeout(() => p.disconnect(), 3000);
   }
 
+  /** A train passing on the other line at relative speed `relMs`; louder in the cab with the window, and the faster it is. */
+  passBy(x: number, y: number, z: number, relMs: number, lengthM: number, carM: number) {
+    const p = this.a.panner('env', 8, 1.1);
+    this.a.setPannerPos(p, x, y, z);
+    const v = Math.max(1, relMs);
+    this.shots.passBy(p, lengthM / v, carM / v, Math.min(0.9, 0.15 + v / 60));
+    setTimeout(() => p.disconnect(), (lengthM / v + 3) * 1000);
+  }
+
   announce(x: number, y: number, z: number) {
     const p = this.a.panner('env', 30, 1.1);
     this.a.setPannerPos(p, x, y + 6, z);

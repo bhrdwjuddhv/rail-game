@@ -56,6 +56,32 @@ export class OneShots {
     for (let i = 0; i < 6; i++) this.clack(dest, t0 + i * gap * (0.6 + Math.random() * 0.8), vol * (0.6 + Math.random() * 0.4), 1);
   }
 
+  /**
+   * A train passing close by on the other line: the pressure-wave "whoosh" of
+   * the loco nose, then a roar of wheels and air for `dur` seconds with a
+   * rumble per vehicle gap (`gapS` apart), then the tail swirl.
+   */
+  passBy(dest: AudioNode, dur: number, gapS: number, vol: number) {
+    const c = this.a.ctx, t = this.a.now;
+    // nose: band-passed noise sweeping down
+    const s = c.createBufferSource(); s.buffer = this.a.white;
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.8;
+    f.frequency.setValueAtTime(2200, t); f.frequency.exponentialRampToValueAtTime(260, t + 0.7);
+    s.connect(f).connect(this.env(dest, t, vol, 0.04, 0.8));
+    s.start(t, Math.random() * 2); s.stop(t + 1);
+    // body: brown-noise roar for the length of the train
+    const r = c.createBufferSource(); r.buffer = this.a.brown; r.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * 0.7, t + 0.25);
+    g.gain.setValueAtTime(vol * 0.7, t + Math.max(0.3, dur)); g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(0.3, dur) + 1.2);
+    r.connect(lp).connect(g).connect(dest);
+    r.start(t); r.stop(t + dur + 1.4);
+    // wheel thumps at each vehicle gap (capped so very long trains stay cheap)
+    const n = Math.min(60, Math.floor(dur / Math.max(0.05, gapS)));
+    for (let i = 1; i <= n; i++) this.clack(dest, t + i * gapS, vol * 0.45, 0.4);
+  }
+
   beep(dest: AudioNode, vol = 0.2) { this.tone(dest, this.a.now, 1250, 0.12, vol, 'square'); }
   buzz(dest: AudioNode, vol = 0.18) { const t = this.a.now; this.tone(dest, t, 820, 0.35, vol, 'square'); this.tone(dest, t + 0.45, 820, 0.35, vol, 'square'); }
 

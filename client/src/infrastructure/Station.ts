@@ -144,7 +144,7 @@ export class StationView {
 
     if (big) {
       // tea stall on the main platform
-      const mp = st.platforms.find(p => p.lines.includes('main')) ?? st.platforms[0];
+      const mp = st.platforms.find(p => p.lines.some(l => route.runningLines.some(r => r.id === l))) ?? st.platforms[0];
       const ts = top(st.km - 0.06, (mp.from + mp.to) / 2);
       b.box(2.6, 2.2, 1.8, mat(ts.x, ts.y + 1.1, ts.z, ts.ry), '#e67e22');
       b.box(3.2, 0.1, 2.4, mat(ts.x, ts.y + 2.35, ts.z, ts.ry, 0, 0.1), '#c0392b');

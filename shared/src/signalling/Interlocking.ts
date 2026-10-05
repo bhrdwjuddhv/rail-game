@@ -8,6 +8,10 @@ import type { Occupant } from './Signal';
  * whose berthing line is clear. Reception (home -> platform line) and
  * departure (starter -> advanced starter) routes are separate, so a train can
  * be received on the main while another waits to leave from a loop.
+ *
+ * Each running direction has its own Interlocking; points shared by both
+ * (crossovers) carry their locks on the shared Points, so a route set by one
+ * direction blocks a conflicting route from the other.
  */
 export interface StationRoute {
   trainId: string;
@@ -17,23 +21,31 @@ export interface StationRoute {
   needs: { sw: Switch; state: 'normal' | 'reverse' }[];
   set: boolean;
   callingOn: boolean;
+  /** lock key on the points: unique per route */
+  key: string;
 }
 
 export class Interlocking {
   readonly routes: StationRoute[] = [];
 
-  constructor(private graph: TrackGraph) {}
+  /** `runningOffset`: the offset of this direction's running line (0 on a single line). */
+  constructor(private graph: TrackGraph, private runningOffset = 0) {}
 
   private stationSwitches(st: StationInfo) {
     return this.graph.switches.filter(s => s.def.station === st.code);
   }
 
-  /** Switch positions required for a route into (reception) or out of (departure) a line. */
-  requirements(st: StationInfo, lineId: string, kind: 'reception' | 'departure') {
+  /**
+   * Switch positions required for a route into (reception) or out of
+   * (departure) a line. `crossTo`: the id of a crossover to take on departure
+   * (the train changes to the other running line); every other crossover must
+   * lie normal.
+   */
+  requirements(st: StationInfo, lineId: string, kind: 'reception' | 'departure', crossTo?: string) {
     const needs: StationRoute['needs'] = [];
     for (const sw of this.stationSwitches(st)) {
       const id = sw.def.id;
-      if (sw.def.kind === 'crossover') { needs.push({ sw, state: 'normal' }); continue; }
+      if (sw.def.kind === 'crossover') { needs.push({ sw, state: kind === 'departure' && id === crossTo ? 'reverse' : 'normal' }); continue; }
       const isEntry = id.endsWith('-E');
       if ((kind === 'reception') !== isEntry) continue;
       const forLine = id === `${st.code}-${lineId}-${isEntry ? 'E' : 'X'}`;
@@ -43,7 +55,7 @@ export class Interlocking {
   }
 
   lineOffset(st: StationInfo, lineId: string) {
-    return st.lineInfo.find(l => l.id === lineId)?.offset ?? 0;
+    return st.lineInfo.find(l => l.id === lineId)?.offset ?? this.runningOffset;
   }
 
   /** Is the platform section of a line free of other trains? */
@@ -59,19 +71,21 @@ export class Interlocking {
     return true;
   }
 
+  /** Points locked by another train's route in a different position. */
   private conflicts(needs: StationRoute['needs'], trainId: string) {
-    return needs.some(n => n.sw.locked && n.sw.state !== n.state && !this.routes.some(r => r.trainId === trainId && r.needs.some(m => m.sw === n.sw)));
+    return needs.some(n => n.sw.state !== n.state && [...n.sw.points.holders].some(h => !h.startsWith(`${trainId}|`)));
   }
 
   find(trainId: string, st: StationInfo, kind: 'reception' | 'departure') {
     return this.routes.find(r => r.trainId === trainId && r.station === st && r.kind === kind);
   }
 
-  private establish(trainId: string, st: StationInfo, lineId: string, kind: 'reception' | 'departure', callingOn: boolean) {
-    const needs = this.requirements(st, lineId, kind);
+  private establish(trainId: string, st: StationInfo, lineId: string, kind: 'reception' | 'departure', callingOn: boolean, crossTo?: string) {
+    const needs = this.requirements(st, lineId, kind, crossTo);
     if (this.conflicts(needs, trainId)) return null;
-    for (const n of needs) { n.sw.state = n.state; n.sw.locked = true; }
-    const r: StationRoute = { trainId, station: st, lineId, kind, needs, set: false, callingOn };
+    const key = `${trainId}|${st.code}|${kind}`;
+    for (const n of needs) { n.sw.state = n.state; n.sw.lock(key); }
+    const r: StationRoute = { trainId, station: st, lineId, kind, needs, set: false, callingOn, key };
     this.routes.push(r);
     return r;
   }
@@ -84,6 +98,7 @@ export class Interlocking {
     if (this.routes.some(r => r.station === st && r.kind === 'reception')) return null;
     const order = [...prefs, ...st.lineInfo.map(l => l.id).filter(id => !prefs.includes(id))];
     for (const lineId of order) {
+      if (!st.lineInfo.some(l => l.id === lineId)) continue;
       if (!this.lineClear(st, lineId, occupants, trainId)) continue;
       const r = this.establish(trainId, st, lineId, 'reception', false);
       if (r) return r;
@@ -97,20 +112,20 @@ export class Interlocking {
     return this.establish(trainId, st, lineId, 'reception', true);
   }
 
-  requestDeparture(trainId: string, st: StationInfo, lineId: string) {
-    return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false);
+  /** Departure route; `crossTo` names a crossover to take onto the other running line. */
+  requestDeparture(trainId: string, st: StationInfo, lineId: string, crossTo?: string) {
+    return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false, crossTo);
   }
 
   private release(r: StationRoute) {
     this.routes.splice(this.routes.indexOf(r), 1);
     for (const n of r.needs) {
-      if (this.routes.some(o => o.needs.some(m => m.sw === n.sw))) continue;
-      n.sw.locked = false;
-      n.sw.state = 'normal';
+      n.sw.unlock(r.key);
+      if (!n.sw.locked) n.sw.state = 'normal';
     }
   }
 
-  /** Cancel every route held by a train (e.g. AI despawn). */
+  /** Cancel every route held by a train (e.g. AI despawn, teleport). */
   releaseTrain(trainId: string) {
     for (const r of this.routes.filter(r => r.trainId === trainId)) this.release(r);
   }

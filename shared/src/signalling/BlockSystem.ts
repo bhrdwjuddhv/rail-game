@@ -58,6 +58,22 @@ export class BlockSystem {
     return false;
   }
 
+  /**
+   * Points detection: a stop signal cannot clear over points in its section
+   * that are moving, or lie reversed without a locked route (e.g. a crossover
+   * thrown with no move set). The path ahead follows the points as they lie.
+   */
+  private pointsUnsafe(fromKm: number, toKm: number, path: (k: number) => number) {
+    for (const sw of this.route.graph.switches) {
+      const d = sw.def;
+      if (d.rampEnd <= fromKm || d.rampStart >= toKm) continue;
+      const onPath = Math.abs(path(d.rampStart) - d.from) < 0.5 || Math.abs(path(d.rampEnd) - d.to) < 0.5;
+      if (!onPath) continue;
+      if (sw.moving || (sw.state === 'reverse' && !sw.locked)) return true;
+    }
+    return false;
+  }
+
   private allowed(s: Signal) {
     const st = s.def.station ? this.route.station(s.def.station) : undefined;
     if (!st) return true;
@@ -88,8 +104,10 @@ export class BlockSystem {
         continue;
       }
       let aspect: Aspect;
+      const until = next ? Math.min(end, next.km + OVERLAP_KM) : end;
       if (!this.allowed(s)) aspect = 'R';
-      else if (this.sectionOccupied(s.km, next ? Math.min(end, next.km + OVERLAP_KM) : end, path, occupants)) aspect = 'R';
+      else if (this.pointsUnsafe(s.km, until, path)) aspect = 'R';
+      else if (this.sectionOccupied(s.km, until, path, occupants)) aspect = 'R';
       else if (!next) aspect = 'Y';
       else aspect = next.aspect === 'R' ? 'Y' : next.aspect === 'Y' && s.def.aspects === 4 ? 'YY' : 'G';
       s.aspect = aspect;
@@ -98,7 +116,7 @@ export class BlockSystem {
         const st = this.route.station(s.def.station!)!;
         const r = this.interlocking.reception(st);
         s.callingOn = !!r && r.set && r.callingOn;
-        const pf = r && r.set && r.lineId !== 'main' ? st.platforms.find(p => p.lines.includes(r.lineId)) : undefined;
+        const pf = r && r.set && r.lineId !== this.route.running.id ? st.platforms.find(p => p.lines.includes(r.lineId)) : undefined;
         s.routeIndicator = s.def.routeIndicator && pf ? pf.num : null;
       }
     }

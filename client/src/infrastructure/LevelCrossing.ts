@@ -69,7 +69,7 @@ export function buildParallelRoad(route: Route, r: RoadDef): THREE.Mesh {
 /**
  * Level crossing: lifting barriers on both road approaches (manned) or warning
  * signs only (unmanned), gate lodge, crossing deck. Barriers close when a
- * train is within ~1.6 km and reopen once it has cleared.
+ * train on either line is within ~1.6 km and reopen once it has cleared.
  */
 export class LevelCrossingView {
   readonly group = new THREE.Group();
@@ -89,12 +89,13 @@ export class LevelCrossingView {
     this.group.rotation.y = ry;
     const b = new GeoBatch();
     this.gateT = route.formationHalfWidth(road.km) + 3.5;
-    // crossing deck between and beside the rails
-    b.box(7.2, 0.08, 3.6, mat(0, -0.05, 0), '#5d5852', 'concrete');
-    // gate lodge
-    const lodgeY = field.lcRoadElevation(road, 14) - this.position.y;
-    b.box(3, 2.8, 3, mat(14, lodgeY + 1.4, -7.5), '#e7dcc2', 'brick');
-    b.box(3.6, 0.2, 3.6, mat(14, lodgeY + 2.9, -7.5), '#7d3b2c');
+    // crossing deck between and beside the rails (across both lines on a double line)
+    b.box(7.2 + 2 * route.halfSpacing, 0.08, 3.6, mat(0, -0.05, 0), '#5d5852', 'concrete');
+    // gate lodge, beyond the gate on one side
+    const lodgeX = this.gateT + 3;
+    const lodgeY = field.lcRoadElevation(road, lodgeX) - this.position.y;
+    b.box(3, 2.8, 3, mat(lodgeX, lodgeY + 1.4, -7.5), '#e7dcc2', 'brick');
+    b.box(3.6, 0.2, 3.6, mat(lodgeX, lodgeY + 2.9, -7.5), '#7d3b2c');
     if (manned) {
       for (const side of [-1, 1]) {
         const t = side * this.gateT;

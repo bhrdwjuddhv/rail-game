@@ -18,7 +18,7 @@ import { bus } from '@rail/shared/events';
 import type { RenderSystem } from './core/Renderer';
 import { Action, effective, recordScore, settings } from './core/Settings';
 import { formatClock, KMPH, parseClock } from '@rail/shared/util';
-import { COACHES, locoOrDefault, REGIONS, ROUTES } from './data';
+import { COACHES, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
 import { Lighting } from './environment/Lighting';
 import { Sky } from './environment/Sky';
 import { TimeOfDay } from './environment/TimeOfDay';
@@ -31,20 +31,23 @@ import { Tutorial, TUTORIALS, TutorialState, tutorialPrefs } from './gameplay/Tu
 import { CabHighlight } from './train/cab/CabHighlight';
 import { godModePanel } from './ui/GodModePanel';
 import { TutorialCard } from './ui/TutorialCard';
-import { applyOverrides, ScenarioData, ScenarioOverrides, startHeadKm } from '@rail/shared/gameplay/Scenario';
+import { applyOverrides, ScenarioData, ScenarioOverrides, startHeadKm, startTrack } from '@rail/shared/gameplay/Scenario';
 import { Scoring } from '@rail/shared/gameplay/Scoring';
-import { Dispatcher, planFromTimetable, StopPlan, WorkedTrain } from '@rail/shared/gameplay/Timetable';
+import { planFromTimetable, StopPlan, WorkedTrain } from '@rail/shared/gameplay/Timetable';
 import { buildBridge } from './infrastructure/Bridge';
 import { buildLcRoad, buildParallelRoad, LevelCrossingView } from './infrastructure/LevelCrossing';
 import { StationView } from './infrastructure/Station';
 import { buildLinesideChunk } from './infrastructure/TracksideProps';
 import { buildTunnel } from './infrastructure/Tunnel';
 import { Gamepad } from './input/Gamepad';
+import { enterGameScreen, isTouch } from './input/Device';
+import { TouchControls } from './ui/TouchControls';
 import { Keyboard } from './input/Keyboard';
 import { Mouse } from './input/Mouse';
-import { BlockSystem } from '@rail/shared/signalling/BlockSystem';
-import { Interlocking } from '@rail/shared/signalling/Interlocking';
+import { LineControl, RailControl } from '@rail/shared/signalling/Control';
 import { SignalView } from './signalling/SignalMeshBuilder';
+import { Railway } from '@rail/shared/track/Railway';
+import { DEFAULT_TRAFFIC, TrafficManager } from '@rail/shared/traffic/TrafficManager';
 import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import { formatGradient } from '@rail/shared/track/Gradient';
 import { Route } from '@rail/shared/track/Route';
@@ -80,7 +83,11 @@ const FREE_CAM_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyF']);
  */
 export class Game {
   readonly scenario: ScenarioData;
+  readonly railway: Railway;
+  /** the surveyed (+km) view: the world (track, terrain, stations, structures) is built from it */
   readonly route: Route;
+  /** the player's direction view: driving, signalling, physics and HUD run in its km */
+  private line: Route;
   readonly field: TerrainField;
   readonly scene = new THREE.Scene();
   /** Floating origin: all world content lives under `world`, positioned at -origin. */
@@ -107,11 +114,18 @@ export class Game {
   private player: WorkedTrain;
   private plan: Map<string, StopPlan>;
 
-  // signalling & gameplay
-  private interlocking: Interlocking;
-  private block: BlockSystem;
-  private dispatcher: Dispatcher;
-  private ai: { train: AITrain; view: TrainView }[] = [];
+  // signalling & gameplay: one LineControl per running direction; the player's is `lc`
+  private ctl: RailControl;
+  private lc: LineControl;
+  private get interlocking() { return this.lc.interlocking; }
+  private get block() { return this.lc.block; }
+  private get dispatcher() { return this.lc.dispatcher; }
+  /** scenario AI trains and opposite-line traffic, each drawn in the view it runs in */
+  private ai: { train: AITrain; view: TrainView; route: Route; carM: number; side?: number }[] = [];
+  /** scheduled trains on the other line of a double track, coming toward the player */
+  private oncoming: TrafficManager | null = null;
+  /** cab buffeting from a passing train, 0..1 */
+  private shake = 0;
   private rules: Rules;
   private scoring = new Scoring();
 
@@ -147,6 +161,9 @@ export class Game {
   private keyboard: Keyboard;
   private mouse: Mouse;
   private gamepad = new Gamepad();
+  /** on-screen controls on phones and tablets */
+  private touch: TouchControls | null = null;
+  private started = false;
   private raycaster = new THREE.Raycaster();
   private pressedControl: string | null = null;
 
@@ -183,9 +200,11 @@ export class Game {
   constructor(private rs: RenderSystem, private menus: Menus, private ui: HTMLElement, private audio: AudioEngine | null, scenario: ScenarioData, overrides: ScenarioOverrides, readonly scenarioId: string, benchCfg?: BenchConfig) {
     this.bench = benchCfg ? new Benchmark(benchCfg, rs) : null;
     const routeData = ROUTES[scenario.route];
-    this.route = new Route(routeData, REGIONS);
+    this.railway = new Railway(routeData, REGIONS);
+    this.route = this.railway.main;
     this.scenario = applyOverrides(scenario, overrides, this.route);
     const s = this.scenario;
+    this.line = this.railway.view(startTrack(s, this.route));
     this.overrides = overrides;
     this.field = new TerrainField(this.route);
     const preset = effective();
@@ -221,21 +240,20 @@ export class Game {
     this.world.add(this.traffic.group);
     this.waterfalls = new Waterfalls(this.route, this.field);
     this.world.add(this.waterfalls.group);
-    for (const sw of this.route.graph.switches) { const v = new SwitchView(this.route, sw); this.switchViews.push(v); this.world.add(v.group); }
+    for (const sw of this.railway.layout.switches) { const v = new SwitchView(this.route, sw); this.switchViews.push(v); this.world.add(v.group); }
     const f = newFrame();
     const nChunks = Math.ceil(this.route.alignment.length / CHUNK_M);
     for (let i = 0; i < nChunks; i++) { this.route.alignment.sample((i + 0.5) * CHUNK_M, f); this.chunkCentres.push(new THREE.Vector3(f.x, f.y, f.z)); }
     this.setupStreaming();
 
-    // ---- signalling ----
-    this.interlocking = new Interlocking(this.route.graph);
-    this.block = new BlockSystem(this.route, this.interlocking);
-    this.dispatcher = new Dispatcher(this.route, this.interlocking, this.block);
+    // ---- signalling (each running direction has its own) ----
+    this.ctl = new RailControl(this.railway);
+    this.lc = this.ctl.of(this.line);
 
     // ---- player train ----
     const loco = locoOrDefault(s.consist.loco);
     this.consist = new Consist(loco, COACHES, s.consist);
-    const head = startHeadKm(s, this.route, this.consist.length);
+    const head = startHeadKm(s, this.line, this.consist.length);
     this.dyn = new TrainDynamics(this.consist, head);
     // start with the train brake applied: driver must charge and release
     const FS = BRAKE_POSITIONS.indexOf('Full Service');
@@ -244,9 +262,9 @@ export class Game {
     this.dyn.brakes.bp.fill(3.5);
     this.dyn.brakes.bc.fill(3.8);
     this.sys = new LocoSystems(loco, this.dyn.brakes);
-    const startSt = s.start.atPlatform ? this.route.station(s.start.atPlatform) : undefined;
-    const startOffset = startSt?.lineInfo.find(l => l.id === s.start.line)?.offset ?? 0;
-    this.path = new TrackPath(this.route.graph, head, this.dyn.tailKm, startOffset);
+    const startSt = s.start.atPlatform ? this.line.station(s.start.atPlatform) : undefined;
+    const startOffset = startSt?.lineInfo.find(l => l.id === s.start.line)?.offset ?? this.line.running.offset;
+    this.path = new TrackPath(this.line.graph, head, this.dyn.tailKm, startOffset);
     this.plan = planFromTimetable(s.timetable);
     const dyn = this.dyn, plan = this.plan;
     this.player = {
@@ -254,6 +272,7 @@ export class Game {
       get headKm() { return dyn.headKm; }, get tailKm() { return dyn.tailKm; }, get speed() { return dyn.speed; },
       offsetAt: (km: number) => this.path.offsetAt(km),
     };
+    this.lc.add(this.player);
     if (startSt) this.dispatcher.startAt(this.player, startSt.code, this.time.seconds);
     this.trainView = new TrainView(this.consist.vehicles, loco, COACHES);
     this.world.add(this.trainView.group);
@@ -263,26 +282,23 @@ export class Game {
     this.cab.group.add(this.controls.group);
     this.trainView.loco.body.add(this.cab.group);
 
-    // ---- AI trains ----
+    // ---- AI trains: scenario trains (km in the data are surveyed km), then traffic on the other line ----
     for (const def of s.aiTrains) {
-      const t = new AITrain(def, this.route, this.block);
-      const vehicles: Vehicle[] = [];
-      vehicles.push({ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
-      const g = COACHES.goods;
-      for (let i = 0; i < def.wagons; i++) vehicles.push({ kind: 'coach', typeId: 'goods', massKg: 0, length: g.lengthM, frontOffset: AI_LOCO_LEN + 0.6 + i * (AI_WAGON_LEN + 0.6), bogieCentres: g.bogieCentresM, axleSpacing: g.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
-      const view = new TrainView(vehicles, loco, COACHES, 'freight');
-      this.world.add(view.group);
-      this.ai.push({ train: t, view });
+      const view = this.railway.view(def.track ?? this.line.running.id);
+      const d = { ...def, startKm: view.viewKm(def.startKm), despawnKm: view.viewKm(def.despawnKm) };
+      this.addAI(new AITrain(d, view, this.ctl.of(view).block), view);
     }
+    if (this.railway.double) this.startOncoming();
 
     // ---- gameplay ----
-    this.rules = new Rules(this.route, this.block, this.scoring, this.plan, s.endStation, this.consist.length, s.rules, () => this.god.eff);
+    this.rules = new Rules(this.line, this.block, this.scoring, this.plan, s.endStation, this.consist.length, s.rules, () => this.god.eff);
     this.scoring.enabled = !this.god.usedThisRun;
     this.offs.push(this.god.onChange(() => this.applyGod()));
     this.scene.add(this.highlight.group);
-    this.dispatcher.listeners.push({
-      arrived: (t, st, clock) => { if (t.id === 'player') this.rules.arrived(st, clock, this.dyn.headKm); },
-      departed: (t, st, clock) => { if (t.id === 'player') this.rules.departed(st, !!this.dispatcher.stationState('player', st.code)?.arrived, clock); },
+    // the player can change line (teleport), so listen on every direction's dispatcher
+    for (const l of this.ctl.lines) l.dispatcher.listeners.push({
+      arrived: (t, st, clock) => { if (t.id === 'player' && l === this.lc) this.rules.arrived(st, clock, this.dyn.headKm); },
+      departed: (t, st, clock) => { if (t.id === 'player' && l === this.lc) this.rules.departed(st, !!this.dispatcher.stationState('player', st.code)?.arrived, clock); },
     });
 
     // ---- cameras ----
@@ -291,8 +307,21 @@ export class Game {
     // ---- UI ----
     this.hud = new HUD(ui, () => this.togglePause(false));
     this.profile = new TrackProfile(ui);
-    this.minimap = new Minimap(ui, this.route);
+    this.minimap = new Minimap(ui, this.route, () => this.line.running.id);
     this.perf = new PerfOverlay(ui, rs);
+    if (isTouch) {
+      this.touch = new TouchControls(ui, {
+        sys: this.sys, notches: loco.notches,
+        brake: () => ({ handle: this.dyn.brakes.handle, independent: this.dyn.brakes.independent }),
+        act: (a, down) => this.onAction(a, down, new KeyboardEvent(down ? 'keydown' : 'keyup')),
+        setReverser: r => this.sys.setReverser(r),
+        camera: i => this.cameras.select(i, this.cameraContext(0.016)),
+        cameraIndex: () => this.cameras.index,
+        toggleDetails: () => this.hud.toggleDetails(),
+        toggleMap: () => this.minimap.canvas.classList.toggle('shown'),
+        autoHide: () => settings.get().touchAutoHide,
+      });
+    }
 
     // ---- input ----
     this.keyboard = new Keyboard({ action: (a, d, e) => this.onAction(a, d, e), digit: n => this.cameras.select(n - 1, this.cameraContext(0)) });
@@ -310,6 +339,8 @@ export class Game {
       bus.on('wheel-slip', e => { if (e.on) bus.emit('message', { text: 'Wheel slip! Ease the throttle or use sand (X)', kind: 'warn' }); }),
       settings.subscribe(() => this.applySettings()),
     );
+    document.addEventListener('visibilitychange', this.onVisibility);
+    this.offs.push(() => document.removeEventListener('visibilitychange', this.onVisibility));
     this.traffic.onHonk = p => this.trainAudio?.honk(p.x, p.y, p.z);
 
     // ---- loop ----
@@ -323,6 +354,66 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ setup
+  /** Draw an AI train (goods or passenger) and register it with its direction's signalling. */
+  private addAI(t: AITrain, route: Route) {
+    const def = t.def, goods = (def.kind ?? 'goods') === 'goods';
+    const loco = goods ? locoOrDefault('ep-7') : (LOCOS.wap7 ?? locoOrDefault('ep-7'));
+    const carM = def.carLengthM ?? AI_WAGON_LEN + 0.6;
+    const pax = ['general', 'sleeper', 'ac3'].filter(id => COACHES[id]);
+    const vehicles: Vehicle[] = [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
+    for (let i = 0; i < def.wagons; i++) {
+      // express make-up: general coaches at both ends, sleepers with an AC coach every few
+      const type = goods ? 'goods' : pax[i < 2 || i >= def.wagons - 2 ? 0 : i % 5 === 0 ? Math.min(2, pax.length - 1) : Math.min(1, pax.length - 1)];
+      const c = COACHES[type];
+      vehicles.push({ kind: 'coach', typeId: type, massKg: 0, length: c.lengthM, frontOffset: AI_LOCO_LEN + 0.6 + i * carM, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
+    }
+    const view = new TrainView(vehicles, loco, COACHES, goods ? 'freight' : 'passenger');
+    this.world.add(view.group);
+    this.ctl.of(route).add(t);
+    this.ai.push({ train: t, view, route, carM });
+  }
+
+  private removeAI(t: AITrain) {
+    const i = this.ai.findIndex(a => a.train === t);
+    if (i < 0) return;
+    const { view } = this.ai[i];
+    this.ai.splice(i, 1);
+    view.group.removeFromParent();
+    // loco geometry is per model; coach geometry is shared (cached), only its instance buffers go
+    view.loco.group.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+    view.group.traverse(o => { if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose(); });
+  }
+
+  /** Scheduled traffic on the line the player is not on (double line only). */
+  private startOncoming() {
+    const other = this.ctl.lines.find(l => l !== this.lc);
+    if (!other) return;
+    let seed = 7;
+    for (const ch of this.scenarioId + other.route.running.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    const tm = new TrafficManager(other, { ...DEFAULT_TRAFFIC, seed });
+    tm.onSpawn = t => this.addAI(t, other.route);
+    tm.onDespawn = t => this.removeAI(t);
+    this.oncoming = tm;
+  }
+
+  /**
+   * Move the player to another running line (a direction view): its routes are
+   * released, rules restart for the new line, and the other line's traffic is
+   * rebuilt. The caller places the train.
+   */
+  private switchLine(v: Route) {
+    if (v === this.line) return;
+    this.dispatcher.departNow.delete('player');
+    this.lc.remove(this.player);
+    if (this.oncoming) { this.oncoming.reset(); this.oncoming = null; }
+    this.line = v;
+    this.lc = this.ctl.of(v);
+    this.lc.add(this.player);
+    this.rules = new Rules(v, this.block, this.scoring, this.plan, this.scenario.endStation, this.consist.length, this.scenario.rules, () => this.god.eff);
+    if (this.railway.double) this.startOncoming();
+    this.applyGod();
+  }
+
   private setupStreaming() {
     const f = newFrame();
     const add = (km0: number, km1: number, build: () => THREE.Object3D, dispose?: (o: THREE.Object3D) => void) => {
@@ -365,7 +456,24 @@ export class Game {
     progress('Ready', 1);
   }
 
+  /**
+   * Background tab: stop rendering and simulating (and audio) entirely; on
+   * return the loop restarts with a fresh clock, so nothing jumps.
+   */
+  private onVisibility = () => {
+    if (this.ended || !this.started) return;
+    if (document.hidden) {
+      this.rs.renderer.setAnimationLoop(null);
+      this.audio?.ctx.suspend().catch(() => {});
+    } else {
+      this.engine.resetClock();
+      this.rs.renderer.setAnimationLoop(t => this.engine.tick(t));
+      if (!this.engine.paused) this.audio?.ctx.resume().catch(() => {});
+    }
+  };
+
   async begin(opts: { tutorial?: boolean } = {}) {
+    enterGameScreen(); // phones: fullscreen + landscape lock, inside the Start tap
     if (this.audio) {
       this.audio.resume();
       this.shots = new OneShots(this.audio);
@@ -378,10 +486,11 @@ export class Game {
     this.menus.hide();
     if (this.bench) this.prepareForBench();
     this.engine.paused = false;
+    this.started = true;
     this.rs.renderer.setAnimationLoop(t => this.engine.tick(t));
     const s = this.scenario;
     bus.emit('message', { text: `${s.name} - ${WEATHER[s.weather].name}, ${formatClock(this.time.seconds)}`, kind: 'info', ms: 6000 });
-    bus.emit('message', { text: 'Prepare the loco: P pantograph, O main breaker, ; release brakes, W reverser forward. F1 for help.', kind: 'info', ms: 12000 });
+    bus.emit('message', { text: isTouch ? 'Prepare the loco: tap \u22ef for pantograph, main breaker and reverser, then slide the brake up and the power up.' : 'Prepare the loco: P pantograph, O main breaker, ; release brakes, W reverser forward. F1 for help.', kind: 'info', ms: 12000 });
     if (s.timetable[0]?.dep) bus.emit('message', { text: `Departure ${s.timetable[0].dep} from ${this.route.station(s.timetable[0].station)?.name}. Wait for the starter signal.`, kind: 'info', ms: 12000 });
     this.applyGod();
     if (!this.bench && (opts.tutorial || tutorialPrefs.shouldAutoStart())) await this.startTutorial();
@@ -393,6 +502,7 @@ export class Game {
     const g = this.god, e = g.eff;
     this.hud.setGodMode(g.active);
     this.hud.setHidden(e.hideHud);
+    if (this.touch) this.touch.el.style.display = e.hideHud ? 'none' : '';
     this.profile.canvas.style.display = e.hideHud || !this.hud.visible ? 'none' : '';
     this.minimap.canvas.style.display = e.hideHud ? 'none' : '';
     this.scoring.enabled = !g.usedThisRun && !this.tutorialPractice;
@@ -405,6 +515,7 @@ export class Game {
     const back = () => this.showPauseMenu();
     this.menus.panel(godModePanel(this.god, {
       stations: this.route.stations, routeLengthKm: this.route.lengthKm, freeRoam: !this.scenario.rules,
+      lines: this.route.runningLines.map(l => l.id), currentLine: this.line.running.id,
       getHours: () => this.time.hours,
       setHours: h => { this.time.seconds = h * 3600; this.pausedNeedsRender = true; },
       setWeather: id => { this.weather.set(id, true); this.pausedNeedsRender = true; },
@@ -419,14 +530,19 @@ export class Game {
    * brakes on. Track, terrain and scenery are streamed in first (loading
    * spinner) so the train never appears in empty space.
    */
-  async teleportTo(target: { station?: string; km?: number }) {
+  async teleportTo(target: { station?: string; km?: number; line?: string }) {
     if (this.teleporting) return;
     this.teleporting = true;
     const wasPaused = this.engine.paused;
     this.engine.paused = true;
-    const st = target.station ? this.route.station(target.station) : undefined;
-    const km = st ? this.route.stopKm(st, this.consist.length) : Math.min(this.route.lengthKm - 0.05, Math.max(this.consist.length / 1000 + 0.05, target.km ?? 1));
-    this.menus.loading(`Teleporting to ${st ? st.name : `km ${km.toFixed(2)}`}`, 0.05);
+    // km in data and menus are surveyed km; positions on the line are in its own view
+    const here = this.line.canonicalKm(this.dyn.headKm);
+    if (target.line && target.line !== this.line.running.id) this.switchLine(this.railway.view(target.line));
+    const L = this.line;
+    const st = target.station ? L.station(target.station) : undefined;
+    const km = st ? L.stopKm(st, this.consist.length) : Math.min(L.lengthKm - 0.05, Math.max(this.consist.length / 1000 + 0.05, L.viewKm(target.km ?? here)));
+    const where = `${st ? st.name : `km ${L.canonicalKm(km).toFixed(2)}`}${this.railway.double ? ` (${L.running.id} line)` : ''}`;
+    this.menus.loading(`Teleporting to ${where}`, 0.05);
     const d = this.dyn, b = d.brakes;
     d.headKm = km; d.speed = 0; d.accel = 0;
     b.handle = BRAKE_POSITIONS.indexOf('Full Service'); b.er = 3.5; b.bp.fill(3.5); b.bc.fill(3.8);
@@ -434,10 +550,11 @@ export class Game {
     this.interlocking.releaseTrain('player');
     this.dispatcher.resetTrain('player');
     if (st) this.dispatcher.startAt(this.player, st.code, this.time.seconds);
-    this.path = new TrackPath(this.route.graph, km, d.tailKm, 0);
+    this.path = new TrackPath(L.graph, km, d.tailKm, L.running.offset);
+    this.oncoming?.reset();
     this.rules.callingOnUntil = -1;
     this.announced.clear();
-    this.trainView.update(this.route, km, x => this.path.offsetAt(x), d.odometer, this.lighting.nightLight);
+    this.trainView.update(L, km, x => this.path.offsetAt(x), d.odometer, this.lighting.nightLight);
     this.cameras.update(this.cameraContext(0.016));
     this.syncRenderCamera();
     this.updateStreaming(true);
@@ -454,7 +571,7 @@ export class Game {
     this.teleporting = false;
     this.pausedNeedsRender = true;
     if (wasPaused) this.resume(); else this.engine.paused = false;
-    bus.emit('message', { text: `Teleported to ${st ? st.name : `km ${km.toFixed(2)}`}. Brakes applied.`, kind: 'info' });
+    bus.emit('message', { text: `Teleported to ${where}. Brakes applied.`, kind: 'info' });
   }
 
   // ------------------------------------------------------------------ tutorial
@@ -464,9 +581,9 @@ export class Game {
     if (!data) return;
     this.stopTutorial(false);
     const head = this.dyn.headKm;
-    const atStation = this.route.stations.find(s => head >= s.platformFromKm && head <= s.platformToKm + 0.05);
+    const atStation = this.line.stations.find(s => head >= s.platformFromKm && head <= s.platformToKm + 0.05);
     if (!atStation || Math.abs(this.dyn.speed) > 0.1) {
-      const nearest = [...this.route.stations].sort((a, b) => Math.abs(a.km - head) - Math.abs(b.km - head))[0];
+      const nearest = [...this.line.stations].sort((a, b) => Math.abs(a.km - head) - Math.abs(b.km - head))[0];
       await this.teleportTo({ station: nearest.code });
     }
     if (this.engine.paused) this.resume();
@@ -484,12 +601,13 @@ export class Game {
     this.dispatcher.departNow.add('player');
     this.applyGod();
     bus.emit('message', { text: 'Tutorial: practice mode, scoring is off until you finish.', kind: 'info', ms: 6000 });
-    const t = new Tutorial(data, 'en');
+    const t = new Tutorial(data, 'en', isTouch);
     this.tutorial = t;
     this.tutorialCard = new TutorialCard(this.ui, t, () => this.tutorialShowMe());
     t.onStep = step => {
       this.tut = { horn: false, moved: false, underLimit: 0 };
       this.setTutorialHighlight(step.highlight);
+      this.touch?.highlight(step.touch?.highlight ?? null);
     };
     t.onFinish = completed => {
       this.stopTutorial(completed);
@@ -504,6 +622,7 @@ export class Game {
     this.tutorialCard?.dispose();
     this.tutorialCard = null;
     this.setTutorialHighlight(null);
+    this.touch?.highlight(null);
     this.tutorialPractice = false;
     if (!this.god.eff.autoDrive) this.dispatcher.departNow.delete('player');
     this.applyGod();
@@ -563,12 +682,12 @@ export class Game {
     s.pantoUp = true; s.pantoPos = 1; s.lineVoltage = 25; s.vcb = true; s.reverser = 1; s.headlight = 2;
     b.handle = 1; b.er = 5; b.bp.fill(5); b.bc.fill(0);
     const idx = { cab: 0, chase: 4, free: 6 }[this.bench!.cfg.view];
-    this.trainView.update(this.route, this.dyn.headKm, km => this.path.offsetAt(km), 0, 0);
+    this.trainView.update(this.line, this.dyn.headKm, km => this.path.offsetAt(km), 0, 0);
     this.cameras.update(this.cameraContext(0.016));
     if (idx === 6) {
       // fixed free-camera pose: 40 m up, beside the line, looking along it
       const f = newFrame();
-      this.route.alignment.sampleOffset((this.dyn.headKm + 0.4) * 1000, -60, f);
+      this.line.alignment.sampleOffset((this.dyn.headKm + 0.4) * 1000, -60, f);
       this.cameras.camera.position.set(f.x, f.y + 40, f.z);
       this.cameras.camera.lookAt(f.x + Math.cos(f.heading) * 300, f.y, f.z + Math.sin(f.heading) * 300);
     }
@@ -718,8 +837,8 @@ export class Game {
 
   // ------------------------------------------------------------------ simulation
   private limitAt = (km: number) => {
-    let v = Math.min(this.route.speedLimitAt(km), this.god.eff.unlimitedSpeed ? Infinity : this.consist.loco.maxSpeedKmph);
-    if (Math.abs(this.pathOffset(km)) > 0.3) v = Math.min(v, 30); // loop lines and turnouts
+    let v = Math.min(this.line.speedLimitAt(km), this.god.eff.unlimitedSpeed ? Infinity : this.consist.loco.maxSpeedKmph);
+    if (Math.abs(this.pathOffset(km) - this.line.running.offset) > 0.3) v = Math.min(v, 30); // loop lines, turnouts, wrong line
     if (km <= this.rules.callingOnUntil) v = Math.min(v, 15);
     return v;
   };
@@ -734,16 +853,16 @@ export class Game {
   private sim(dt: number) {
     const d = this.dyn, s = this.sys;
     const env = {
-      grade: (km: number) => this.route.alignment.gradientAt(km),
-      curvature: (km: number) => this.route.alignment.curvatureAt(km),
-      minKm: 0.01, maxKm: this.route.lengthKm - 0.02,
+      grade: (km: number) => this.line.alignment.gradientAt(km),
+      curvature: (km: number) => this.line.alignment.curvatureAt(km),
+      minKm: 0.01, maxKm: this.line.lengthKm - 0.02,
     };
     const limit = this.currentLimit();
     const e = this.god.eff;
     d.massScale = e.massMultiplier; d.powerScale = e.powerMultiplier; d.ignoreMaxSpeed = e.unlimitedSpeed; d.noSlip = e.noWheelSlip;
     d.brakes.instant = e.instantBrakes; d.brakes.infiniteAir = e.infiniteAir;
     s.vigilanceEnabled = e.vigilance; s.ignoreMaxSpeed = e.unlimitedSpeed;
-    this.block.forceGreen = e.forceGreen;
+    for (const l of this.ctl.lines) l.block.forceGreen = l === this.lc && e.forceGreen;
     this.time.scale = this.god.active ? (e.freezeTime ? 0 : e.timeSpeed) : this.baseTimeScale;
     if (e.autoDrive || e.autoStopAtRed) {
       const targets = { limitKmph: limit, nextStop: this.block.nextSignal(d.headKm, this.path.offsetAt(d.headKm), true, this.pathOffset), stationStopKm: this.nextBookedStopKm() };
@@ -757,8 +876,11 @@ export class Game {
     d.step(dt, { notch: s.notch, regenNotch: s.regen, reverser: s.reverser, sander: s.sander, powerAvailable: s.powerAvailable }, env);
     if (this.bench) d.speed = this.bench.cfg.speedKmph / 3.6;
     for (const id of this.path.update(d.headKm, d.tailKm)) bus.emit('switch-crossed', { id });
-    for (const a of this.ai) if (!a.train.gone) a.train.update(dt);
-    for (const a of this.ai) if (a.train.gone && a.view.group.parent) { a.view.group.removeFromParent(); this.interlocking.releaseTrain(a.train.id); }
+    // scenario AI trains (traffic trains are moved by their manager)
+    const traffic = this.oncoming?.trains;
+    for (const a of this.ai) if (!a.train.gone && !traffic?.includes(a.train)) a.train.update(dt);
+    for (const a of [...this.ai]) if (a.train.gone && !traffic?.includes(a.train)) { this.ctl.of(a.route).remove(a.train); this.removeAI(a.train); }
+    if (this.oncoming && !this.bench) this.oncoming.update(dt, this.oncoming.route.viewKm(this.line.canonicalKm(d.headKm)));
 
     // wheel slip / coupler events
     const slip = d.traction.slipping;
@@ -783,12 +905,13 @@ export class Game {
     // signalling and station working at 10 Hz
     this.sigAcc += dt;
     if (this.sigAcc >= 0.1) {
-      const occ: WorkedTrain[] = [this.player, ...this.ai.filter(a => !a.train.gone).map(a => a.train)];
-      this.interlocking.update(this.sigAcc, occ);
-      this.dispatcher.update(this.sigAcc, occ, this.time.seconds);
-      this.block.update(occ);
+      this.ctl.update(this.sigAcc, this.time.seconds);
+      // crossing gates close for a train approaching on either line (each checked in its own direction's km)
       for (const lc of this.lcs) {
-        const near = occ.some(o => (o.headKm > lc.road.km - 1.6 && o.headKm < lc.road.km + 0.05) || (o.tailKm < lc.road.km + 0.03 && o.headKm > lc.road.km));
+        const near = this.ctl.lines.some(l => {
+          const k = l.route.viewKm(lc.road.km);
+          return l.trains.some(o => (o.headKm > k - 1.6 && o.headKm < k + 0.05) || (o.tailKm < k + 0.03 && o.headKm > k));
+        });
         lc.update(this.sigAcc, near);
       }
       this.sigAcc = 0;
@@ -803,8 +926,8 @@ export class Game {
   private cameraContext(dt: number): CameraContext {
     const v = this.dyn.speed;
     return {
-      dt, time: this.t, train: this.trainView, route: this.route, field: this.field, headKm: this.dyn.headKm, speed: v,
-      lateralAccel: v * v * this.route.alignment.curvatureAt(this.dyn.headKm), slack: this.dyn.slack, jolt: this.jolt,
+      dt, time: this.t, train: this.trainView, route: this.line, field: this.field, headKm: this.dyn.headKm, speed: v,
+      lateralAccel: v * v * this.line.alignment.curvatureAt(this.dyn.headKm), slack: this.dyn.slack, jolt: this.jolt, shake: this.shake,
       eye: cabLayout(this.consist.loco.lengthM).eye, keys: c => this.keyboard.isDown(c),
       freeRange: this.god.eff.unlockFreeCamera ? Infinity : 4000,
     };
@@ -812,7 +935,7 @@ export class Game {
 
   private updatePathLookahead() {
     const head = this.dyn.headKm;
-    const { ramps } = this.route.graph.followForward(head, this.path.offsetAt(head), head + 4);
+    const { ramps } = this.line.graph.followForward(head, this.path.offsetAt(head), head + 4);
     const known = new Set(this.path.ramps.map(r => r.switchId));
     this.aheadRamps = [...this.path.ramps, ...ramps.filter(r => !known.has(r.switchId))].sort((a, b) => a.start - b.start);
     const base = this.path.baseOffset, list = this.aheadRamps;
@@ -840,16 +963,17 @@ export class Game {
     const night = this.lighting.nightLight;
 
     // trains
-    this.trainView.update(this.route, d.headKm, km => this.path.offsetAt(km), d.odometer, night);
+    this.trainView.update(this.line, d.headKm, km => this.path.offsetAt(km), d.odometer, night);
     const lm = this.trainView.loco;
     lm.setPantograph(s.pantoPos);
     lm.setLights(s.headlight, s.markers, s.flasher, this.t, s.reverser);
     for (const a of this.ai) {
       if (a.train.gone) continue;
-      a.view.update(this.route, a.train.headKm, km => a.train.offsetAt(km), a.train.headKm * 1000, night);
+      a.view.update(a.route, a.train.headKm, km => a.train.offsetAt(km), a.train.headKm * 1000, night);
       a.view.loco.setPantograph(1);
       a.view.loco.setLights(night > 0.3 || this.weather.p.fog > 0.004 ? 2 : 1, true, false, this.t, 1);
     }
+    this.updatePassing(dt);
 
     // camera
     const ctx = this.cameraContext(dt);
@@ -902,7 +1026,7 @@ export class Game {
         speedKmph: Math.abs(d.speedKmph), limit: Math.round(this.currentLimit() * conv), bp: d.brakes.locoBP, bc: d.brakes.locoBC, mr: d.brakes.mr, er: d.brakes.er,
         kV: s.lineVoltage, amps: d.traction.motorCurrent, teKN: Math.abs(d.traction.tractiveForce) / 1000,
         slip: d.traction.slipping, overspeed: s.overspeed, vigilance: s.vigilanceState, brakeApplied: d.brakes.locoBC > 0.3,
-        pantoDown: s.pantoDown, vcbOpen: !s.vcb, km: d.headKm, nextSignal: ns ? ns.id : '-', signalDist: ns ? (ns.km - d.headKm) * 1000 : 99999,
+        pantoDown: s.pantoDown, vcbOpen: !s.vcb, km: this.line.canonicalKm(d.headKm), nextSignal: ns ? ns.id : '-', signalDist: ns ? (ns.km - d.headKm) * 1000 : 99999,
         aspect: ns ? ns.aspect : '-', clock: formatClock(this.time.seconds, true), units: units === 'mph' ? 'mph' : 'km/h', displaySpeed: Math.abs(d.speedKmph) * conv,
       }, night);
     }
@@ -912,12 +1036,12 @@ export class Game {
     const blink = Math.sin(this.t * 6) > 0;
     const drawD = effective().drawDistance;
     const fr = newFrame();
-    for (const sig of this.block.signals) {
+    for (const l of this.ctl.lines) for (const sig of l.block.signals) {
       let v = this.signalViews.get(sig.id);
       if (!v) {
-        this.route.alignment.sample(sig.km * 1000, fr);
+        l.route.alignment.sample(sig.km * 1000, fr);
         if (Math.hypot(fr.x - cam.position.x, fr.z - cam.position.z) > Math.min(drawD, 3000)) continue;
-        v = new SignalView(this.route, sig);
+        v = new SignalView(l.route, sig);
         this.signalViews.set(sig.id, v);
         this.world.add(v.group);
       }
@@ -932,7 +1056,7 @@ export class Game {
 
     prof.end('scenery');
     // station announcements as the train approaches
-    for (const st of this.route.stations) {
+    for (const st of this.line.stations) {
       const dist = st.platformFromKm - d.headKm;
       if (dist > 0 && dist < 1.2 && !this.announced.has(st.code)) {
         this.announced.add(st.code);
@@ -957,15 +1081,21 @@ export class Game {
     this.highlight.update(this.t);
     this.uiAcc += dt; this.profAcc += dt; this.mapAcc += dt;
     if (this.uiAcc > 0.1) { this.uiAcc = 0; this.updateHud(); }
-    if (this.profAcc > 0.2 && this.hud.visible) { this.profAcc = 0; this.profile.draw(this.route, this.block, d.headKm, this.limitAt, this.pathOffset); }
-    if (this.mapAcc > 0.5) { this.mapAcc = 0; this.minimap.draw([{ km: d.headKm, player: true }, ...this.ai.filter(a => !a.train.gone).map(a => ({ km: a.train.headKm, player: false }))], cam.position); }
+    if (this.profAcc > 0.2 && this.hud.visible) { this.profAcc = 0; this.profile.draw(this.line, this.block, d.headKm, this.limitAt, this.pathOffset, this.oncomingKms()); }
+    if (this.mapAcc > 0.5) {
+      this.mapAcc = 0;
+      this.minimap.draw([
+        { km: this.line.canonicalKm(d.headKm), player: true, line: this.line.running.id },
+        ...this.ai.filter(a => !a.train.gone).map(a => ({ km: a.route.canonicalKm(a.train.headKm), player: false, line: a.route.running.id })),
+      ], cam.position);
+    }
 
     if (this.debugHide.size) this.applyDebugHide();
     prof.begin('render');
     this.rs.render();
     prof.end('render');
     const c = prof.counters;
-    c.km = d.headKm; c.tiles = this.chunks.tileCount; c.trackChunks = this.trackChunks.size; c.grass = this.chunks.grassCount; c.props = this.chunks.propCount;
+    c.km = this.line.canonicalKm(d.headKm); c.tiles = this.chunks.tileCount; c.trackChunks = this.trackChunks.size; c.grass = this.chunks.grassCount; c.props = this.chunks.propCount;
     prof.frame(this.engine.rawMs);
     this.bench?.frame(this.engine.rawMs);
     this.perf.frame(dt);
@@ -1008,11 +1138,11 @@ export class Game {
   /** Head km of the next booked stop marker ahead that has not been served yet (null if none). */
   private nextBookedStopKm() {
     if (!this.god.eff.mustStop) return null;
-    for (const st of this.route.stations) {
+    for (const st of this.line.stations) {
       if (st.platformToKm < this.dyn.headKm) continue;
       const p = this.plan.get(st.code);
       if (!p?.stop || this.dispatcher.stationState('player', st.code)?.arrived) continue;
-      return this.route.stopKm(st, this.consist.length);
+      return this.line.stopKm(st, this.consist.length);
     }
     return null;
   }
@@ -1023,7 +1153,44 @@ export class Game {
     return !!n && this.route.inTunnel(n.km) && p.y < this.route.alignment.elevationAt(n.km) + 9;
   }
 
-  private headHeading() { return this.route.alignment.sample(this.dyn.headKm * 1000, newFrame()).heading; }
+  private headHeading() { return this.line.alignment.sample(this.dyn.headKm * 1000, newFrame()).heading; }
+
+  /** Head km (in the player's view) of trains on the other line. */
+  private oncomingKms() {
+    return this.ai.filter(a => a.route !== this.line && !a.train.gone).map(a => this.line.viewKm(a.route.canonicalKm(a.train.headKm)));
+  }
+
+  /**
+   * Trains passing on the other line: when an AI loco's nose passes the cab,
+   * play the pressure-wave whoosh and wheel roar, buffet the cab, and now and
+   * then the other driver sounds the horn. Strength scales with closing speed.
+   */
+  private updatePassing(dt: number) {
+    this.shake = Math.max(0, this.shake - dt * 1.2);
+    const me = this.line;
+    const cab = me.canonicalKm(this.dyn.headKm);
+    const myV = this.dyn.speed * (me.mirrored ? -1 : 1); // m/s toward increasing surveyed km
+    for (const a of this.ai) {
+      if (a.route === me || a.train.gone) continue;
+      const head = a.route.canonicalKm(a.train.headKm), tail = a.route.canonicalKm(a.train.tailKm);
+      const aiV = a.train.speed * (a.route.mirrored ? -1 : 1);
+      const rel = Math.abs(myV - aiV);
+      const lo = Math.min(head, tail), hi = Math.max(head, tail);
+      // alongside: keep buffeting while the train streams past
+      if (cab >= lo && cab <= hi && rel > 5) this.shake = Math.max(this.shake, Math.min(0.6, rel / 60));
+      const side = Math.sign(head - cab);
+      if (a.side !== undefined && side !== a.side && Math.abs(head - cab) < 0.08 && rel > 3) {
+        this.shake = Math.max(this.shake, Math.min(1, 0.25 + rel / 40));
+        const p = new THREE.Vector3().setFromMatrixPosition(this.trainView.vehicleMatrices[0]);
+        this.trainAudio?.passBy(p.x, p.y + 2, p.z, rel, a.train.length, a.carM);
+        if (Math.random() < 0.35) {
+          const q = new THREE.Vector3().setFromMatrixPosition(a.view.vehicleMatrices[0]);
+          this.trainAudio?.honk(q.x, q.y + 4, q.z);
+        }
+      }
+      a.side = side;
+    }
+  }
 
   private cameraKm() {
     const p = this.cameras.camera.position;
@@ -1049,9 +1216,9 @@ export class Game {
         if (!all && built >= 3) return;
         built++;
         const g = new THREE.Group();
-        const tc = buildTrackChunk(this.route, i);
+        const tc = buildTrackChunk(this.railway, i);
         const s0 = i * CHUNK_M, s1 = Math.min(this.route.alignment.length, s0 + CHUNK_M);
-        const ls = buildLinesideChunk(this.route, this.field, s0, s1, tc.position.x, tc.position.z);
+        const ls = buildLinesideChunk(this.railway, this.field, s0, s1, tc.position.x, tc.position.z);
         ls.position.copy(tc.position);
         g.add(tc, ls);
         this.trackChunks.set(i, g);
@@ -1075,7 +1242,7 @@ export class Game {
     this.audio.setListener(cam.position.x, cam.position.y, cam.position.z, fwd.x, fwd.y, fwd.z);
     const d = this.dyn;
     const head = d.headKm;
-    const st = this.route.structureAt(head);
+    const st = this.line.structureAt(head);
     const locoPos = new THREE.Vector3().setFromMatrixPosition(this.trainView.vehicleMatrices[0]);
     // nearest bogies to the listener for joint clacks
     const bogies: { key: number; km: number; x: number; y: number; z: number; axle: number }[] = [];
@@ -1085,19 +1252,19 @@ export class Game {
       const c = head - (v[i].frontOffset + v[i].length / 2) / 1000;
       for (const k of [0, 1]) {
         const km = c + (k ? -1 : 1) * v[i].bogieCentres / 2000;
-        this.route.alignment.sampleOffset(km * 1000, this.path.offsetAt(km), f);
+        this.line.alignment.sampleOffset(km * 1000, this.path.offsetAt(km), f);
         bogies.push({ key: i * 2 + k, km, x: f.x, y: f.y + RAIL_TOP, z: f.z, axle: v[i].axleSpacing });
       }
     }
     bogies.sort((a, b) => Math.hypot(a.x - cam.position.x, a.z - cam.position.z) - Math.hypot(b.x - cam.position.x, b.z - cam.position.z));
     this.trainAudio.update({
       speedKmph: d.speedKmph, amps: d.traction.motorCurrent, vcb: this.sys.vcb, compressor: d.brakes.compressorOn,
-      curvature: this.route.alignment.curvatureAt(head), steelBridge: st?.type === 'bridge' && st.style !== 'arch-viaduct', tunnel: st?.type === 'tunnel',
+      curvature: this.line.alignment.curvatureAt(head), steelBridge: st?.type === 'bridge' && st.style !== 'arch-viaduct', tunnel: st?.type === 'tunnel',
       slipping: d.traction.slipping, bpRate: this.bpRate, bc: d.brakes.locoBC, overspeed: this.sys.overspeed,
       loco: locoPos, bogies: bogies.slice(0, 10), dt,
     });
     const tun = this.route.inTunnel(this.cameraKm());
-    const ghat = this.route.ghatFactor(head);
+    const ghat = this.line.ghatFactor(head);
     this.audio.setReverb(tun ? 0.55 : 0.06 + ghat * 0.14);
     // ambience inputs
     let river: { x: number; y: number; z: number; d: number } | null = null;
@@ -1128,9 +1295,10 @@ export class Game {
     const limit = this.currentLimit();
     const ns = this.nextSignal();
     // next station on the line ahead
-    const st = this.route.stations.find(x => x.platformToKm > head + 0.01);
+    const L = this.line;
+    const st = L.stations.find(x => x.platformToKm > head + 0.01);
     const stopping = st ? !!this.plan.get(st.code) : false;
-    const stDist = st ? ((stopping ? this.route.stopKm(st, this.consist.length) : st.platformFromKm) - head) * 1000 : 0;
+    const stDist = st ? ((stopping ? L.stopKm(st, this.consist.length) : st.platformFromKm) - head) * 1000 : 0;
     // next lower limit
     let restriction: { kmph: number; dist: number } | null = null;
     for (let km = head + 0.02; km < head + 4; km += 0.02) {
@@ -1139,11 +1307,11 @@ export class Game {
     }
     // ETA vs timetable
     let eta = '--', due = '';
-    const next = this.scenario.timetable.find(e => e.arr && (this.route.station(e.station)?.platformToKm ?? 0) > head && !this.dispatcher.stationState('player', e.station)?.arrived);
+    const next = this.scenario.timetable.find(e => e.arr && (L.station(e.station)?.platformToKm ?? 0) > head && !this.dispatcher.stationState('player', e.station)?.arrived);
     if (next) {
-      const nst = this.route.station(next.station)!;
-      const dist = (this.route.stopKm(nst, this.consist.length) - head) * 1000;
-      const v = Math.max(Math.abs(d.speed), this.route.speedLimitAt(head) * KMPH * 0.6);
+      const nst = L.station(next.station)!;
+      const dist = (L.stopKm(nst, this.consist.length) - head) * 1000;
+      const v = Math.max(Math.abs(d.speed), L.speedLimitAt(head) * KMPH * 0.6);
       const etaS = this.time.seconds + dist / v;
       eta = formatClock(etaS);
       const late = Math.round((etaS - parseClock(next.arr!)) / 60);
@@ -1152,6 +1320,10 @@ export class Game {
       const dep = this.scenario.timetable.find(e => e.dep && !this.dispatcher.stationState('player', e.station)?.departed);
       if (dep) due = `Depart ${this.route.station(dep.station)?.name} at ${dep.dep}`;
     }
+    this.touch?.update({
+      speed: Math.abs(d.speedKmph) * conv, units: units === 'mph' ? 'mph' : 'km/h', limit: Math.round(limit * conv),
+      aspect: ns ? ns.aspect : null, dist: ns ? (ns.km - head) * 1000 : null, vigilance: s.vigilanceState,
+    });
     this.hud.update({
       speed: Math.abs(d.speedKmph) * conv, units: units === 'mph' ? 'mph' : 'km/h', limit: Math.round(limit * conv),
       notch: s.notch > 0 ? `P${s.notch}` : s.regen > 0 ? `B${s.regen}` : '0', reverser: s.reverser > 0 ? 'F' : s.reverser < 0 ? 'R' : 'N',
@@ -1159,7 +1331,7 @@ export class Game {
       signal: ns ? { id: ns.id, aspect: ns.aspect, dist: (ns.km - head) * 1000 } : null,
       station: st ? { name: st.name, dist: stDist, stop: stopping } : null,
       restriction, clock: formatClock(this.time.seconds, true), eta, due,
-      gradient: formatGradient(this.route.alignment.gradientAt(head)), km: head,
+      gradient: formatGradient(L.alignment.gradientAt(head)), km: L.canonicalKm(head),
       score: this.scenario.rules ? this.scoring.total : null, vigilance: s.vigilanceState,
       camera: CAMERA_NAMES[this.cameras.index], weather: WEATHER[this.weather.id].name,
     });
@@ -1181,7 +1353,7 @@ export class Game {
 
   /** Debug/test hook: lets automated checks read state. */
   debugState() {
-    return { km: this.dyn.headKm, speed: this.dyn.speedKmph, bp: this.dyn.brakes.locoBP, signal: this.nextSignal()?.aspect, camera: this.cameras.index, tiles: this.chunks.root.children.length, chunks: this.trackChunks.size };
+    return { km: this.line.canonicalKm(this.dyn.headKm), line: this.line.running.id, oncoming: this.oncoming?.trains.length ?? 0, speed: this.dyn.speedKmph, bp: this.dyn.brakes.locoBP, signal: this.nextSignal()?.aspect, camera: this.cameras.index, tiles: this.chunks.root.children.length, chunks: this.trackChunks.size };
   }
   debugSystems() { return this.sys; }
 

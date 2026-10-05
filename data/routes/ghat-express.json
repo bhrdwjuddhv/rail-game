@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "lengthKm": 54,
   "startElevationM": 100,
+  "lines": ["UP", "DOWN"],
+  "lineSpacingM": 5.3,
   "regions": [
     { "fromKm": 0, "toKm": 31, "region": "north-plains" },
     { "fromKm": 31, "toKm": 54.1, "region": "western-ghats" }
@@ -109,43 +111,47 @@
     {
       "name": "Sonagarh", "nameHi": "सोनागढ़", "nameRegional": "સોનાગઢ", "code": "SNGH", "km": 1.0, "type": "wayside",
       "platformLengthM": 600, "buildingSide": 1,
-      "lines": [ { "id": "main", "offset": 0 }, { "id": "loop1", "offset": -5.5 } ],
-      "platforms": [ { "num": "1", "from": 1.75, "to": 8, "lines": ["main"] }, { "num": "2", "from": -7.25, "to": -13, "lines": ["loop1"] } ]
+      "lines": [],
+      "platforms": [ { "num": "1", "from": 4.4, "to": 10.4, "lines": ["UP"] }, { "num": "2", "from": -4.4, "to": -10.4, "lines": ["DOWN"] } ],
+      "crossovers": [ { "km": 1.35, "fromLine": "DOWN", "toLine": "UP" } ]
     },
     {
       "name": "Kesarpur", "nameHi": "केसरपुर", "nameRegional": "કેસરપુર", "code": "KSRP", "km": 10.6, "type": "halt",
       "platformLengthM": 420, "buildingSide": 1,
-      "lines": [ { "id": "main", "offset": 0 } ],
-      "platforms": [ { "num": "1", "from": 1.75, "to": 7, "lines": ["main"] } ]
+      "lines": [],
+      "platforms": [ { "num": "1", "from": 4.4, "to": 9.4, "lines": ["UP"] }, { "num": "2", "from": -4.4, "to": -9.4, "lines": ["DOWN"] } ]
     },
     {
       "name": "Ranipur Junction", "nameHi": "रानीपुर जंक्शन", "nameRegional": "રાણીપુર જંક્શન", "code": "RNPJ", "km": 19.5, "type": "junction",
       "platformLengthM": 600, "buildingSide": 1,
-      "lines": [ { "id": "main", "offset": 0 }, { "id": "loop1", "offset": 9.0 }, { "id": "loop2", "offset": -5.5 } ],
+      "lines": [ { "id": "DL", "offset": -12.15 }, { "id": "UL", "offset": 12.15 } ],
       "platforms": [
-        { "num": "1", "from": 10.75, "to": 17, "lines": ["loop1"] },
-        { "num": "2/3", "from": 1.75, "to": 7.25, "lines": ["main", "loop1"] },
-        { "num": "4", "from": -7.25, "to": -13, "lines": ["loop2"] }
+        { "num": "1", "from": 13.9, "to": 19.9, "lines": ["UL"] },
+        { "num": "2/3", "from": 4.4, "to": 10.4, "lines": ["UP", "UL"] },
+        { "num": "4/5", "from": -4.4, "to": -10.4, "lines": ["DOWN", "DL"] }
       ],
-      "crossovers": [ { "km": 19.83, "fromLine": "loop2", "toLine": "main" } ]
+      "crossovers": [ { "km": 20.1, "fromLine": "DOWN", "toLine": "UP" } ]
     },
     {
       "name": "Nadikinara", "nameHi": "नदीकिनारा", "nameRegional": "નદીકિનારા", "code": "NDKN", "km": 28.2, "type": "wayside",
       "platformLengthM": 600, "buildingSide": -1,
-      "lines": [ { "id": "main", "offset": 0 }, { "id": "loop1", "offset": 5.5 } ],
-      "platforms": [ { "num": "1", "from": -1.75, "to": -8, "lines": ["main"] }, { "num": "2", "from": 7.25, "to": 13, "lines": ["loop1"] } ]
+      "lines": [],
+      "platforms": [ { "num": "1", "from": -4.4, "to": -10.4, "lines": ["DOWN"] }, { "num": "2", "from": 4.4, "to": 10.4, "lines": ["UP"] } ],
+      "crossovers": [ { "km": 28.55, "fromLine": "DOWN", "toLine": "UP" } ]
     },
     {
       "name": "Ghatmatha", "nameHi": "घाटमाथा", "nameRegional": "ಘಾಟಮಾಥಾ", "code": "GHTM", "km": 40.8, "type": "wayside",
       "platformLengthM": 600, "buildingSide": 1,
-      "lines": [ { "id": "main", "offset": 0 }, { "id": "loop1", "offset": -5.5 } ],
-      "platforms": [ { "num": "1", "from": 1.75, "to": 7.5, "lines": ["main"] }, { "num": "2", "from": -7.25, "to": -12, "lines": ["loop1"] } ]
+      "lines": [],
+      "platforms": [ { "num": "1", "from": 4.4, "to": 9.9, "lines": ["UP"] }, { "num": "2", "from": -4.4, "to": -9.9, "lines": ["DOWN"] } ],
+      "crossovers": [ { "km": 41.15, "fromLine": "DOWN", "toLine": "UP" } ]
     },
     {
       "name": "Meghavan", "nameHi": "मेघवन", "nameRegional": "ಮೇಘವನ", "code": "MGVN", "km": 52.6, "type": "terminal",
       "platformLengthM": 600, "buildingSide": -1,
-      "lines": [ { "id": "main", "offset": 0 }, { "id": "loop1", "offset": 5.5 } ],
-      "platforms": [ { "num": "1", "from": -1.75, "to": -8, "lines": ["main"] }, { "num": "2", "from": 7.25, "to": 13, "lines": ["loop1"] } ]
+      "lines": [],
+      "platforms": [ { "num": "1", "from": -4.4, "to": -10.4, "lines": ["DOWN"] }, { "num": "2", "from": 4.4, "to": 10.4, "lines": ["UP"] } ],
+      "crossovers": [ { "km": 52.95, "fromLine": "DOWN", "toLine": "UP" } ]
     }
   ],
   "autoSignalSpacingKm": 1.7,
@@ -198,6 +204,10 @@
     { "fromKm": 41.7, "toKm": 50.2, "zone": "ghats" },
     { "fromKm": 50.2, "toKm": 51.6, "zone": "fields" },
     { "fromKm": 51.6, "toKm": 54.1, "zone": "town", "roadOffset": -55 }
+  ],
+  "crossovers": [
+    { "km": 15.2, "fromLine": "DOWN", "toLine": "UP" },
+    { "km": 47.0, "fromLine": "DOWN", "toLine": "UP" }
   ],
   "features": [
     { "type": "waterfall", "km": 33.1 },

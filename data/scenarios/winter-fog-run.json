@@ -4,18 +4,18 @@
   "difficulty": "Hard",
   "description": "A pre-dawn express in thick winter fog. A goods train is running ahead of you, so expect caution aspects. Read every signal, sound the horn at whistle boards, and bring the express into Ranipur Junction and Nadikinara safely.",
   "route": "ghat-express",
-  "start": { "km": 1.0, "line": "main", "atPlatform": "SNGH" },
+  "start": { "km": 1.0, "track": "DOWN", "atPlatform": "SNGH" },
   "consist": { "loco": "ep-7", "coaches": [ { "type": "ac3", "count": 6 }, { "type": "sleeper", "count": 10 }, { "type": "general", "count": 2 } ], "loaded": true },
   "time": "04:50",
   "timeScale": 1,
   "weather": "fog",
   "timetable": [
-    { "station": "SNGH", "dep": "04:53", "line": "main" },
-    { "station": "RNPJ", "arr": "05:16", "dep": "05:20", "line": "main" },
-    { "station": "NDKN", "arr": "05:36", "line": "main" }
+    { "station": "SNGH", "dep": "04:53" },
+    { "station": "RNPJ", "arr": "05:16", "dep": "05:20" },
+    { "station": "NDKN", "arr": "05:36" }
   ],
   "aiTrains": [
-    { "id": "goods-1", "name": "Goods BCN-114", "startKm": 7.5, "line": "main", "maxKmph": 55, "wagons": 30, "stops": [ { "station": "RNPJ", "line": "loop2", "dwellS": 600 } ], "despawnKm": 49 }
+    { "id": "goods-1", "name": "Goods BCN-114", "startKm": 7.5, "line": "DOWN", "track": "DOWN", "maxKmph": 55, "wagons": 30, "stops": [ { "station": "RNPJ", "line": "DL", "dwellS": 600 } ], "despawnKm": 49 }
   ],
   "endStation": "NDKN",
   "rules": true

@@ -1,10 +1,13 @@
 import { TrainDynamics } from '@rail/shared/physics/TrainDynamics';
 TrainDynamics.strictNaN = import.meta.env.DEV;
 import './style.css';
+import './touch.css';
 import { AudioEngine } from './audio/AudioEngine';
 import { assets } from './core/AssetRegistry';
 import { RendererKind, RenderSystem } from './core/Renderer';
-import { applyPreset, PRESETS, settings } from './core/Settings';
+import { applyMobileDefaults, applyPreset, PRESETS, settings } from './core/Settings';
+import { enterGameScreen, isTouch } from './input/Device';
+import { RotateScreen } from './ui/RotateScreen';
 import { setMaxAnisotropy } from './core/Textures';
 import { SCENARIOS } from './data';
 import { Game } from './Game';
@@ -49,7 +52,11 @@ async function boot() {
     menus.error(`Could not start WebGPU or WebGL2 in this browser.\n${(e as Error).message}`);
     return;
   }
-  if (!settings.get().autoDetected) { applyPreset(rs.detectQuality()); settings.set({ autoDetected: true }); }
+  if (!settings.get().autoDetected) {
+    // phones and tablets start on Low or Medium with a low pixel ratio
+    if (isTouch) applyMobileDefaults(rs.detectQuality()); else applyPreset(rs.detectQuality());
+    settings.set({ autoDetected: true });
+  }
   // URL overrides (benchmarks/diagnostics) are applied after auto-detection so they always win
   applyUrlOverrides();
   rs.setMaxPixelRatio(settings.get().maxPixelRatio);
@@ -71,6 +78,7 @@ async function boot() {
   async function start(id: string, overrides: ScenarioOverrides, auto: boolean, opts: { tutorial?: boolean } = {}) {
     if (running) return;
     running = true;
+    if (!auto) enterGameScreen(); // still inside the Start tap
     const data = SCENARIOS[id];
     let audio: AudioEngine | null = null;
     try { audio = new AudioEngine(); } catch { /* no Web Audio: play silent */ }
@@ -87,6 +95,10 @@ async function boot() {
       menus.error(String((e as Error).stack ?? e));
     }
   }
+
+  // phones held upright: cover the screen and pause the run until rotated
+  const rotate = new RotateScreen(document.body);
+  rotate.onChange = portrait => { if (portrait) (window as any).__rail?.game?.pause(); };
 
   let auto: { id: string; overrides: ScenarioOverrides } | null = null;
   try { auto = JSON.parse(sessionStorage.getItem('railbharat.autostart') ?? 'null'); } catch { /* ignore */ }

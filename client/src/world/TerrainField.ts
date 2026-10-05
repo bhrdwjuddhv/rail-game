@@ -301,14 +301,15 @@ export class TerrainField {
     const R = this.route;
     const bed = R.alignment.elevationAt(nt.km);
     const km = nt.km;
+    const H = R.halfSpacing; // double line: wider bore, wider bridge opening
     for (const t of R.tunnels) {
       if (km < t.fromKm - 0.004 || km > t.toKm + 0.004) continue;
       const nearPortal = km < t.fromKm + 0.02 || km > t.toKm - 0.02;
-      if (nearPortal && nt.dist < 9.5) out.hole = true;
-      if (km > t.fromKm + 0.012 && km < t.toKm - 0.012) return nt.dist < 14 ? Math.max(h, bed + 13) : h;
+      if (nearPortal && nt.dist < 9.5 + H) out.hole = true;
+      if (km > t.fromKm + 0.012 && km < t.toKm - 0.012) return nt.dist < 14 + H ? Math.max(h, bed + 13 + H * 0.5) : h;
     }
     for (const b of R.bridges) {
-      if (km >= b.fromKm && km <= b.toKm) return nt.dist < 7 ? Math.min(h, bed - 3.5) : h;
+      if (km >= b.fromKm && km <= b.toKm) return nt.dist < 7 + H ? Math.min(h, bed - 3.5) : h;
     }
     const W = R.formationHalfWidth(km);
     const top = bed - 0.05;

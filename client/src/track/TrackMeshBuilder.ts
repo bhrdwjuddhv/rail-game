@@ -5,6 +5,7 @@ import { tex } from '../core/Textures';
 import { assets } from '../core/AssetRegistry';
 import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
+import type { Railway } from '@rail/shared/track/Railway';
 import { RAMP_M, Switch } from '@rail/shared/track/TrackGraph';
 
 export const CHUNK_M = 400; // longer chunks = fewer draw calls (each chunk is ~3 draws)
@@ -14,14 +15,15 @@ const RAIL_C = 0.8735; // rail centre from track centre (1676 mm gauge + half he
 /** A piece of track inside one chunk: s range (m) and lateral offset function. */
 export interface TrackPiece { s0: number; s1: number; offset: (s: number) => number; kind: 'main' | 'line' | 'ramp' }
 
-export function piecesIn(route: Route, s0: number, s1: number): TrackPiece[] {
-  const out: TrackPiece[] = [{ s0, s1, offset: () => 0, kind: 'main' }];
-  for (const l of route.graph.lines) {
-    if (l.id === 'main') continue;
+/** Every track of both directions in [s0, s1): running lines, loops and turnout ramps. */
+export function piecesIn(railway: Railway, s0: number, s1: number): TrackPiece[] {
+  const out: TrackPiece[] = [];
+  const running = new Set(railway.main.runningLines.map(l => l.id));
+  for (const l of railway.layout.lines) {
     const a = Math.max(s0, l.fromKm * 1000), b = Math.min(s1, l.toKm * 1000);
-    if (b > a) out.push({ s0: a, s1: b, offset: () => l.offset, kind: 'line' });
+    if (b > a) out.push({ s0: a, s1: b, offset: () => l.offset, kind: running.has(l.id) ? 'main' : 'line' });
   }
-  for (const sw of route.graph.switches) {
+  for (const sw of railway.layout.switches) {
     const d = sw.def;
     const a = Math.max(s0, d.rampStart * 1000), b = Math.min(s1, d.rampEnd * 1000);
     if (b > a) out.push({ s0: a, s1: b, offset: s => d.from + (d.to - d.from) * smoothstep(d.rampStart * 1000, d.rampEnd * 1000, s), kind: 'ramp' });
@@ -109,8 +111,35 @@ function sharedAssets() {
   return shared;
 }
 
-/** Build one 200 m chunk of track: ballast, rails, sleepers, fishplates. */
-export function buildTrackChunk(route: Route, index: number): THREE.Group {
+/**
+ * Ballast between the two running lines of a double line, so the formation is
+ * one bed with shoulders on the outer sides only. Each edge follows the top of
+ * the neighbouring track's ballast (which is canted about its own centre).
+ */
+function infill(route: Route, s0: number, s1: number, h: number, ox: number, oz: number, out: Strip) {
+  const step = 5, f = newFrame();
+  const n = Math.max(1, Math.ceil((s1 - s0) / step));
+  const base = out.pos.length / 3;
+  const top = BALLAST_PROFILE[1][1] - 0.006; // just under the tracks' own beds where they overlap
+  for (let i = 0; i <= n; i++) {
+    const s = s0 + ((s1 - s0) * i) / n;
+    route.alignment.sample(s, f);
+    const ch = Math.cos(f.heading), sh = Math.sin(f.heading), sc = Math.sin(f.cant), cc = Math.cos(f.cant);
+    // inner shoulder of the left track (lat +1.75 from -h) and of the right track (lat -1.75 from +h)
+    for (const [lat, rel] of [[-h + 1.75, 1.75], [h - 1.75, -1.75]] as const) {
+      const centre = lat - rel;
+      const up = top * cc - rel * sc, l2 = centre + rel * cc + top * sc;
+      out.pos.push(f.x - sh * l2 - ox, f.y + up, f.z + ch * l2 - oz);
+      out.nor.push(0, 1, 0);
+      out.uv.push(l2 * 0.5, (s - s0) * 0.5);
+    }
+    if (i > 0) { const a = base + (i - 1) * 2; out.idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  }
+}
+
+/** Build one 400 m chunk of track (every line in it): ballast, rails, sleepers, fishplates. */
+export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
+  const route = railway.main;
   const S = sharedAssets();
   const s0 = index * CHUNK_M, s1 = Math.min(route.alignment.length, s0 + CHUNK_M);
   const group = new THREE.Group();
@@ -127,7 +156,8 @@ export function buildTrackChunk(route: Route, index: number): THREE.Group {
   const q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   const wood = new THREE.Color(0x6b4f35), conc = new THREE.Color(0xffffff);
 
-  for (const piece of piecesIn(route, s0, s1)) {
+  const lines = railway.layout.lines;
+  for (const piece of piecesIn(railway, s0, s1)) {
     const frames: TrackFrame[] = [], ss: number[] = [];
     // 2 m steps on curves and turnouts, 5 m on straight track
     const straight = piece.kind !== 'ramp' && Math.abs(route.alignment.curvatureAt((piece.s0 + piece.s1) / 2000)) < 1 / 3000 && Math.abs(route.alignment.curvatureAt(piece.s0 / 1000)) < 1 / 3000 && Math.abs(route.alignment.curvatureAt(piece.s1 / 1000)) < 1 / 3000;
@@ -153,7 +183,7 @@ export function buildTrackChunk(route: Route, index: number): THREE.Group {
     for (let s = first; s < piece.s1; s += SLEEPER_SPACING) {
       if (piece.kind === 'ramp') {
         const o = piece.offset(s);
-        const covered = route.graph.lines.some(l => Math.abs(l.offset - o) < 1.3 && s / 1000 >= l.fromKm && s / 1000 <= l.toKm);
+        const covered = lines.some(l => Math.abs(l.offset - o) < 1.3 && s / 1000 >= l.fromKm && s / 1000 <= l.toKm);
         if (covered) continue;
       }
       pieceFrame(route, piece, s, f);
@@ -178,6 +208,19 @@ export function buildTrackChunk(route: Route, index: number): THREE.Group {
     }
   }
 
+  if (route.double) {
+    // between the lines, except on open-deck bridges
+    let a = s0;
+    for (let s = s0; s <= s1; s += 5) {
+      const st = route.structureAt(Math.min(s, s1) / 1000);
+      const open = st?.type === 'bridge' && st.style !== 'arch-viaduct';
+      if (open || s + 5 > s1) {
+        const b = open ? s : s1;
+        if (b - a > 1) infill(route, a, b, route.halfSpacing, ox, oz, ballast);
+        a = s + 5;
+      }
+    }
+  }
   if (ballast.pos.length) {
     const m = new THREE.Mesh(ballast.geometry(), S.ballast);
     m.receiveShadow = true;

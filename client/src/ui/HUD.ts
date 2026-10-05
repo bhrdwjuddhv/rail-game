@@ -1,4 +1,5 @@
 import { bus } from '@rail/shared/events';
+import { isTouch } from '../input/Device';
 
 export interface HudData {
   speed: number; units: string; limit: number; notch: string; reverser: string;
@@ -26,7 +27,11 @@ export class HUD {
   private godBadge: HTMLElement;
   setGodMode(on: boolean) { this.godBadge.hidden = !on; }
   /** Hide everything (God Mode "hide HUD" for screenshots); the pause button stays reachable via Esc. */
-  setHidden(hidden: boolean) { this.root.style.display = hidden ? 'none' : ''; }
+  setHidden(hidden: boolean) {
+    // touch has no Esc key: keep the Menu button
+    if (isTouch) this.root.classList.toggle('bare', hidden);
+    else this.root.style.display = hidden ? 'none' : '';
+  }
   private offs: (() => void)[] = [];
 
   constructor(parent: HTMLElement, onPause: () => void) {
@@ -63,13 +68,17 @@ export class HUD {
   }
 
   toggle() { this.visible = !this.visible; this.panel.style.display = this.visible ? '' : 'none'; }
+  /** Touch: the full panel is a detail card opened from the info strip. */
+  toggleDetails() { this.root.classList.toggle('details'); }
 
+  /** Desktop: a stack top-left. Touch: short toasts top-centre, at most 2, gone after 3 s. */
   message(text: string, kind: string, ms: number) {
     const d = document.createElement('div');
     d.className = `msg ${kind}`;
     d.textContent = text;
     this.msgs.appendChild(d);
-    while (this.msgs.children.length > 6) this.msgs.firstElementChild!.remove();
+    if (isTouch) ms = Math.min(ms, 3000);
+    while (this.msgs.children.length > (isTouch ? 2 : 6)) this.msgs.firstElementChild!.remove();
     setTimeout(() => { d.classList.add('fade'); setTimeout(() => d.remove(), 600); }, ms);
   }
 

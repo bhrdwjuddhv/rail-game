@@ -32,6 +32,28 @@ export class Alignment {
   readonly elev: Float64Array;
   readonly grade: Float32Array;
 
+  /**
+   * The same centreline traversed from the far end: exactly the same world
+   * points (arrays reversed, not re-integrated), heading turned round, and
+   * curvature/grade sign-flipped. Its length is the sampled length (n-1 m), so
+   * s' = length - s maps both ways exactly.
+   */
+  static mirrored(a: Alignment): Alignment {
+    const m = Object.create(Alignment.prototype) as Alignment;
+    const n = a.x.length;
+    const rev = <T extends Float64Array | Float32Array>(src: T, sign = 1, add = 0): T => {
+      const out = new (src.constructor as { new(n: number): T })(n);
+      for (let i = 0; i < n; i++) out[i] = src[n - 1 - i] * sign + add;
+      return out;
+    };
+    Object.assign(m, {
+      length: n - 1, x: rev(a.x), z: rev(a.z), heading: rev(a.heading, 1, Math.PI),
+      curvature: rev(a.curvature, -1), cantMm: rev(a.cantMm), elev: rev(a.elev), grade: rev(a.grade, -1),
+      tmp: newFrame(),
+    });
+    return m;
+  }
+
   constructor(segments: SegmentDef[], profile: ProfilePoint[], startElev = 100) {
     const segs = resolveSegments(segments);
     const last = segs[segs.length - 1];

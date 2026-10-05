@@ -10,7 +10,10 @@ export interface GodPanelHooks {
   setHours(h: number): void;
   setWeather(id: WeatherId): void;
   currentWeather(): WeatherId;
-  teleport(target: { station?: string; km?: number }): void;
+  teleport(target: { station?: string; km?: number; line?: string }): void;
+  /** running lines (double line: UP, DOWN) and the one the train is on */
+  lines: string[];
+  currentLine: string;
   back(): void;
   resume(): void;
 }
@@ -69,6 +72,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
         <label>Weather <select data-w="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}" ${w === h.currentWeather() ? 'selected' : ''}>${WEATHER[w].name}</option>`).join('')}</select></label>
         <h3>Teleport</h3>
         <label>Station <select data-t="station"><option value="">&mdash;</option>${h.stations.map(st => `<option value="${st.code}">${esc(st.name)} (km ${st.km})</option>`).join('')}</select></label>
+        ${h.lines.length > 1 ? `<label>Line <select data-t="line">${h.lines.map(l => `<option value="${l}" ${l === h.currentLine ? 'selected' : ''}>${l} line (${l === 'DOWN' ? 'km increasing' : 'km decreasing'})</option>`).join('')}</select></label>` : ''}
         <label>or km <input type="number" min="0.5" max="${(h.routeLengthKm - 0.5).toFixed(1)}" step="0.1" data-t="km" placeholder="e.g. 26.6"></label>
         <div class="buttons left"><button data-a="teleport">Teleport train</button></div>
       </section>
@@ -110,8 +114,10 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     if (a === 'teleport') {
       const station = (el.querySelector('[data-t="station"]') as HTMLSelectElement).value;
       const km = Number((el.querySelector('[data-t="km"]') as HTMLInputElement).value);
-      if (station) h.teleport({ station });
-      else if (km > 0) h.teleport({ km: Math.min(h.routeLengthKm - 0.5, Math.max(0.5, km)) });
+      const line = (el.querySelector('[data-t="line"]') as HTMLSelectElement | null)?.value ?? h.currentLine;
+      if (station) h.teleport({ station, line });
+      else if (km > 0) h.teleport({ km: Math.min(h.routeLengthKm - 0.5, Math.max(0.5, km)), line });
+      else if (line !== h.currentLine) h.teleport({ line });
     }
   });
   return el;

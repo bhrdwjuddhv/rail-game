@@ -4,14 +4,14 @@
   "difficulty": "Expert",
   "description": "A heavy 22-coach mail train coming down from Ghatmatha summit to Meghavan in monsoon rain. Grades of 1 in 50, wet rails, tunnels and a 55 km/h ghat limit. Manage the regenerative brake and the air brake carefully - runaway is easy.",
   "route": "ghat-express",
-  "start": { "km": 40.8, "line": "main", "atPlatform": "GHTM" },
+  "start": { "km": 40.8, "track": "DOWN", "atPlatform": "GHTM" },
   "consist": { "loco": "ep-7", "coaches": [ { "type": "ac3", "count": 4 }, { "type": "sleeper", "count": 14 }, { "type": "general", "count": 4 } ], "loaded": true },
   "time": "15:20",
   "timeScale": 1,
   "weather": "rain",
   "timetable": [
-    { "station": "GHTM", "dep": "15:23", "line": "main" },
-    { "station": "MGVN", "arr": "15:42", "line": "loop1" }
+    { "station": "GHTM", "dep": "15:23" },
+    { "station": "MGVN", "arr": "15:42" }
   ],
   "aiTrains": [],
   "endStation": "MGVN",

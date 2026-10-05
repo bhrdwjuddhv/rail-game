@@ -4,6 +4,7 @@ import { labelTexture } from '../core/Textures';
 import { labelMaterial, materials } from '../core/Materials';
 import { newFrame } from '@rail/shared/track/Chainage';
 import type { BoardDef, Route } from '@rail/shared/track/Route';
+import type { Railway } from '@rail/shared/track/Railway';
 import type { TerrainField } from '../world/TerrainField';
 import { buildOHE, wireMaterial } from './OHE';
 import { PLATFORM_H } from './Station';
@@ -20,7 +21,7 @@ const BOARD_STYLE: Record<BoardDef['kind'], { bg: string; fg: string; w: number;
   ghat: { bg: '#f5d000', fg: '#111', w: 2.2, h: 0.7, post: 1.6, border: '#111' },
 };
 
-/** A board on a post facing approaching trains (which travel toward +km). */
+/** A board on a post facing approaching trains (which travel toward +km in `route`'s view). */
 export function boardMesh(route: Route, b: BoardDef, batch: GeoBatch, ox: number, oz: number, group: THREE.Group, baseY?: number) {
   const st = BOARD_STYLE[b.kind];
   const f = newFrame();
@@ -48,21 +49,29 @@ function telegraphPole() {
 }
 
 /**
- * Everything beside the track in one chunk: OHE, boards, telegraph poles,
- * relay huts, gangmen huts with stacked sleepers, cable trench, cutting
- * drains and fencing.
+ * Everything beside the track in one chunk [s0, s1) (surveyed metres): OHE,
+ * both directions' boards, telegraph poles, relay huts, gangmen huts with
+ * stacked sleepers, cable trench, cutting drains and fencing. On a double
+ * line everything lateral moves out by half the track spacing.
  */
-export function buildLinesideChunk(route: Route, field: TerrainField, s0: number, s1: number, ox: number, oz: number): THREE.Group {
+export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: number, s1: number, ox: number, oz: number): THREE.Group {
+  const route = railway.main;
+  const H = route.halfSpacing;
+  const out = (lat: number) => lat + Math.sign(lat) * H;
   const group = new THREE.Group();
   const batch = new GeoBatch();
   const lines: number[] = [];
-  buildOHE(route, s0, s1, ox, oz, batch, lines);
+  buildOHE(railway, s0, s1, ox, oz, batch, lines);
 
-  for (const b of route.boards) {
-    if (b.km * 1000 < s0 || b.km * 1000 >= s1) continue;
-    let baseY: number | undefined;
-    if (b.kind === 'stop') baseY = route.alignment.elevationAt(b.km) + PLATFORM_H;
-    boardMesh(route, b, batch, ox, oz, group, baseY);
+  // each direction's boards, built in its own view so they face its trains
+  const inChunk = (v: Route, km: number) => { const c = v.canonicalKm(km) * 1000; return c >= s0 && c < s1; };
+  for (const v of railway.views) {
+    for (const b of v.boards) {
+      if (!inChunk(v, b.km)) continue;
+      let baseY: number | undefined;
+      if (b.kind === 'stop') baseY = v.alignment.elevationAt(b.km) + PLATFORM_H;
+      boardMesh(v, b, batch, ox, oz, group, baseY);
+    }
   }
 
   const f = newFrame();
@@ -77,7 +86,7 @@ export function buildLinesideChunk(route: Route, field: TerrainField, s0: number
   let prevTop: number[] | null = null;
   for (let s = Math.ceil(s0 / 50) * 50; s < s1; s += 50) {
     if (!clearOf(s, 0.3)) { prevTop = null; continue; }
-    const p = at(s, 11.5);
+    const p = at(s, out(11.5));
     const y = field.height(p.x, p.z);
     poles.push(mat(p.x - ox, y, p.z - oz, -p.heading));
     const top = [p.x - ox, y + 7.2, p.z - oz];
@@ -90,10 +99,11 @@ export function buildLinesideChunk(route: Route, field: TerrainField, s0: number
   // merged into the chunk's std batch (no separate draw)
   for (const m of poles) batch.add(telegraphPole(), m, '#ffffff');
 
-  // relay huts at automatic signals
-  for (const sg of route.signals) {
-    if (sg.kind !== 'automatic' || sg.km * 1000 < s0 || sg.km * 1000 >= s1) continue;
-    const p = at(sg.km * 1000 + 15, -6.5);
+  // relay huts at automatic signals, outside each direction's line
+  const vf = newFrame();
+  for (const v of railway.views) for (const sg of v.signals) {
+    if (sg.kind !== 'automatic' || !inChunk(v, sg.km + 0.015)) continue;
+    const p = (v.alignment.sampleOffset(sg.km * 1000 + 15, sg.offset - 6.5, vf), vf);
     const y = field.height(p.x, p.z);
     batch.box(2.6, 2.5, 2.2, mat(p.x - ox, y + 1.25, p.z - oz, -p.heading), '#d9d2bf', 'std');
     batch.box(2.9, 0.15, 2.5, mat(p.x - ox, y + 2.55, p.z - oz, -p.heading), '#8a8a85', 'std');
@@ -103,12 +113,12 @@ export function buildLinesideChunk(route: Route, field: TerrainField, s0: number
   // gangmen hut + stacked released sleepers every ~4 km
   for (let s = Math.ceil(s0 / 4000) * 4000 + 1300; s < s1; s += 4000) {
     if (!clearOf(s, 0.4)) continue;
-    const p = at(s, 15);
+    const p = at(s, out(15));
     const y = field.height(p.x, p.z);
     batch.box(4, 2.8, 3.2, mat(p.x - ox, y + 1.4, p.z - oz, -p.heading), '#e3d6b8', 'std');
     batch.box(4.6, 0.2, 3.8, mat(p.x - ox, y + 2.9, p.z - oz, -p.heading, 0, 0.12), '#7d3b2c');
     for (let k = 0; k < 4; k++) for (let n = 0; n < 6; n++) {
-      const q = at(s + 9 + n * 0.3, 9.5);
+      const q = at(s + 9 + n * 0.3, out(9.5));
       batch.box(0.25, 0.2, 2.75, mat(q.x - ox, field.height(q.x, q.z) + 0.1 + k * 0.21, q.z - oz, -q.heading), k % 2 ? '#8f8a82' : '#6d5b47');
     }
   }
@@ -116,12 +126,12 @@ export function buildLinesideChunk(route: Route, field: TerrainField, s0: number
   // cable trench (left cess) and cutting drains
   for (let s = Math.ceil(s0 / 10) * 10; s < s1; s += 10) {
     if (!clearOf(s, 0.02)) continue;
-    const p = at(s + 5, -4.7);
+    const p = at(s + 5, out(-4.7));
     batch.box(10, 0.18, 0.5, mat(p.x - ox, p.y + 0.02, p.z - oz, -p.heading), '#a49f96', 'std');
     for (const side of [-1, 1]) {
-      const n = at(s + 5, side * 14);
+      const n = at(s + 5, out(side * 14));
       if (field.natural(n.x, n.z, null) < n.y + 1.8) continue;
-      const d = at(s + 5, side * 6.1);
+      const d = at(s + 5, out(side * 6.1));
       batch.box(10, 0.12, 0.7, mat(d.x - ox, d.y + 0.03, d.z - oz, -d.heading), '#8d8a84', 'std');
     }
   }
@@ -133,7 +143,7 @@ export function buildLinesideChunk(route: Route, field: TerrainField, s0: number
     for (let s = Math.ceil(s0 / 4) * 4; s < s1; s += 4) {
       const zone = route.zoneAt(s / 1000).zone;
       if ((zone !== 'town' && zone !== 'colony') || !clearOf(s, 0.35)) { prev = null; continue; }
-      const p = at(s, side * 16.5);
+      const p = at(s, out(side * 16.5));
       const y = field.height(p.x, p.z);
       posts.push(mat(p.x - ox, y + 0.7, p.z - oz, -p.heading));
       const cur = [[p.x - ox, y + 0.6, p.z - oz], [p.x - ox, y + 1.2, p.z - oz]];
