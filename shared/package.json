@@ -1,0 +1,13 @@
+{
+  "name": "@rail/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Simulation core shared by client and server: track, physics, signalling, gameplay rules, data validation. No DOM / Three.js / Web Audio.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  }
+}

@@ -1,24 +1,22 @@
 {
   "name": "rail-bharat",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
   "type": "module",
+  "workspaces": [
+    "shared",
+    "client"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "dev": "npm run dev -w @rail/client",
+    "build": "npm run typecheck && npm run build -w @rail/client",
+    "preview": "npm run preview -w @rail/client",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "textures": "node scripts/process-textures.mjs"
-  },
-  "dependencies": {
-    "three": "^0.186.1"
+    "typecheck": "tsc -p shared && tsc -p client",
+    "textures": "npm run textures -w @rail/client"
   },
   "devDependencies": {
-    "@types/three": "^0.186.0",
-    "sharp": "^0.35.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.2",
     "vitest": "^5.0.3"
   }
 }

@@ -1,5 +1,5 @@
 {
-  "about": "Texture manifest. Put source images at public/assets/<file> and run `npm run textures`. Missing files fall back to the built-in procedural textures, so any entry can be added before its image exists. tilingM = how many metres one copy of a tileable texture covers. 'processed' is written by scripts/process-textures.mjs.",
+  "about": "Texture manifest. Put source images at client/public/assets/<file> and run `npm run textures`. Missing files fall back to the built-in procedural textures, so any entry can be added before its image exists. tilingM = how many metres one copy of a tileable texture covers. 'processed' is written by client/scripts/process-textures.mjs.",
   "textures": {
     "terrain/ground": {
       "file": "textures/terrain/ground.png",
