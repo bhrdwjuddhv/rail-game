@@ -6,6 +6,7 @@ import { CATEGORY_NAMES, Category, ScoreEntry } from '@rail/shared/gameplay/Scor
 import { formatClock } from '@rail/shared/util';
 import { settingsPanel } from './Settings';
 import { assets } from '../core/AssetRegistry';
+import { isTouch } from '../input/Device';
 
 export interface PauseCallbacks {
   title: string; godActive: boolean;
@@ -16,6 +17,30 @@ export interface MenuCallbacks {
   start(scenarioId: string, o: ScenarioOverrides, opts?: { tutorial?: boolean }): void;
   captureKey(cb: (code: string) => void): void;
 }
+
+/** Help on phones and tablets: the on-screen controls instead of keys. */
+const TOUCH_HELP_HTML = `
+<h2>Driving Rail Bharat</h2>
+<div class="cols help">
+<section><h3>Getting moving</h3>
+<ol><li>Tap <b>&#8943;</b> and raise the <b>Pantograph</b>, then close the <b>Main breaker</b></li>
+<li>In the same drawer set the reverser to <b>F</b> and <b>Release</b> the loco brake</li>
+<li>Slide <b>BRAKE</b> (right edge) up to <b>Run</b>; watch BP rise to 5.0 in the detail card</li>
+<li>Wait for the signal dot in the top strip to show yellow or green, then slide <b>POWER</b> (left edge) up</li></ol>
+<h3>On screen</h3><table>
+<tr><td>POWER (left)</td><td>Throttle notches; each notch clicks</td></tr><tr><td>BRAKE (right)</td><td>Train brake, Release at the top to Full at the bottom</td></tr>
+<tr><td>EMERG</td><td>Emergency brake: hold for half a second</td></tr><tr><td>Horn</td><td>Tap for a short blast, hold for a long one</td></tr>
+<tr><td>Top strip</td><td>Speed, limit and next signal. Tap it for all the gauges and the track profile</td></tr>
+<tr><td>&#8943; (More)</td><td>Reverser, pantograph, breaker, headlight, wipers, sander, loco brake, vigilance, free camera, map</td></tr>
+<tr><td>VIGILANCE</td><td>Pops up when the vigilance alarm sounds: tap it</td></tr></table></section>
+<section><h3>View</h3><table>
+<tr><td>One finger</td><td>Drag to look around (cab) or orbit (chase)</td></tr><tr><td>Two fingers</td><td>Pinch to zoom</td></tr>
+<tr><td>Camera button</td><td>Cab, Front, Chase, Trackside</td></tr><tr><td>Menu</td><td>Pause, settings, God Mode, tutorial</td></tr></table>
+<h3>Signals</h3><p><span class="lamp g"></span> Green: proceed &nbsp; <span class="lamp y"></span><span class="lamp y"></span> Double yellow: next signal at caution
+&nbsp; <span class="lamp y"></span> Yellow: be ready to stop at the next signal &nbsp; <span class="lamp r"></span> Red: stop. Passing red = SPAD.</p>
+<p>Sound the horn at W/L boards before level crossings. Stop with the head at the marker for your train length (8/12/16/20/24).
+The controls fade when you are not touching the screen; any touch brings them back (Settings can turn this off).</p></section>
+</div>`;
 
 const html = (s: string) => { const d = document.createElement('div'); d.innerHTML = s.trim(); return d.firstElementChild as HTMLElement; };
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -201,7 +226,7 @@ export class Menus {
   }
 
   help(back: () => void) {
-    const el = html(`<div class="menu helpmenu">${HELP_HTML}<div class="buttons"><button data-a="back">Back</button></div></div>`);
+    const el = html(`<div class="menu helpmenu">${isTouch ? TOUCH_HELP_HTML : HELP_HTML}<div class="buttons"><button data-a="back">Back</button></div></div>`);
     el.addEventListener('click', e => { if ((e.target as HTMLElement).closest('button')?.dataset.a === 'back') back(); });
     this.show(el, back);
   }
@@ -216,7 +241,7 @@ export class Menus {
       <button data-a="settings">&#9881;&nbsp; Settings</button>
       <button data-a="restart">&#8635;&nbsp; Restart scenario</button>
       <button data-a="quit">&#8962;&nbsp; Main Menu</button></div>
-      <p class="note">&uarr; &darr; to choose, Enter to select, Esc to resume</p></div>`);
+      ${isTouch ? '' : '<p class="note">&uarr; &darr; to choose, Enter to select, Esc to resume</p>'}</div>`);
     const again = () => this.pause(cb);
     el.addEventListener('click', e => {
       const a = (e.target as HTMLElement).closest('button')?.dataset.a;
@@ -294,7 +319,7 @@ export class Menus {
   }
 
   clickToStart(onGo: () => void) {
-    const el = html(`<div class="menu loading"><h1>Ready</h1><p>Press F1 any time for the controls.</p><div class="buttons"><button data-a="go">Start driving</button></div></div>`);
+    const el = html(`<div class="menu loading"><h1>Ready</h1><p>${isTouch ? 'Menu &rarr; Controls shows how the touch controls work.' : 'Press F1 any time for the controls.'}</p><div class="buttons"><button data-a="go">Start driving</button></div></div>`);
     el.addEventListener('click', e => { if ((e.target as HTMLElement).closest('button')?.dataset.a === 'go') onGo(); });
     this.show(el);
   }
