@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rail Bharat app icon: a wheel ring around two rails running into the distance under a contact wire -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16324f"/>
+      <stop offset="0.62" stop-color="#e3743c"/>
+      <stop offset="1" stop-color="#f2b33d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#0c1014"/>
+  <circle cx="256" cy="256" r="196" fill="url(#sky)"/>
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#e9edf1" stroke-width="22"/>
+  <g stroke="#e9edf1" stroke-width="7" stroke-linecap="round">
+    <line x1="256" y1="60" x2="256" y2="100"/><line x1="256" y1="412" x2="256" y2="452"/>
+    <line x1="60" y1="256" x2="100" y2="256"/><line x1="412" y1="256" x2="452" y2="256"/>
+  </g>
+  <!-- contact wire and mast -->
+  <path d="M110 176 Q256 196 402 176" fill="none" stroke="#0c1014" stroke-width="6"/>
+  <path d="M362 176 V330" stroke="#0c1014" stroke-width="10"/>
+  <!-- ground and rails converging to the horizon -->
+  <path d="M74 300 H438 L438 360 Q256 452 74 360 Z" fill="#2a2f35"/>
+  <path d="M232 300 L150 430" stroke="#e9edf1" stroke-width="14" stroke-linecap="round"/>
+  <path d="M280 300 L362 430" stroke="#e9edf1" stroke-width="14" stroke-linecap="round"/>
+  <g stroke="#9aa3ab" stroke-width="9" stroke-linecap="round">
+    <line x1="226" y1="312" x2="286" y2="312"/>
+    <line x1="210" y1="338" x2="302" y2="338"/>
+    <line x1="190" y1="370" x2="322" y2="370"/>
+    <line x1="166" y1="408" x2="346" y2="408"/>
+  </g>
+</svg>

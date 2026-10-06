@@ -23,23 +23,26 @@ const TOUCH_HELP_HTML = `
 <h2>Driving Rail Bharat</h2>
 <div class="cols help">
 <section><h3>Getting moving</h3>
-<ol><li>Tap <b>&#8943;</b> and raise the <b>Pantograph</b>, then close the <b>Main breaker</b></li>
-<li>In the same drawer set the reverser to <b>F</b> and <b>Release</b> the loco brake</li>
-<li>Slide <b>BRAKE</b> (right edge) up to <b>Run</b>; watch BP rise to 5.0 in the detail card</li>
-<li>Wait for the signal dot in the top strip to show yellow or green, then slide <b>POWER</b> (left edge) up</li></ol>
+<ol><li>Tap the <b>pantograph</b> button in the bottom bar and wait for its LED to turn green</li>
+<li>Tap <b>&#8943;</b> and close the <b>Main breaker</b>, then <b>Release</b> the loco brake</li>
+<li>Tap <b>F</b> on the <b>REVERSER</b> switch (top right)</li>
+<li>Push the <b>BRAKE</b> lever up to <b>Run</b>; wait for a yellow or green signal (top-left card)</li>
+<li>Push the <b>THROTTLE</b> lever up a few notches</li></ol>
 <h3>On screen</h3><table>
-<tr><td>POWER (left)</td><td>Throttle notches; each notch clicks</td></tr><tr><td>BRAKE (right)</td><td>Train brake, Release at the top to Full at the bottom</td></tr>
-<tr><td>EMERG</td><td>Emergency brake: hold for half a second</td></tr><tr><td>Horn</td><td>Tap for a short blast, hold for a long one</td></tr>
-<tr><td>Top strip</td><td>Speed, limit and next signal. Tap it for all the gauges and the track profile</td></tr>
-<tr><td>&#8943; (More)</td><td>Reverser, pantograph, breaker, headlight, wipers, sander, loco brake, vigilance, free camera, map</td></tr>
+<tr><td>Levers (right)</td><td>BRAKE: Rel at the top to Full at the bottom. THROTTLE: notches, each one clicks. Settings &rarr; Lever layout can put the throttle on the left edge</td></tr>
+<tr><td>Bottom bar</td><td>EMERGENCY STOP (hold half a second), wipers, pantograph, headlight, cab light, marker lights, &#8943; More</td></tr>
+<tr><td>LEDs</td><td>Green on, grey off, blinking amber while changing</td></tr>
+<tr><td>Horn (blue)</td><td>Tap for a short blast, hold for a long one</td></tr>
+<tr><td>Left cards</td><td>Next signal, next speed limit, next station. Tap them for all the gauges</td></tr>
+<tr><td>&#8943; More</td><td>Main breaker, sander, vigilance, flasher, loco brake, free camera, all gauges, map</td></tr>
 <tr><td>VIGILANCE</td><td>Pops up when the vigilance alarm sounds: tap it</td></tr></table></section>
 <section><h3>View</h3><table>
 <tr><td>One finger</td><td>Drag to look around (cab) or orbit (chase)</td></tr><tr><td>Two fingers</td><td>Pinch to zoom</td></tr>
-<tr><td>Camera button</td><td>Cab, Front, Chase, Trackside</td></tr><tr><td>Menu</td><td>Pause, settings, God Mode, tutorial</td></tr></table>
+<tr><td>Camera (top left)</td><td>Pick Cab, Front, Rear, Side, Chase, Cinematic or Free</td></tr><tr><td>Pause (top left)</td><td>Menu, settings, God Mode, tutorial</td></tr></table>
 <h3>Signals</h3><p><span class="lamp g"></span> Green: proceed &nbsp; <span class="lamp y"></span><span class="lamp y"></span> Double yellow: next signal at caution
 &nbsp; <span class="lamp y"></span> Yellow: be ready to stop at the next signal &nbsp; <span class="lamp r"></span> Red: stop. Passing red = SPAD.</p>
 <p>Sound the horn at W/L boards before level crossings. Stop with the head at the marker for your train length (8/12/16/20/24).
-The controls fade when you are not touching the screen; any touch brings them back (Settings can turn this off).</p></section>
+Buttons and cards fade when you are not touching the screen; any touch brings them back (Settings can turn this off).</p></section>
 </div>`;
 
 const html = (s: string) => { const d = document.createElement('div'); d.innerHTML = s.trim(); return d.firstElementChild as HTMLElement; };

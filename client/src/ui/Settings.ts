@@ -26,7 +26,8 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
         <label>Units <select data-s="units"><option value="kmh" ${s.units === 'kmh' ? 'selected' : ''}>km/h</option><option value="mph" ${s.units === 'mph' ? 'selected' : ''}>mph</option></select></label>
         <label>Free-roam clock speed <input type="range" min="1" max="120" step="1" value="${s.dayNightSpeed}" data-s="dayNightSpeed"><output>${s.dayNightSpeed}x</output></label>
         <label>${isTouch ? 'Look sensitivity' : 'Mouse sensitivity'} <input type="range" min="0.3" max="3" step="0.1" value="${s.mouseSensitivity}" data-s="mouseSensitivity"><output>${s.mouseSensitivity}</output></label>
-        ${isTouch ? `<h3>Touch</h3><label class="tog"><input type="checkbox" ${s.touchAutoHide ? 'checked' : ''} data-s="touchAutoHide"><span>Fade controls after 4 s without a touch</span></label>` : ''}
+        ${isTouch ? `<h3>Touch</h3><label class="tog"><input type="checkbox" ${s.touchAutoHide ? 'checked' : ''} data-s="touchAutoHide"><span>Fade controls after 4 s without a touch</span></label>
+        <label>Lever layout <select data-s="leverLayout"><option value="right" ${s.leverLayout === 'right' ? 'selected' : ''}>Both on right</option><option value="split" ${s.leverLayout === 'split' ? 'selected' : ''}>Split (throttle left, brake right)</option></select></label>` : ''}
       </section>
       <section class="keys"${isTouch ? ' hidden' : ''}><h3>Controls <button data-a="resetKeys">Reset</button></h3>
         ${(Object.keys(ACTIONS) as Action[]).map(a => `<div class="key"><span>${ACTIONS[a]}</span><button data-key="${a}">${pretty(s.keys[a])}</button></div>`).join('')}

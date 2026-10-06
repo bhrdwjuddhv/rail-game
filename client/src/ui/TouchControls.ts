@@ -1,7 +1,17 @@
+import { bus } from '@rail/shared/events';
 import { BRAKE_POSITIONS } from '@rail/shared/physics/BrakeSystem';
 import type { LocoSystems } from '@rail/shared/train/LocoSystems';
 import type { Action } from '../core/Settings';
 import { buzz } from '../input/Device';
+import { CameraPicker } from './mobile/CameraPicker';
+import { ControlBar } from './mobile/ControlBar';
+import { h, onTap, setText } from './mobile/dom';
+import { ICON } from './mobile/icons';
+import { ScoreBadge, SpeedLimitCard, StationCard, TimetableCard, TimetableInfo } from './mobile/InfoCards';
+import { Lever } from './mobile/Lever';
+import { ReverserSwitch } from './mobile/ReverserSwitch';
+import { SignalCard } from './mobile/SignalCard';
+import { Speedometer } from './mobile/Speedometer';
 
 /** What the touch layer needs from the game. */
 export interface TouchHooks {
@@ -12,255 +22,266 @@ export interface TouchHooks {
   /** same as a key press / release */
   act(a: Action, down: boolean): void;
   setReverser(r: -1 | 0 | 1): void;
-  /** select camera by index (0 cab, 1 front, 3 side, 4 chase, 6 free) */
+  /** select camera by index (0 cab, 1 front, 2 rear, 3 side, 4 chase, 5 cinematic, 6 free) */
   camera(i: number): void;
   cameraIndex(): number;
+  pause(): void;
   /** show/hide the full HUD detail card and the minimap */
   toggleDetails(): void;
   toggleMap(): void;
   autoHide(): boolean;
+  /** 'right': both levers on the right (default); 'split': throttle on the left edge for two thumbs */
+  leverLayout(): 'right' | 'split';
 }
 
-export interface StripData { speed: number; units: string; limit: number; aspect: string | null; dist: number | null; vigilance: 'ok' | 'warning' | 'penalty' }
+/** Everything the HUD shows, computed by the game (no game logic here). */
+export interface MobileHudData {
+  speed: number; units: string; limit: number; maxKmph: number;
+  signal: { aspect: string; dist: number } | null;
+  restriction: { kmph: number; dist: number } | null;
+  station: { name: string; dist: number } | null;
+  timetable: TimetableInfo;
+  score: number | null;
+  vigilance: 'ok' | 'warning' | 'penalty';
+}
 
 const FULL_SERVICE = BRAKE_POSITIONS.indexOf('Full Service');
 const BRAKE_SHORT = ['Rel', 'Run', 'Lap', 'S1', 'S2', 'S3', 'S4', 'S5', 'Full'];
-/** touch camera cycle: Cab -> Front -> Chase -> Trackside */
-const CAMERA_CYCLE = [0, 1, 4, 3];
 const IDLE_MS = 4000;
 
 /**
- * On-screen controls for touch devices, kept to the screen edges so the track
- * ahead stays clear: throttle slider (left thumb), train brake slider with a
- * long-press emergency button and the horn (right thumb), a compact info strip
- * at the top, and a "More" drawer for everything else. Every control tracks its
- * own pointer, so both thumbs work at once and the sliders never move the camera.
+ * The landscape HUD and controls for phones and tablets. Info on the left
+ * (signal / next limit / next station cards, timetable), the speedometer on the
+ * bottom edge, the control bar bottom-left, horn, reverser and two cab levers
+ * on the right. The middle of the screen stays clear for the track ahead.
+ * Every control tracks its own pointer, so several can be used at once and none
+ * of them moves the camera. The DOM is written only when a value changes.
  */
 export class TouchControls {
-  readonly el = document.createElement('div');
-  private q = <T extends HTMLElement>(s: string) => this.el.querySelector<T>(s)!;
-  private lastTouch = performance.now();
-  private shown = { notch: -1, brake: -1, rev: 9, panto: false, vcb: false, head: -1, wipers: -1, loco: -1, vig: '' };
+  readonly el = h('div', 'touch-ui');
+  private signal = new SignalCard();
+  private limitCard = new SpeedLimitCard();
+  private station = new StationCard();
+  private timetable = new TimetableCard();
+  private score = new ScoreBadge();
+  private speedo = new Speedometer();
+  private bar: ControlBar;
+  private reverser: ReverserSwitch;
+  private camPick: CameraPicker;
+  private throttle: Lever;
+  private brakeLever: Lever;
+  private notchOut: HTMLElement;
+  private levers: HTMLElement;
   private drawer: HTMLElement;
+  private vig: HTMLElement;
+  private shown = { vcb: false, flasher: false, loco: -1, vig: '', layout: '' };
+  private lastTouch = performance.now();
   private hornDownAt = 0;
   private hornTimer = 0;
-  private emergTimer = 0;
   private idleTimer = 0;
+  private raf = 0;
+  private offs: (() => void)[] = [];
 
-  constructor(parent: HTMLElement, private h: TouchHooks) {
-    this.el.className = 'touch-ui';
-    this.el.innerHTML = `
-      <button class="t-strip" data-tid="strip" aria-label="Speed, limit and next signal. Tap for details">
-        <span class="t-speed">0</span><small class="t-units">km/h</small>
-        <span class="t-limit">--</span>
-        <span class="t-sig"><i class="lamp"></i><span>--</span></span>
-      </button>
-      <div class="t-slider t-throttle" data-tid="throttle" role="slider" aria-label="Throttle" aria-valuemin="0" aria-valuemax="${h.notches}">
-        <div class="t-track"><div class="t-fill"></div><div class="t-knob"><span>0</span></div></div><label>POWER</label>
+  constructor(parent: HTMLElement, private hk: TouchHooks) {
+    const s = hk.sys;
+    // ---- top-left: pause + camera picker
+    const tl = h('div', 'm-tl');
+    const pause = h('button', 'm-pause', ICON.pause);
+    pause.setAttribute('aria-label', 'Pause menu');
+    pause.dataset.tid = 'pause';
+    onTap(pause, () => hk.pause());
+    this.camPick = new CameraPicker(i => hk.camera(i));
+    tl.append(pause, this.camPick.el);
+
+    // ---- left: info cards (tap any for the full gauges)
+    const cards = h('div', 'm-cards');
+    cards.append(this.signal.el, this.limitCard.el, this.station.el);
+    this.signal.el.dataset.tid = 'signal';
+    cards.addEventListener('click', e => { e.stopPropagation(); hk.toggleDetails(); });
+    this.timetable.el.dataset.tid = 'timetable';
+
+    // ---- bottom: control bar, speedometer, horn
+    this.bar = new ControlBar((a, d) => hk.act(a, d), () => this.setDrawer(this.drawer.hidden === true), () => hk.act('pantograph', true));
+    this.speedo.el.dataset.tid = 'speedo';
+    const horn = h('button', 'm-horn', ICON.horn);
+    horn.dataset.tid = 'horn';
+    horn.setAttribute('aria-label', 'Horn (hold for a long blast)');
+    this.hornButton(horn);
+
+    // ---- right: score, reverser, notch readout, levers
+    const right = h('div', 'm-right');
+    this.reverser = new ReverserSwitch(r => hk.setReverser(r));
+    this.notchOut = h('div', 'm-card m-notch', `<small>THROTTLE</small><b></b>`);
+    this.throttle = new Lever('THROTTLE', 'throttle', true, hk.notches, v => s.setThrottle(v), v => String(v));
+    this.brakeLever = new Lever('BRAKE', 'brake', false, FULL_SERVICE, v => s.setTrainBrake(v), v => BRAKE_SHORT[v] ?? 'EMG');
+    this.levers = h('div', 'm-levers');
+    this.levers.append(this.brakeLever.el, this.throttle.el);
+    right.append(this.score.el, this.reverser.el, this.notchOut, this.levers);
+
+    // ---- vigilance pop-up and the More drawer
+    this.vig = h('button', 'm-vig', 'VIGILANCE<small>tap</small>');
+    this.vig.dataset.tid = 'vigilance';
+    this.vig.hidden = true;
+    onTap(this.vig, () => hk.act('vigilance', true));
+    this.drawer = h('div', 't-drawer', `
+      <h3>More controls</h3>
+      <div class="t-grid">
+        <button data-act="vcb" data-tid="vcb">Main breaker<small data-v="vcb">open</small></button>
+        <button data-hold="sander" data-tid="sander">Sander<small>hold</small></button>
+        <button data-act="vigilance" data-tid="vigilanceBtn">Vigilance<small>acknowledge</small></button>
+        <button data-act="flasher" data-tid="flasher">Flasher<small data-v="flasher">off</small></button>
       </div>
-      <div class="t-slider t-brake" data-tid="brake" role="slider" aria-label="Train brake" aria-valuemin="0" aria-valuemax="${FULL_SERVICE}">
-        <div class="t-track"><div class="t-fill"></div><div class="t-knob"><span>Rel</span></div></div><label>BRAKE</label>
-      </div>
-      <button class="t-emerg" data-tid="emergency" aria-label="Emergency brake (hold)"><b>EMERG</b><small>hold</small></button>
-      <button class="t-horn" data-tid="horn" aria-label="Horn">&#128227;</button>
-      <button class="t-cam" data-tid="camera" aria-label="Next camera"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1zm8 3a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/></svg></button>
-      <button class="t-more" data-tid="more" aria-label="More controls">&#8943;</button>
-      <button class="t-vig" data-tid="vigilance" hidden>VIGILANCE<small>tap</small></button>
-      <div class="t-drawer" hidden>
-        <h3>Controls</h3>
-        <div class="t-row"><span>Reverser</span><span class="t-seg" data-tid="reverser"><button data-rev="1">F</button><button data-rev="0">N</button><button data-rev="-1">R</button></span></div>
-        <div class="t-grid">
-          <button data-act="pantograph" data-tid="panto">Pantograph<small data-v="panto">down</small></button>
-          <button data-act="vcb" data-tid="vcb">Main breaker<small data-v="vcb">open</small></button>
-          <button data-act="headlights" data-tid="headlight">Headlight<small data-v="head">off</small></button>
-          <button data-act="wipers" data-tid="wipers">Wipers<small data-v="wipers">off</small></button>
-          <button data-hold="sander" data-tid="sander">Sander<small>hold</small></button>
-          <button data-act="vigilance" data-tid="vigilanceBtn">Vigilance<small>acknowledge</small></button>
-        </div>
-        <div class="t-row" data-tid="locoBrake"><span>Loco brake <small data-v="loco">0%</small></span><span class="t-seg"><button data-act="locoBrakeRelease">Release</button><button data-act="locoBrakeApply">Apply</button></span></div>
-        <div class="t-grid">
-          <button data-ui="free">Free camera</button>
-          <button data-ui="details">HUD details</button>
-          <button data-ui="map">Map</button>
-        </div>
-      </div>`;
-    parent.appendChild(this.el);
-    this.drawer = this.q('.t-drawer');
-
-    this.slider(this.q('.t-throttle'), true, h.notches, v => { if (v !== h.sys.notch) { h.sys.setThrottle(v); buzz(); } });
-    this.slider(this.q('.t-brake'), false, FULL_SERVICE, v => { if (v !== h.brake().handle) { h.sys.setTrainBrake(v); buzz(); } });
-    this.emergency(this.q('.t-emerg'));
-    this.horn(this.q('.t-horn'));
-
-    const tap = (sel: string, fn: () => void) => this.q(sel).addEventListener('click', e => { e.stopPropagation(); fn(); });
-    tap('.t-cam', () => {
-      const i = CAMERA_CYCLE.indexOf(h.cameraIndex());
-      h.camera(CAMERA_CYCLE[(i + 1) % CAMERA_CYCLE.length]);
-    });
-    tap('.t-more', () => this.setDrawer(this.drawer.hidden === true));
-    tap('.t-strip', () => h.toggleDetails());
-    tap('.t-vig', () => h.act('vigilance', true));
+      <div class="t-row" data-tid="locoBrake"><span>Loco brake <small data-v="loco">0%</small></span><span class="t-seg"><button data-act="locoBrakeRelease">Release</button><button data-act="locoBrakeApply">Apply</button></span></div>
+      <div class="t-grid">
+        <button data-ui="free">Free camera</button>
+        <button data-ui="details">All gauges</button>
+        <button data-ui="map">Map</button>
+      </div>`);
+    this.drawer.hidden = true;
     this.drawer.addEventListener('click', e => {
       e.stopPropagation();
       const b = (e.target as HTMLElement).closest('button');
       if (!b) return;
-      if (b.dataset.rev !== undefined) h.setReverser(Number(b.dataset.rev) as -1 | 0 | 1);
-      if (b.dataset.act) { h.act(b.dataset.act as Action, true); h.act(b.dataset.act as Action, false); }
-      if (b.dataset.ui === 'free') { h.camera(6); this.setDrawer(false); }
-      if (b.dataset.ui === 'details') h.toggleDetails();
-      if (b.dataset.ui === 'map') h.toggleMap();
+      if (b.dataset.act) { hk.act(b.dataset.act as Action, true); hk.act(b.dataset.act as Action, false); }
+      if (b.dataset.ui === 'free') { hk.camera(6); this.setDrawer(false); }
+      if (b.dataset.ui === 'details') hk.toggleDetails();
+      if (b.dataset.ui === 'map') hk.toggleMap();
     });
-    const sander = this.q<HTMLButtonElement>('[data-hold="sander"]');
-    sander.addEventListener('pointerdown', e => { e.preventDefault(); sander.setPointerCapture(e.pointerId); h.act('sander', true); });
-    for (const ev of ['pointerup', 'pointercancel'] as const) sander.addEventListener(ev, () => h.act('sander', false));
-    // tap outside the drawer closes it
+    const sander = this.drawer.querySelector<HTMLButtonElement>('[data-hold="sander"]')!;
+    sander.addEventListener('pointerdown', e => { e.preventDefault(); sander.setPointerCapture(e.pointerId); hk.act('sander', true); });
+    for (const ev of ['pointerup', 'pointercancel'] as const) sander.addEventListener(ev, () => hk.act('sander', false));
+
+    // bottom-left: timetable card stacked on the bar (the bar wraps to two rows on narrow screens)
+    const bl = h('div', 'm-bl');
+    bl.append(this.timetable.el, this.bar.el);
+    this.el.append(tl, cards, bl, this.speedo.el, horn, right, this.vig, this.drawer);
+    parent.appendChild(this.el);
+
+    // ---- pantograph: follow its travel every frame while it moves, toast start and finish
+    this.bar.panto.onSettled = up => bus.emit('message', { text: up ? 'Pantograph up' : 'Pantograph down', kind: up ? 'good' : 'info', ms: 2000 });
+    this.offs.push(
+      bus.on('pantograph', e => {
+        bus.emit('message', { text: e.up ? 'Raising pantograph…' : 'Lowering pantograph…', kind: 'info', ms: 2500 });
+        this.followPanto();
+      }),
+      bus.on('needs-pantograph', () => this.nudge(this.bar.panto.el)),
+    );
+
     addEventListener('pointerdown', this.onAnyPointer, true);
     this.idleTimer = window.setInterval(() => this.checkIdle(), 500);
+  }
+
+  private followPanto() {
+    cancelAnimationFrame(this.raf);
+    const step = () => {
+      const s = this.hk.sys;
+      this.bar.panto.update(s.pantoPos, s.pantoUp);
+      if (s.pantoMoving) this.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  }
+
+  /** Briefly pulse a control to point the player at it. */
+  private nudge(e: HTMLElement) {
+    e.classList.remove('nudge');
+    void e.getBoundingClientRect();
+    e.classList.add('nudge');
+    buzz(30);
   }
 
   private onAnyPointer = (e: PointerEvent) => {
     this.lastTouch = performance.now();
     this.el.classList.remove('idle');
-    if (!this.drawer.hidden && !(e.target as HTMLElement).closest('.t-drawer, .t-more')) this.setDrawer(false);
+    const t = e.target as HTMLElement;
+    if (!this.drawer.hidden && !t.closest('.t-drawer, .m-more')) this.setDrawer(false);
+    if (this.camPick.isOpen && !t.closest('.m-campick')) this.camPick.open(false);
   };
 
   private checkIdle() {
-    const idle = this.h.autoHide() && performance.now() - this.lastTouch > IDLE_MS && this.drawer.hidden === true;
+    const idle = this.hk.autoHide() && performance.now() - this.lastTouch > IDLE_MS && this.drawer.hidden === true && !this.camPick.isOpen;
     this.el.classList.toggle('idle', idle);
   }
 
   private setDrawer(open: boolean) {
     this.drawer.hidden = !open;
-    this.q('.t-more').classList.toggle('on', open);
-  }
-
-  /**
-   * Vertical notched slider. `upIsMore`: throttle grows upward; the brake
-   * releases at the top and applies as it is pulled down.
-   */
-  private slider(el: HTMLElement, upIsMore: boolean, max: number, set: (v: number) => void) {
-    const track = el.querySelector<HTMLElement>('.t-track')!;
-    let id = -1;
-    const at = (y: number) => {
-      const r = track.getBoundingClientRect();
-      const f = Math.min(1, Math.max(0, (y - r.top) / r.height));
-      return Math.round((upIsMore ? 1 - f : f) * max);
-    };
-    el.addEventListener('pointerdown', e => {
-      e.preventDefault(); e.stopPropagation();
-      id = e.pointerId;
-      el.setPointerCapture(id);
-      el.classList.add('active');
-      set(at(e.clientY));
-    });
-    el.addEventListener('pointermove', e => { if (e.pointerId === id) { e.preventDefault(); set(at(e.clientY)); } });
-    const end = (e: PointerEvent) => { if (e.pointerId === id) { id = -1; el.classList.remove('active'); } };
-    el.addEventListener('pointerup', end);
-    el.addEventListener('pointercancel', end);
-  }
-
-  /** Emergency needs a 0.5 s hold so a stray touch cannot dump the brakes. */
-  private emergency(b: HTMLElement) {
-    b.addEventListener('pointerdown', e => {
-      e.preventDefault(); e.stopPropagation();
-      b.setPointerCapture(e.pointerId);
-      b.classList.add('arming');
-      clearTimeout(this.emergTimer);
-      this.emergTimer = window.setTimeout(() => {
-        b.classList.remove('arming');
-        this.h.act('emergency', true);
-        buzz(80);
-      }, 500);
-    });
-    const cancel = () => { clearTimeout(this.emergTimer); b.classList.remove('arming'); };
-    b.addEventListener('pointerup', cancel);
-    b.addEventListener('pointercancel', cancel);
+    this.bar.setMoreOpen(open);
   }
 
   /** Tap = short blast (at least 0.35 s), hold = long. */
-  private horn(b: HTMLElement) {
+  private hornButton(b: HTMLElement) {
     b.addEventListener('pointerdown', e => {
       e.preventDefault(); e.stopPropagation();
       b.setPointerCapture(e.pointerId);
       clearTimeout(this.hornTimer);
       this.hornDownAt = performance.now();
-      this.h.act('horn', true);
+      this.hk.act('horn', true);
       b.classList.add('on');
     });
     const up = () => {
       if (!b.classList.contains('on')) return;
       const left = Math.max(0, 350 - (performance.now() - this.hornDownAt));
-      this.hornTimer = window.setTimeout(() => { this.h.act('horn', false); b.classList.remove('on'); }, left);
+      this.hornTimer = window.setTimeout(() => { this.hk.act('horn', false); b.classList.remove('on'); }, left);
     };
     b.addEventListener('pointerup', up);
     b.addEventListener('pointercancel', up);
   }
 
-  /** Pulse an on-screen control for the tutorial (opens the drawer if the control is in it). */
+  /** Pulse an on-screen control for the tutorial (and the More button if the control is in the drawer). */
   highlight(tid: string | null) {
     this.el.querySelectorAll('.tut-pulse').forEach(e => e.classList.remove('tut-pulse'));
     if (!tid) return;
     const t = this.el.querySelector<HTMLElement>(`[data-tid="${tid}"]`);
     if (!t) return;
     t.classList.add('tut-pulse');
-    if (this.drawer.contains(t) && this.drawer.hidden) this.q('.t-more').classList.add('tut-pulse');
+    if (this.drawer.contains(t) && this.drawer.hidden) this.el.querySelector('.m-more')?.classList.add('tut-pulse');
   }
 
-  /** Keep the controls in step with the train (keyboard, auto-drive or tutorial can move them too). */
-  update(d: StripData) {
-    const s = this.h.sys, b = this.h.brake(), sh = this.shown;
-    this.q('.t-speed').textContent = String(Math.round(d.speed));
-    this.q('.t-units').textContent = d.units;
-    const lim = this.q('.t-limit');
-    lim.textContent = String(d.limit);
-    lim.classList.toggle('over', d.speed > d.limit + 2);
-    const sig = this.q('.t-sig');
-    sig.querySelector('i')!.className = `lamp ${d.aspect === 'R' ? 'r' : d.aspect === 'G' ? 'g' : d.aspect ? 'y' : ''}`;
-    sig.querySelector('span')!.textContent = d.dist === null ? '--' : d.dist >= 1000 ? `${(d.dist / 1000).toFixed(1)} km` : `${Math.max(0, Math.round(d.dist))} m`;
-
-    if (s.notch !== sh.notch) {
-      sh.notch = s.notch;
-      this.setSlider(this.q('.t-throttle'), s.notch / this.h.notches, true, String(s.notch));
+  /** Called by the game's HUD tick (10 Hz). */
+  update(d: MobileHudData) {
+    const s = this.hk.sys, b = this.hk.brake(), sh = this.shown;
+    const layout = this.hk.leverLayout();
+    if (layout !== sh.layout) {
+      sh.layout = layout;
+      const split = layout === 'split';
+      this.el.classList.toggle('split', split);
+      // split: throttle on the left edge for the left thumb; both: brake then throttle on the right
+      if (split) this.el.append(this.throttle.el); else this.levers.append(this.throttle.el);
     }
-    const handle = Math.min(b.handle, FULL_SERVICE);
-    if (b.handle !== sh.brake) {
-      sh.brake = b.handle;
-      this.setSlider(this.q('.t-brake'), handle / FULL_SERVICE, false, b.handle > FULL_SERVICE ? 'EMG' : BRAKE_SHORT[handle]);
-    }
-    if (s.reverser !== sh.rev) {
-      sh.rev = s.reverser;
-      this.el.querySelectorAll<HTMLElement>('[data-rev]').forEach(x => x.classList.toggle('on', Number(x.dataset.rev) === s.reverser));
-    }
-    const text = (k: string, v: string) => { this.q(`[data-v="${k}"]`).textContent = v; };
-    if (s.pantoUp !== sh.panto) { sh.panto = s.pantoUp; text('panto', s.pantoUp ? 'up' : 'down'); this.q('[data-act="pantograph"]').classList.toggle('on', s.pantoUp); }
-    if (s.vcb !== sh.vcb) { sh.vcb = s.vcb; text('vcb', s.vcb ? 'closed' : 'open'); this.q('[data-act="vcb"]').classList.toggle('on', s.vcb); }
-    if (s.headlight !== sh.head) { sh.head = s.headlight; text('head', ['off', 'dim', 'bright'][s.headlight]); this.q('[data-act="headlights"]').classList.toggle('on', s.headlight > 0); }
-    if (s.wipers !== sh.wipers) { sh.wipers = s.wipers; text('wipers', ['off', 'slow', 'fast'][s.wipers]); this.q('[data-act="wipers"]').classList.toggle('on', s.wipers > 0); }
+    this.signal.update(d.signal);
+    this.limitCard.update(d.restriction);
+    this.station.update(d.station);
+    this.timetable.update(d.timetable);
+    this.score.update(d.score);
+    this.speedo.update(d.speed, d.limit, d.maxKmph, d.units);
+    this.bar.show(s);
+    this.reverser.show(s.reverser);
+    this.camPick.show(this.hk.cameraIndex());
+    this.throttle.show(s.notch);
+    this.brakeLever.show(Math.min(b.handle, FULL_SERVICE));
+    this.brakeLever.el.classList.toggle('emergency', b.handle > FULL_SERVICE);
+    setText(this.notchOut.querySelector('b')!, s.regen > 0 ? `Regen ${s.regen}` : s.notch === 0 ? 'Idle' : `Notch ${s.notch}`);
+    const text = (k: string, v: string) => setText(this.drawer.querySelector(`[data-v="${k}"]`)!, v);
+    if (s.vcb !== sh.vcb) { sh.vcb = s.vcb; text('vcb', s.vcb ? 'closed' : 'open'); this.drawer.querySelector('[data-act="vcb"]')!.classList.toggle('on', s.vcb); }
+    if (s.flasher !== sh.flasher) { sh.flasher = s.flasher; text('flasher', s.flasher ? 'on' : 'off'); this.drawer.querySelector('[data-act="flasher"]')!.classList.toggle('on', s.flasher); }
     const loco = Math.round(b.independent * 100);
     if (loco !== sh.loco) { sh.loco = loco; text('loco', `${loco}%`); }
     if (d.vigilance !== sh.vig) {
       sh.vig = d.vigilance;
-      const v = this.q('.t-vig');
-      v.hidden = d.vigilance === 'ok';
-      v.firstChild!.textContent = d.vigilance === 'penalty' ? 'PENALTY - STOP' : 'VIGILANCE';
-      if (!v.hidden) buzz(40);
+      this.vig.hidden = d.vigilance === 'ok';
+      this.vig.firstChild!.textContent = d.vigilance === 'penalty' ? 'PENALTY - STOP' : 'VIGILANCE';
+      if (!this.vig.hidden) buzz(40);
     }
   }
 
-  private setSlider(el: HTMLElement, f: number, upIsMore: boolean, label: string) {
-    const p = Math.round(f * 1000) / 10;
-    const fill = el.querySelector<HTMLElement>('.t-fill')!, knob = el.querySelector<HTMLElement>('.t-knob')!;
-    if (upIsMore) { fill.style.height = `${p}%`; knob.style.bottom = `${p}%`; knob.style.top = ''; }
-    else { fill.style.height = `${p}%`; knob.style.top = `${p}%`; knob.style.bottom = ''; }
-    knob.querySelector('span')!.textContent = label;
-    el.setAttribute('aria-valuenow', label);
-  }
+  /** God Mode "hide HUD": only the pause button stays (there is no Esc key on a phone). */
+  setBare(bare: boolean) { this.el.classList.toggle('bare', bare); }
 
   dispose() {
+    for (const o of this.offs) o();
     removeEventListener('pointerdown', this.onAnyPointer, true);
     clearInterval(this.idleTimer);
     clearTimeout(this.hornTimer);
-    clearTimeout(this.emergTimer);
+    cancelAnimationFrame(this.raf);
     this.el.remove();
   }
 }

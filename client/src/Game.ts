@@ -40,7 +40,8 @@ import { StationView } from './infrastructure/Station';
 import { buildLinesideChunk } from './infrastructure/TracksideProps';
 import { buildTunnel } from './infrastructure/Tunnel';
 import { Gamepad } from './input/Gamepad';
-import { enterGameScreen, isTouch } from './input/Device';
+import { enterGameScreen, iosFullscreenTip, isFullscreen, isTouch } from './input/Device';
+import { ResumeScreen } from './ui/ResumeScreen';
 import { TouchControls } from './ui/TouchControls';
 import { Keyboard } from './input/Keyboard';
 import { Mouse } from './input/Mouse';
@@ -164,6 +165,9 @@ export class Game {
   /** on-screen controls on phones and tablets */
   private touch: TouchControls | null = null;
   private started = false;
+  /** touch: "Tap to continue" after the tab comes back or fullscreen was left */
+  private resumeScreen: ResumeScreen | null = null;
+  private wasFullscreen = false;
   private raycaster = new THREE.Raycaster();
   private pressedControl: string | null = null;
 
@@ -320,6 +324,8 @@ export class Game {
         toggleDetails: () => this.hud.toggleDetails(),
         toggleMap: () => this.minimap.canvas.classList.toggle('shown'),
         autoHide: () => settings.get().touchAutoHide,
+        pause: () => this.togglePause(false),
+        leverLayout: () => settings.get().leverLayout,
       });
     }
 
@@ -342,6 +348,13 @@ export class Game {
     document.addEventListener('visibilitychange', this.onVisibility);
     this.offs.push(() => document.removeEventListener('visibilitychange', this.onVisibility));
     this.traffic.onHonk = p => this.trainAudio?.honk(p.x, p.y, p.z);
+    let pantoHintAt = -Infinity;
+    this.offs.push(bus.on('needs-pantograph', () => {
+      const now = performance.now();
+      if (now - pantoHintAt < 3000) return;
+      pantoHintAt = now;
+      bus.emit('message', { text: isTouch ? 'Raise pantograph first' : 'Raise pantograph first (P)', kind: 'warn', ms: 2500 });
+    }));
 
     // ---- loop ----
     this.engine = new Engine(dt => this.sim(dt), (dt, a) => this.frame(dt, a));
@@ -351,6 +364,17 @@ export class Game {
     this.applySettings();
     this.onResize();
     addEventListener('resize', this.onResize);
+    addEventListener('orientationchange', this.onResize);
+    document.addEventListener('fullscreenchange', this.onFullscreen);
+    document.addEventListener('webkitfullscreenchange', this.onFullscreen);
+    addEventListener('pageshow', this.onPageShow);
+    this.offs.push(() => {
+      removeEventListener('orientationchange', this.onResize);
+      document.removeEventListener('fullscreenchange', this.onFullscreen);
+      document.removeEventListener('webkitfullscreenchange', this.onFullscreen);
+      removeEventListener('pageshow', this.onPageShow);
+    });
+    if (isTouch) this.resumeScreen = new ResumeScreen(document.body, () => this.resume(), () => Game.quit());
   }
 
   // ------------------------------------------------------------------ setup
@@ -463,14 +487,45 @@ export class Game {
   private onVisibility = () => {
     if (this.ended || !this.started) return;
     if (document.hidden) {
+      // phones: freeze the run now; coming back needs a tap (fullscreen and audio only start inside one)
+      if (isTouch) this.suspend();
       this.rs.renderer.setAnimationLoop(null);
       this.audio?.ctx.suspend().catch(() => {});
     } else {
       this.engine.resetClock();
       this.rs.renderer.setAnimationLoop(t => this.engine.tick(t));
+      this.pausedNeedsRender = true;
       if (!this.engine.paused) this.audio?.ctx.resume().catch(() => {});
     }
   };
+
+  /** Back-forward cache restore: same as coming back to the tab. */
+  private onPageShow = (e: PageTransitionEvent) => { if (e.persisted) { this.onVisibility(); if (isTouch) this.suspend(); } };
+
+  /** Leaving fullscreen during play (back / swipe gesture) freezes the run behind "Tap to continue". */
+  private onFullscreen = () => {
+    const fs = isFullscreen();
+    if (this.wasFullscreen && !fs && isTouch) this.suspend();
+    this.wasFullscreen = fs;
+    this.onResize();
+  };
+
+  /**
+   * Freeze the run without the pause menu (touch: the tab was hidden or
+   * fullscreen was left) and show "Tap to continue". Nothing moves until the tap.
+   */
+  private suspend() {
+    if (this.ended || !this.started || !this.resumeScreen) return;
+    if (!this.engine.paused) {
+      this.engine.paused = true;
+      this.keyboard.enabled = false;
+      this.mouse.enabled = false;
+      this.rs.renderer.domElement.classList.add('paused');
+      if (this.tutorialCard) this.tutorialCard.el.hidden = true;
+      this.audio?.fadeOut();
+      this.resumeScreen.show();
+    }
+  }
 
   async begin(opts: { tutorial?: boolean } = {}) {
     enterGameScreen(); // phones: fullscreen + landscape lock, inside the Start tap
@@ -484,13 +539,15 @@ export class Game {
     }
     this.menus.inGame = true;
     this.menus.hide();
+    this.wasFullscreen = isFullscreen();
+    if (isTouch) iosFullscreenTip(document.body);
     if (this.bench) this.prepareForBench();
     this.engine.paused = false;
     this.started = true;
     this.rs.renderer.setAnimationLoop(t => this.engine.tick(t));
     const s = this.scenario;
     bus.emit('message', { text: `${s.name} - ${WEATHER[s.weather].name}, ${formatClock(this.time.seconds)}`, kind: 'info', ms: 6000 });
-    bus.emit('message', { text: isTouch ? 'Prepare the loco: tap \u22ef for pantograph, main breaker and reverser, then slide the brake up and the power up.' : 'Prepare the loco: P pantograph, O main breaker, ; release brakes, W reverser forward. F1 for help.', kind: 'info', ms: 12000 });
+    bus.emit('message', { text: isTouch ? 'Prepare the loco: raise the pantograph (bottom bar), close the main breaker (\u22ef), reverser F, then the BRAKE lever up and THROTTLE up.' : 'Prepare the loco: P pantograph, O main breaker, ; release brakes, W reverser forward. F1 for help.', kind: 'info', ms: 12000 });
     if (s.timetable[0]?.dep) bus.emit('message', { text: `Departure ${s.timetable[0].dep} from ${this.route.station(s.timetable[0].station)?.name}. Wait for the starter signal.`, kind: 'info', ms: 12000 });
     this.applyGod();
     if (!this.bench && (opts.tutorial || tutorialPrefs.shouldAutoStart())) await this.startTutorial();
@@ -502,7 +559,7 @@ export class Game {
     const g = this.god, e = g.eff;
     this.hud.setGodMode(g.active);
     this.hud.setHidden(e.hideHud);
-    if (this.touch) this.touch.el.style.display = e.hideHud ? 'none' : '';
+    this.touch?.setBare(e.hideHud);
     this.profile.canvas.style.display = e.hideHud || !this.hud.visible ? 'none' : '';
     this.minimap.canvas.style.display = e.hideHud ? 'none' : '';
     this.scoring.enabled = !g.usedThisRun && !this.tutorialPractice;
@@ -772,8 +829,12 @@ export class Game {
     this.showPauseMenu();
   }
 
+  /** Resume from a tap (pause menu Resume, "Tap to continue"): back to fullscreen, audio on, resized, running. */
   resume() {
     if (this.ended) return;
+    enterGameScreen();
+    this.resumeScreen?.hide();
+    this.onResize();
     this.menus.hide();
     this.rs.renderer.domElement.classList.remove('paused');
     if (this.tutorialCard) this.tutorialCard.el.hidden = false;
@@ -1307,6 +1368,8 @@ export class Game {
     }
     // ETA vs timetable
     let eta = '--', due = '';
+    let arrival: { station: string; minutes: number; lateMin: number } | null = null;
+    let departure: { station: string; time: string } | null = null;
     const next = this.scenario.timetable.find(e => e.arr && (L.station(e.station)?.platformToKm ?? 0) > head && !this.dispatcher.stationState('player', e.station)?.arrived);
     if (next) {
       const nst = L.station(next.station)!;
@@ -1316,13 +1379,23 @@ export class Game {
       eta = formatClock(etaS);
       const late = Math.round((etaS - parseClock(next.arr!)) / 60);
       due = `Due ${next.arr} at ${nst.name} (${late > 0 ? `+${late}` : late} min)`;
+      arrival = { station: nst.name, minutes: (parseClock(next.arr!) - this.time.seconds) / 60, lateMin: late };
     } else {
       const dep = this.scenario.timetable.find(e => e.dep && !this.dispatcher.stationState('player', e.station)?.departed);
-      if (dep) due = `Depart ${this.route.station(dep.station)?.name} at ${dep.dep}`;
+      if (dep) {
+        due = `Depart ${this.route.station(dep.station)?.name} at ${dep.dep}`;
+        departure = { station: this.route.station(dep.station)?.name ?? dep.station, time: dep.dep! };
+      }
     }
     this.touch?.update({
       speed: Math.abs(d.speedKmph) * conv, units: units === 'mph' ? 'mph' : 'km/h', limit: Math.round(limit * conv),
-      aspect: ns ? ns.aspect : null, dist: ns ? (ns.km - head) * 1000 : null, vigilance: s.vigilanceState,
+      maxKmph: Math.round((this.god.eff.unlimitedSpeed ? Math.max(160, this.consist.loco.maxSpeedKmph) : this.consist.loco.maxSpeedKmph) * conv),
+      signal: ns ? { aspect: ns.aspect, dist: (ns.km - head) * 1000 } : null,
+      restriction,
+      station: st ? { name: st.name, dist: stDist } : null,
+      timetable: { clock: formatClock(this.time.seconds, true), arrival, departure, nextStop: st ? st.name : null },
+      score: this.scenario.rules && this.scoring.enabled ? this.scoring.total : null,
+      vigilance: s.vigilanceState,
     });
     this.hud.update({
       speed: Math.abs(d.speedKmph) * conv, units: units === 'mph' ? 'mph' : 'km/h', limit: Math.round(limit * conv),

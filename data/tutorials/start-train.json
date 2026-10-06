@@ -3,7 +3,7 @@
   "title": {
     "en": "How to start the train"
   },
-  "conditionsHelp": "complete: {manual} | {after: seconds} | {field, op, value} | {all: [...]} | {any: [...]}. Fields: pantoPos, vcb, headlight, reverser, signalAspect, bp, trainBrake, locoBrake, hornSounded, notch, speedKmph, underLimitSeconds, stoppedAfterMoving. Each step: text/key/highlight are for keyboard and mouse; touch.text/touch.highlight (an on-screen control: throttle, brake, horn, strip, more, panto, vcb, headlight, reverser, locoBrake, ...) are used on phones and tablets.",
+  "conditionsHelp": "complete: {manual} | {after: seconds} | {field, op, value} | {all: [...]} | {any: [...]}. Fields: pantoPos, vcb, headlight, reverser, signalAspect, bp, trainBrake, locoBrake, hornSounded, notch, speedKmph, underLimitSeconds, stoppedAfterMoving. Each step: text/key/highlight are for keyboard and mouse; touch.text/touch.highlight (an on-screen control: throttle, brake, horn, panto, headlight, wipers, cabLight, markers, reverser, signal, speedo, timetable, camera, pause, more, vcb, sander, flasher, locoBrake) are used on phones and tablets.",
   "steps": [
     {
       "id": "welcome",
@@ -37,7 +37,7 @@
       },
       "touch": {
         "text": {
-          "en": "Raise the pantograph so the loco can draw power from the overhead wire: tap ⋯ (More), then Pantograph. Watch the OHE voltage gauge rise to about 25 kV."
+          "en": "Raise the pantograph: tap the pantograph button in the bottom bar. It takes a few seconds - watch the ring fill and the LED turn green, then the OHE voltage rises to about 25 kV."
         },
         "highlight": "panto"
       }
@@ -56,7 +56,7 @@
       },
       "touch": {
         "text": {
-          "en": "Close the main circuit breaker (VCB): tap ⋯, then Main breaker. The VCB OPEN lamp goes out and the transformer starts humming."
+          "en": "Close the main circuit breaker (VCB): tap ⋯ at the end of the bottom bar, then Main breaker. The transformer starts humming."
         },
         "highlight": "vcb"
       }
@@ -75,7 +75,7 @@
       },
       "touch": {
         "text": {
-          "en": "Turn on the headlight: tap ⋯, then Headlight. Tap once for dim, twice for bright."
+          "en": "Turn on the headlight: tap the headlight button in the bottom bar. Tap once for dim, twice for bright."
         },
         "highlight": "headlight"
       }
@@ -94,7 +94,7 @@
       },
       "touch": {
         "text": {
-          "en": "Set the reverser to Forward: tap ⋯, then F on the reverser. It decides which way the traction motors drive the train."
+          "en": "Set the reverser to Forward: tap F on the REVERSER switch (top right). It decides which way the traction motors drive the train."
         },
         "highlight": "reverser"
       }
@@ -117,9 +117,9 @@
       },
       "touch": {
         "text": {
-          "en": "Check the signal ahead (the coloured dot in the strip at the top). You may only start on a yellow, double yellow or green aspect. Red means stop: wait for it to clear."
+          "en": "Check the next signal - the card at the top left shows its colour and distance. You may only start on a yellow, double yellow or green aspect. Red means stop: wait for it to clear."
         },
-        "highlight": "strip"
+        "highlight": "signal"
       }
     },
     {
@@ -146,7 +146,7 @@
       },
       "touch": {
         "text": {
-          "en": "Release the train brake: slide the BRAKE slider on the right edge up to Run, and watch the brake pipe (BP) needle climb to about 5 kg/cm2."
+          "en": "Release the train brake: push the BRAKE lever (right side) all the way up to Rel, then let it settle at Run. The brake pipe pressure climbs to about 5 kg/cm2."
         },
         "highlight": "brake"
       }
@@ -184,7 +184,7 @@
       },
       "touch": {
         "text": {
-          "en": "Sound the horn before moving off to warn anyone on or near the track: tap the horn button (hold it for a long blast)."
+          "en": "Sound the horn before moving off to warn anyone on or near the track: tap the big blue horn button (hold it for a long blast)."
         },
         "highlight": "horn"
       }
@@ -213,7 +213,7 @@
       },
       "touch": {
         "text": {
-          "en": "Apply power gently: slide the POWER slider on the left edge up two or three notches. A long train takes a few seconds to start rolling - watch the speed."
+          "en": "Apply power gently: push the THROTTLE lever (right side) up two or three notches. A long train takes a few seconds to start rolling - watch the speedometer."
         },
         "highlight": "throttle"
       }
@@ -233,9 +233,9 @@
       },
       "touch": {
         "text": {
-          "en": "Stay under the speed limit shown in the red circle in the strip at the top. Keep driving for a little while."
+          "en": "Stay under the speed limit - the red-ringed sign on the speedometer. The arc turns red if you go over. Keep driving for a little while."
         },
-        "highlight": "strip"
+        "highlight": "speedo"
       }
     },
     {
@@ -252,7 +252,7 @@
       },
       "touch": {
         "text": {
-          "en": "Now stop: slide POWER down to 0, then pull the BRAKE slider down one or two steps. Slide it back up to Run once you have stopped."
+          "en": "Now stop: pull the THROTTLE lever down to 0, then pull the BRAKE lever down one or two steps. Push it back up to Run once you have stopped."
         },
         "highlight": "brake"
       }
@@ -269,7 +269,7 @@
       },
       "touch": {
         "text": {
-          "en": "You've driven your first train! Tap Menu any time for the menu and settings."
+          "en": "You've driven your first train! Tap the pause button (top left) any time for the menu and settings."
         },
         "highlight": null
       }

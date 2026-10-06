@@ -22,6 +22,8 @@ export interface GameEvents {
   'lightning': { intensity: number };
   'switch-crossed': { id: string };
   'pantograph': { up: boolean };
+  /** the driver tried something that needs the pantograph up (UI can point at the control) */
+  'needs-pantograph': { action: 'vcb' | 'throttle' };
   'vcb': { closed: boolean };
   'announcement': { stationCode: string };
   'ui-toggle': { what: 'hud' | 'map' | 'perf' | 'help' | 'pause' };

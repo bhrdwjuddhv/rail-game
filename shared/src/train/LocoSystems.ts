@@ -5,6 +5,9 @@ import { BRAKE_POSITIONS, BrakeSystem } from '../physics/BrakeSystem';
 
 export const VIGILANCE_PERIOD = 60;
 export const VIGILANCE_GRACE = 8;
+/** pantograph travel times (s): the 3D model and the touch button both follow pantoPos */
+export const PANTO_RAISE_S = 3.5;
+export const PANTO_LOWER_S = 2.5;
 
 /**
  * Driver-controllable loco state: master controller, reverser, pantograph,
@@ -42,16 +45,23 @@ export class LocoSystems {
 
   get powerAvailable() { return this.vcb && this.lineVoltage > 19 && !this.brakes.penalty && !this.emergencyStop; }
   get pantoDown() { return this.pantoPos < 0.99; }
+  /** pantograph still travelling toward its switch position */
+  get pantoMoving() { return this.pantoUp ? this.pantoPos < 0.999 : this.pantoPos > 0.001; }
 
   private emit(id: string, value: number | string | boolean) { bus.emit('control', { id, value }); }
 
   // ---- driver actions ----
+  /** Notching up with the pantograph down does nothing useful: say why (the notch still moves, as on the real controller). */
+  private pantoHint(from: number, to: number) {
+    if (to > from && this.pantoPos < 0.99) bus.emit('needs-pantograph', { action: 'throttle' });
+  }
   throttle(delta: number) {
     if (delta > 0 && this.regen > 0) { this.regen = 0; this.emit('regen', 0); return; }
+    this.pantoHint(this.notch, this.notch + delta);
     const n = clamp(this.notch + delta, 0, this.loco.notches);
     if (n !== this.notch) { this.notch = n; this.emit('throttle', n); }
   }
-  setThrottle(n: number) { const v = clamp(Math.round(n), 0, this.loco.notches); if (v !== this.notch) { if (v > 0) this.regen = 0; this.notch = v; this.emit('throttle', v); } }
+  setThrottle(n: number) { const v = clamp(Math.round(n), 0, this.loco.notches); this.pantoHint(this.notch, v); if (v !== this.notch) { if (v > 0) this.regen = 0; this.notch = v; this.emit('throttle', v); } }
   regenStep(delta: number) {
     if (delta > 0 && this.notch > 0) { this.notch = 0; this.emit('throttle', 0); return; }
     const n = clamp(this.regen + delta, 0, this.loco.regen.notches);
@@ -91,7 +101,7 @@ export class LocoSystems {
   }
   toggleVcb() {
     if (this.vcb) { this.openVcb(); return; }
-    if (this.pantoPos < 0.99) { bus.emit('message', { text: 'Raise the pantograph first (P)', kind: 'warn' }); return; }
+    if (this.pantoPos < 0.99) { bus.emit('needs-pantograph', { action: 'vcb' }); return; }
     if (this.notch > 0) { bus.emit('message', { text: 'Throttle must be at 0 to close the VCB', kind: 'warn' }); return; }
     if (this.emergencyStop) { bus.emit('message', { text: 'Reset the emergency stop button first', kind: 'warn' }); return; }
     this.vcb = true; this.emit('vcb', true); bus.emit('vcb', { closed: true });
@@ -127,7 +137,7 @@ export class LocoSystems {
 
   update(dt: number, speed: number, limitKmph: number, wired: boolean) {
     this.t += dt;
-    this.pantoPos = approach(this.pantoPos, this.pantoUp ? 1 : 0, this.pantoUp ? 1 / 6 : 1 / 3, dt);
+    this.pantoPos = approach(this.pantoPos, this.pantoUp ? 1 : 0, this.pantoUp ? 1 / PANTO_RAISE_S : 1 / PANTO_LOWER_S, dt);
     const touching = this.pantoPos > 0.99 && wired;
     this.lineVoltage = touching ? this.loco.electrical.lineVoltageKV + Math.sin(this.t * 0.7) * 0.6 + Math.sin(this.t * 3.1) * 0.25 : 0;
     if (this.vcb && !touching) this.openVcb();
