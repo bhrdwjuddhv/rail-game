@@ -95,7 +95,7 @@ export class TouchControls {
 
     // ---- left: info cards (tap any for the full gauges)
     const cards = h('div', 'm-cards');
-    cards.append(this.signal.el, this.limitCard.el, this.station.el);
+    cards.append(this.signal.el, this.limitCard.el, this.station.el, this.timetable.el);
     this.signal.el.dataset.tid = 'signal';
     cards.addEventListener('click', e => { e.stopPropagation(); hk.toggleDetails(); });
     this.timetable.el.dataset.tid = 'timetable';
@@ -151,9 +151,10 @@ export class TouchControls {
     sander.addEventListener('pointerdown', e => { e.preventDefault(); sander.setPointerCapture(e.pointerId); hk.act('sander', true); });
     for (const ev of ['pointerup', 'pointercancel'] as const) sander.addEventListener(ev, () => hk.act('sander', false));
 
-    // bottom-left: timetable card stacked on the bar (the bar wraps to two rows on narrow screens)
+    // bottom-left: the control bar (wraps to two rows on narrow screens); the timetable card
+    // sits at the foot of the left column, so nothing reaches up into the view of the track
     const bl = h('div', 'm-bl');
-    bl.append(this.timetable.el, this.bar.el);
+    bl.append(this.bar.el);
     this.el.append(tl, cards, bl, this.speedo.el, horn, right, this.vig, this.drawer);
     parent.appendChild(this.el);
 

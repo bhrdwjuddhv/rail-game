@@ -5,7 +5,7 @@ import { GeoBatch, mat } from '../../core/GeoBatch';
 import { canvasTexture, tex } from '../../core/Textures';
 import { materials } from '../../core/Materials';
 import { renderFlags } from '../../core/Renderer';
-import { assets } from '../../core/AssetRegistry';
+import { textures } from '../../core/TextureLibrary';
 import type { PropType } from './Placement';
 
 /**
@@ -79,11 +79,11 @@ export function propMaterials() {
   const tree = sway({ vertexColors: true, roughness: 0.9 }, 0.01);
   // atlases use alpha cutout (alphaTest), never blending: no sorting flicker
   const grass = sway({ alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1 }, 0.12, true);
-  assets.bindTextureSet(grass as THREE.MeshStandardMaterial, 'vegetation/grass', tex.grass);
+  textures.bind(grass as THREE.MeshStandardMaterial, 'grass', tex.grass, 1, { resident: true });
   const impostor = sway({ alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1 }, 0.006);
-  assets.bindTextureSet(impostor as THREE.MeshStandardMaterial, 'vegetation/tree-impostor', tex.treeImpostor);
+  textures.bind(impostor as THREE.MeshStandardMaterial, 'impostor', tex.treeImpostor, 1, { resident: true });
   const billboard = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
-  assets.bindTextureSet(billboard, 'signage/ads', adAtlas);
+  textures.bind(billboard, 'billboard', adAtlas, 1, { resident: true });
   mats = { std: m.std, tree, grass, impostor, facade: m.facade, billboard, roof: m.roof, metal: m.metal, brick: m.brick };
   return mats;
 }

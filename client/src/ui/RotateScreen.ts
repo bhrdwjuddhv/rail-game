@@ -14,13 +14,14 @@ export class RotateScreen {
     this.el.hidden = true;
     this.el.innerHTML = `<div class="phone" aria-hidden="true"><i></i></div><p><b>Rotate your phone</b><br>Rail Bharat plays in landscape.</p>`;
     parent.appendChild(this.el);
-    if (!isTouch) return;
+    // isTouch can switch on with the first finger touch, so it is read on every check
     const check = () => {
-      const p = isPortrait();
+      const p = isTouch && isPortrait();
       this.el.hidden = !p;
       if (p !== this.portrait) { this.portrait = p; this.onChange?.(p); }
     };
     addEventListener('resize', check);
+    addEventListener('pointerdown', check, true);
     screen.orientation?.addEventListener?.('change', check);
     check();
   }

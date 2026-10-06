@@ -1,10 +1,7 @@
 import * as THREE from 'three/webgpu';
 import TEXTURES from '../../../data/textures.json';
-import { settings } from './Settings';
 
-interface ProcessedSet { size: [number, number]; color: string; normal?: string; roughness?: string; ktx2?: string }
-interface TextureEntry { file: string; tilingM: number; tileable: boolean; normal: boolean; alphaTest?: number; materials: string[]; processed?: { full: ProcessedSet; half: ProcessedSet } }
-const TEX = TEXTURES as unknown as { textures: Record<string, TextureEntry>; ui: Record<string, string> };
+const TEX = TEXTURES as unknown as { ui: Record<string, string> };
 
 /**
  * One API for procedural and file-based assets. Every asset has an id; the
@@ -28,55 +25,6 @@ export class AssetRegistry {
   }
 
   has(id: string) { return id in this.manifest; }
-
-  /** Estimated GPU memory of file textures loaded so far (RGBA8 + mip chain), MB. */
-  textureMB = 0;
-
-  /**
-   * Bind a texture set from data/textures.json to a material. The procedural
-   * texture is used immediately; if `npm run textures` produced files for this
-   * id they replace it (colour + normal + roughness). Missing files never break
-   * anything - no request is even made unless the manifest lists processed output.
-   *
-   * uvMeters: how many metres one UV unit spans on the geometry using this
-   * material; repeat = uvMeters / tilingM so textures keep their real-world size.
-   * Budget (keeps High well under ~500 MB): High/Ultra = full-size colour + half-size
-   * normal/roughness; Medium = half-size everything; Low = half-size colour only.
-   */
-  bindTextureSet(mat: THREE.MeshStandardMaterial, id: string, factory: () => THREE.Texture, uvMeters = 1, onFileLoaded?: () => void) {
-    const entry = TEX.textures[id];
-    const repeat = entry?.tileable ? uvMeters / entry.tilingM : 1;
-    const proc = factory().clone();
-    proc.needsUpdate = true;
-    if (entry?.tileable) { proc.wrapS = proc.wrapT = THREE.RepeatWrapping; proc.repeat.set(repeat, repeat); }
-    mat.map = proc;
-    if (entry?.alphaTest) mat.alphaTest = entry.alphaTest;
-    const set = entry?.processed;
-    if (!set) return;
-    const q = settings.get().quality;
-    const colorSet = q === 'high' || q === 'ultra' ? set.full : set.half;
-    const aniso = q === 'low' ? 4 : 8;
-    const base = `${import.meta.env.BASE_URL}assets/`;
-    const loader = new THREE.TextureLoader();
-    const prep = (t: THREE.Texture, srgb: boolean, [w, h]: [number, number]) => {
-      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-      t.wrapS = t.wrapT = entry.tileable ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-      t.repeat.set(repeat, repeat);
-      t.anisotropy = aniso;
-      t.generateMipmaps = true;
-      t.minFilter = THREE.LinearMipmapLinearFilter;
-      this.textureMB += (w * h * 4 * 1.33) / 1048576;
-      return t;
-    };
-    loader.loadAsync(base + colorSet.color).then(t => {
-      mat.map = prep(t, true, colorSet.size);
-      mat.needsUpdate = true;
-      onFileLoaded?.();
-    }).catch(e => console.warn(`[textures] ${id}: ${colorSet.color} failed, keeping procedural`, e));
-    if (q === 'low' || !set.half.normal) return;
-    loader.loadAsync(base + set.half.normal).then(t => { mat.normalMap = prep(t, false, set.half.size); mat.normalScale.set(0.9, 0.9); mat.needsUpdate = true; }).catch(() => {});
-    if (set.half.roughness) loader.loadAsync(base + set.half.roughness).then(t => { mat.roughnessMap = prep(t, false, set.half.size); mat.roughness = 1; mat.needsUpdate = true; }).catch(() => {});
-  }
 
   /** URL of a UI image (webp preferred, then png), or null when missing. Probed with Image() so a miss is silent. */
   uiImage(name: string): Promise<string | null> {
@@ -118,7 +66,7 @@ export class AssetRegistry {
     };
     if (url.endsWith('.ktx2')) {
       import('three/addons/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
-        const l = new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/libs/basis/');
+        const l = new KTX2Loader().setTranscoderPath(`${import.meta.env.BASE_URL}basis/`);
         if (this.renderer) l.detectSupport(this.renderer as any);
         return l.loadAsync(url).then(apply);
       }).catch(e => console.warn(`texture ${id} failed`, e));

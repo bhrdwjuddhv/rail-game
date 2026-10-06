@@ -23,6 +23,8 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
       <section><h3>Audio</h3>
         ${(['master', 'train', 'horn', 'env', 'ui'] as const).map(k => `<label>${k === 'env' ? 'Environment' : k === 'ui' ? 'Cab / UI' : k[0].toUpperCase() + k.slice(1)} <input type="range" min="0" max="1" step="0.05" value="${v[k]}" data-v="${k}"><output>${Math.round(v[k] * 100)}%</output></label>`).join('')}
         <h3>General</h3>
+        <label>Controls <select data-s="controls"><option value="auto" ${s.controls === 'auto' ? 'selected' : ''}>Auto-detect</option><option value="touch" ${s.controls === 'touch' ? 'selected' : ''}>Touch screen</option><option value="desktop" ${s.controls === 'desktop' ? 'selected' : ''}>Keyboard &amp; mouse</option></select></label>
+        <p class="note">Controls layout changes apply from the next run (Restart or Main Menu).</p>
         <label>Units <select data-s="units"><option value="kmh" ${s.units === 'kmh' ? 'selected' : ''}>km/h</option><option value="mph" ${s.units === 'mph' ? 'selected' : ''}>mph</option></select></label>
         <label>Free-roam clock speed <input type="range" min="1" max="120" step="1" value="${s.dayNightSpeed}" data-s="dayNightSpeed"><output>${s.dayNightSpeed}x</output></label>
         <label>${isTouch ? 'Look sensitivity' : 'Mouse sensitivity'} <input type="range" min="0.3" max="3" step="0.1" value="${s.mouseSensitivity}" data-s="mouseSensitivity"><output>${s.mouseSensitivity}</output></label>

@@ -13,6 +13,7 @@ import { RearCamera } from './camera/modes/RearCamera';
 import { SideCamera } from './camera/modes/SideCamera';
 import { Benchmark, BenchConfig } from './core/Benchmark';
 import { Engine } from './core/Engine';
+import { textures } from './core/TextureLibrary';
 import { prof } from './core/Profiler';
 import { bus } from '@rail/shared/events';
 import type { RenderSystem } from './core/Renderer';
@@ -72,7 +73,13 @@ import { Traffic } from './world/traffic/Traffic';
 import { buildRivers, Waterfalls } from './world/Water';
 import { propMaterials, wind } from './world/scenery/Props';
 
-interface Streamed { center: THREE.Vector3; radius: number; build: () => THREE.Object3D; obj: THREE.Object3D | null; dispose?: () => void }
+interface Streamed {
+  center: THREE.Vector3; radius: number; build: () => THREE.Object3D; obj: THREE.Object3D | null; dispose?: () => void;
+  /** texture materials this item uses: loaded a ring before it is built, released a ring after */
+  materials: string[]; texHeld: boolean;
+}
+/** Textures load this far beyond the build distance (so they are ready before the object appears) and unload a bit further out. */
+const TEX_PREFETCH_M = 1500, TEX_RELEASE_M = 2100;
 
 const CAMERA_NAMES = ["Driver's cab", 'Front', 'Rear', 'Side', 'Chase', 'Cinematic', 'Free'];
 const FREE_CAM_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyF']);
@@ -440,17 +447,17 @@ export class Game {
 
   private setupStreaming() {
     const f = newFrame();
-    const add = (km0: number, km1: number, build: () => THREE.Object3D, dispose?: (o: THREE.Object3D) => void) => {
+    const add = (km0: number, km1: number, build: () => THREE.Object3D, dispose?: (o: THREE.Object3D) => void, materials: string[] = []) => {
       this.route.alignment.sample(((km0 + km1) / 2) * 1000, f);
-      const item: Streamed = { center: new THREE.Vector3(f.x, f.y, f.z), radius: (km1 - km0) * 500 + 50, build, obj: null };
+      const item: Streamed = { center: new THREE.Vector3(f.x, f.y, f.z), radius: (km1 - km0) * 500 + 50, build, obj: null, materials, texHeld: false };
       item.dispose = () => { if (item.obj) { dispose ? dispose(item.obj) : disposeObject(item.obj); item.obj = null; } };
       this.streamed.push(item);
     };
     for (const b of this.route.bridges) add(b.fromKm, b.toKm, () => buildBridge(this.route, this.field, b));
-    for (const t of this.route.tunnels) add(t.fromKm, t.toKm, () => buildTunnel(this.route, t));
+    for (const t of this.route.tunnels) add(t.fromKm, t.toKm, () => buildTunnel(this.route, t), undefined, ['tunnel']);
     for (const st of this.route.stations) {
       add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st); this.stations.set(st.code, v); return v.group; },
-        () => { this.stations.get(st.code)?.dispose(); this.stations.delete(st.code); });
+        () => { this.stations.get(st.code)?.dispose(); this.stations.delete(st.code); }, StationView.MATERIALS);
     }
   }
 
@@ -475,6 +482,8 @@ export class Game {
       await sleep(60);
     }
     this.syncRenderCamera();
+    progress('Loading textures', 0.9);
+    await textures.settle();
     progress('Compiling shaders', 0.95);
     try { await this.rs.renderer.compileAsync(this.scene, this.rcam); } catch { /* optional warm-up */ }
     progress('Ready', 1);
@@ -1052,6 +1061,12 @@ export class Game {
     }
     this.audio?.setCab(inCab);
 
+    // texture uploads (at most 2 per frame / ~2 ms) and wet-surface roughness
+    textures.update();
+    textures.setWetness(this.weather.p.rain);
+    this.chunks.terrainMaterial.roughness = 0.97 * (1 - 0.35 * Math.min(1, this.weather.p.rain));
+    const tm = textures.stats();
+    prof.counters.texMB = tm.mb; prof.counters.texCount = tm.count; prof.counters.texQueued = tm.queued + tm.loading; prof.counters.texBudget = tm.budgetMB;
     // world streaming
     prof.begin('stream');
     this.streamAcc += dt;
@@ -1291,6 +1306,9 @@ export class Game {
     });
     for (const it of this.streamed) {
       const dd = Math.hypot(it.center.x - cam.x, it.center.z - cam.z) - it.radius;
+      // textures by area: acquire ahead of the build ring, release well after it
+      if (!it.texHeld && dd < p.drawDistance + TEX_PREFETCH_M) { it.texHeld = true; for (const m of it.materials) textures.acquire(m); }
+      else if (it.texHeld && dd > p.drawDistance + TEX_RELEASE_M) { it.texHeld = false; for (const m of it.materials) textures.release(m); }
       if (dd < p.drawDistance && !it.obj && (all || built < 4)) { built++; it.obj = it.build(); this.world.add(it.obj); }
       else if (dd > p.drawDistance + 600 && it.obj) it.dispose!();
     }
@@ -1429,6 +1447,7 @@ export class Game {
     return { km: this.line.canonicalKm(this.dyn.headKm), line: this.line.running.id, oncoming: this.oncoming?.trains.length ?? 0, speed: this.dyn.speedKmph, bp: this.dyn.brakes.locoBP, signal: this.nextSignal()?.aspect, camera: this.cameras.index, tiles: this.chunks.root.children.length, chunks: this.trackChunks.size };
   }
   debugSystems() { return this.sys; }
+  debugTextures() { return textures.stats(); }
 
   /** Count renderable objects inside the camera frustum, grouped by top-level owner (diagnostics). */
   debugDrawBreakdown() {

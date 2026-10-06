@@ -4,9 +4,10 @@ import './style.css';
 import './touch.css';
 import { AudioEngine } from './audio/AudioEngine';
 import { assets } from './core/AssetRegistry';
+import { textures } from './core/TextureLibrary';
 import { RendererKind, RenderSystem } from './core/Renderer';
 import { applyMobileDefaults, applyPreset, PRESETS, settings } from './core/Settings';
-import { enterGameScreen, isTouch } from './input/Device';
+import { enterGameScreen, isTouch, lockControlMode } from './input/Device';
 import { RotateScreen } from './ui/RotateScreen';
 import { setMaxAnisotropy } from './core/Textures';
 import { SCENARIOS } from './data';
@@ -62,6 +63,7 @@ async function boot() {
   rs.setMaxPixelRatio(settings.get().maxPixelRatio);
   setMaxAnisotropy(8);
   await assets.init(rs.renderer);
+  textures.init(rs.renderer);
   rs.resize(innerWidth, innerHeight);
   document.body.dataset.backend = rs.backend;
   (window as any).__rail = { backend: rs.backend };
@@ -78,6 +80,7 @@ async function boot() {
   async function start(id: string, overrides: ScenarioOverrides, auto: boolean, opts: { tutorial?: boolean } = {}) {
     if (running) return;
     running = true;
+    lockControlMode();
     if (!auto) enterGameScreen(); // still inside the Start tap
     const data = SCENARIOS[id];
     let audio: AudioEngine | null = null;

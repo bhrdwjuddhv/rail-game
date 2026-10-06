@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { assets } from '../core/AssetRegistry';
 import { renderFlags } from '../core/Renderer';
+import { TerrainTextures } from './TerrainTextures';
 import { tex } from '../core/Textures';
 import type { QualityPreset } from '../core/Settings';
 import type { Route } from '@rail/shared/track/Route';
@@ -12,13 +12,21 @@ import { REGIONS } from '../data';
 export const TILE = 400;
 
 /**
- * Hide texture repetition on the ground: blend the map at two scales with a
- * soft value-noise mask (classic WebGL path; the WebGPU path keeps the plain map).
+ * Terrain shading (classic WebGL path). Until the texture layers are loaded -
+ * or when a layer file is missing - the ground is the vertex colour times a
+ * soft procedural grain, blended at two scales to hide repetition. Once the
+ * layer array is ready it switches to texture splatting (TerrainTextures).
+ * The WebGPU path keeps the vertex-colour look.
  */
-function breakUpTiling(m: THREE.MeshStandardMaterial) {
+function terrainShader(m: THREE.MeshStandardMaterial, tt: TerrainTextures) {
   if (!renderFlags.classic) return;
+  const s = TerrainTextures.shader(tt.quality);
   m.onBeforeCompile = shader => {
-    shader.fragmentShader = shader.fragmentShader
+    Object.assign(shader.uniforms, tt.uniforms);
+    shader.vertexShader = s.defines + s.vertexHead + shader.vertexShader
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+${s.vertexBody}`);
+    shader.fragmentShader = s.defines + s.fragmentHead + shader.fragmentShader
       .replace('#include <common>', `#include <common>
 float rbHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float rbNoise(vec2 p) {
@@ -27,13 +35,21 @@ float rbNoise(vec2 p) {
   return mix(mix(rbHash(i), rbHash(i + vec2(1.0, 0.0)), u.x), mix(rbHash(i + vec2(0.0, 1.0)), rbHash(i + vec2(1.0, 1.0)), u.x), u.y);
 }`)
       .replace('#include <map_fragment>', `#ifdef USE_MAP
+if (uSplatReady > 0.5) {
+${s.splat}
+} else {
   vec4 tA = texture2D(map, vMapUv);
   vec4 tB = texture2D(map, vMapUv * 0.29 + vec2(0.37, 0.71));
   float nMask = rbNoise(vMapUv * 0.06) * 0.65 + rbNoise(vMapUv * 0.17 + 3.1) * 0.35;
   diffuseColor *= mix(tA, tB, smoothstep(0.36, 0.64, nMask));
+}
+#endif`)
+      // the vertex colour is the fallback look only: textured ground is not tinted by it again
+      .replace('#include <color_fragment>', `#if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
+  if (uSplatReady < 0.5) diffuseColor *= vColor;
 #endif`);
   };
-  m.customProgramCacheKey = () => 'terrain-antitile';
+  m.customProgramCacheKey = () => TerrainTextures.cacheKey(tt.quality);
 }
 
 interface Tile {
@@ -60,14 +76,16 @@ export class ChunkManager {
   private inFlight = new Map<number, Tile>();
   private rr = 0;
   readonly terrainMaterial: THREE.MeshStandardMaterial;
+  readonly terrainTextures: TerrainTextures;
   private queueLimit: number;
   ponds = new Map<string, THREE.Mesh>();
 
   constructor(route: Route, private preset: () => QualityPreset) {
     this.root.name = 'terrain';
-    this.terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0 });
-    assets.bindTextureSet(this.terrainMaterial, 'terrain/ground', tex.ground, 6); // terrain UVs: 1 unit = 6 m
-    breakUpTiling(this.terrainMaterial);
+    // vertex colours + procedural grain (terrain UVs: 1 unit = 6 m) until the texture layers load
+    this.terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: tex.ground() });
+    this.terrainTextures = new TerrainTextures();
+    terrainShader(this.terrainMaterial, this.terrainTextures);
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
     this.queueLimit = n * 2;
     for (let i = 0; i < n; i++) {
@@ -120,6 +138,12 @@ export class ChunkManager {
     geo.setAttribute('normal', new THREE.BufferAttribute((m.nor as Float32Array).subarray(0, vc * 3), 3));
     geo.setAttribute('color', new THREE.BufferAttribute((m.col as Float32Array).subarray(0, vc * 3), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute((m.uv as Float32Array).subarray(0, vc * 2), 2));
+    // texture splat: this tile's four layers (same for every vertex) and their weights, road tint
+    const ids = new Float32Array(vc * 4);
+    for (let i = 0; i < vc; i++) ids.set(m.splatIds as Float32Array, i * 4);
+    geo.setAttribute('splatIds', new THREE.BufferAttribute(ids, 4));
+    geo.setAttribute('splatW', new THREE.BufferAttribute((m.splatW as Float32Array).subarray(0, vc * 4), 4));
+    geo.setAttribute('tint', new THREE.BufferAttribute((m.tint as Float32Array).subarray(0, vc), 1));
     geo.setIndex(new THREE.BufferAttribute(m.indices as Uint32Array, 1));
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.terrainMaterial);

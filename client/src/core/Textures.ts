@@ -79,6 +79,23 @@ export const tex = {
     g.fillStyle = '#9aa0a4'; g.fillRect(0, 0, w, h);
     for (let x = 0; x < w; x += 8) { g.fillStyle = '#80868a'; g.fillRect(x, 0, 2, h); }
   }),
+  /** Platform edge strip (u along the platform): concrete top, yellow line, tactile band, edge face. */
+  platformEdge: () => canvasTexture('platformEdge', 256, 128, (g, w, h) => {
+    g.fillStyle = '#9e9a93'; g.fillRect(0, 0, w, h * 0.5);
+    g.fillStyle = '#e5b81e'; g.fillRect(0, h * 0.5, w, h * 0.1);
+    g.fillStyle = '#b5b0a6'; g.fillRect(0, h * 0.6, w, h * 0.22);
+    g.fillStyle = '#8f8a82';
+    for (let x = 4; x < w; x += 8) for (let y = h * 0.62; y < h * 0.8; y += 8) { g.beginPath(); g.arc(x, y + 3, 1.6, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#7c7871'; g.fillRect(0, h * 0.82, w, h * 0.18);
+  }),
+  /** Blank station name board on two posts (transparent around it); the name is drawn on top. */
+  nameboard: () => canvasTexture('nameboard', 256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#e8b416';
+    g.fillRect(w * 0.06, h * 0.1, w * 0.06, h * 0.82); g.fillRect(w * 0.88, h * 0.1, w * 0.06, h * 0.82);
+    g.fillRect(w * 0.12, h * 0.18, w * 0.76, h * 0.34);
+    g.fillStyle = '#111'; g.fillRect(w * 0.06, h * 0.84, w * 0.06, h * 0.08); g.fillRect(w * 0.88, h * 0.84, w * 0.06, h * 0.08);
+  }, { repeat: false }),
   /** Building facade: windows in a grid; alpha-less, emissive variant lights windows at night. */
   facade: (lit: boolean) => canvasTexture(`facade${lit}`, 128, 128, (g, w, h) => {
     g.fillStyle = lit ? '#000000' : '#ffffff'; g.fillRect(0, 0, w, h);

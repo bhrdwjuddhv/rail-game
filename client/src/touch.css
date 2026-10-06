@@ -62,7 +62,7 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-card[hidden] { display: none; }
 
 /* top-left: pause + camera picker */
-.m-tl { left: calc(var(--sl) + var(--edge)); top: calc(var(--st) + var(--edge)); display: flex; gap: var(--gap); align-items: flex-start; }
+.m-tl { z-index: 9; left: calc(var(--sl) + var(--edge)); top: calc(var(--st) + var(--edge)); display: flex; gap: var(--gap); align-items: flex-start; }
 .m-pause, .m-cam-btn { height: var(--btn); background: var(--panel); border: 1px solid var(--panel-line); border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
 .m-pause { width: var(--btn); display: grid; place-items: center; }
 .m-pause svg { width: 58%; height: 58%; }
@@ -97,7 +97,7 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 
 /* bottom-left: timetable card on top of the control bar */
 .m-bl { left: calc(var(--sl) + var(--edge)); bottom: calc(var(--sb) + var(--edge)); display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap); }
-.m-timetable { max-width: calc(50vw - var(--speedo-w) / 2 - var(--edge) - var(--sl) - 10px); }
+.m-timetable { max-width: var(--card-w); }
 .m-timetable .m-clock { font-size: 1.25em; font-variant-numeric: tabular-nums; padding-right: 8px; border-right: 1px solid var(--panel-line); }
 .m-timetable .m-txt { white-space: normal; line-height: 1.25; }
 .m-timetable small { margin-left: 6px; white-space: nowrap; }

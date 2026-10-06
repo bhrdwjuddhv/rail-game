@@ -1,121 +1,1386 @@
 {
-  "about": "Texture manifest. Put source images at client/public/assets/<file> and run `npm run textures`. Missing files fall back to the built-in procedural textures, so any entry can be added before its image exists. tilingM = how many metres one copy of a tileable texture covers. 'processed' is written by client/scripts/process-textures.mjs.",
-  "textures": {
-    "terrain/ground": {
-      "file": "textures/terrain/ground.png",
-      "tilingM": 6,
-      "tileable": true,
-      "normal": true,
-      "materials": [
-        "terrain"
+  "about": "Texture manifest (v2). Source images live in client/public/assets/<file>; run `npm run textures` to validate them and write processed KTX2 + WebP sets to client/public/assets/textures/_processed/ (the 'processed' field of each entry is written by the script). Missing or rejected files fall back to the built-in procedural textures, so an entry can exist before its image does. type: tile (repeats both ways) | tile-x (repeats left-right only) | tile-y (top-bottom only) | atlas (grid of cells) | sprite | overlay | decal. sizeM: metres covered by one copy [width, height]. maxSize: longest side per quality preset (sources are ~1254 px, so 1024 is the largest power of two without upscaling). group: colour-normalisation group. normal: normal-map strength (0 = none). roughness: [min, max] range of the generated roughness map. rotate: random UV rotation per terrain tile is allowed (false for rows, roads, walls, strata). materials: game materials that use it.",
+  "version": 2,
+  "budgetsMB": {
+    "ultra": 250,
+    "high": 250,
+    "medium": 150,
+    "low": 80
+  },
+  "groups": {
+    "terrain": {
+      "lum": [
+        72,
+        135
+      ],
+      "sat": [
+        0.08,
+        0.5
       ]
+    },
+    "track": {
+      "lum": [
+        92,
+        150
+      ],
+      "sat": [
+        0,
+        0.25
+      ]
+    },
+    "buildings": {
+      "lum": [
+        90,
+        175
+      ],
+      "sat": [
+        0.05,
+        0.6
+      ]
+    },
+    "signage": {
+      "lum": [
+        40,
+        220
+      ],
+      "sat": [
+        0,
+        1
+      ]
+    },
+    "vegetation": {
+      "lum": [
+        50,
+        160
+      ],
+      "sat": [
+        0.1,
+        0.8
+      ]
+    }
+  },
+  "textures": {
+    "terrain/grass-ground": {
+      "file": "textures/terrain/grass-ground.png",
+      "type": "tile",
+      "sizeM": [
+        4,
+        4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1.6,
+      "roughness": [
+        0.82,
+        0.97
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:grass"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_grass-ground_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_grass-ground_512_color.ktx2",
+            "normal": "textures/_processed/terrain_grass-ground_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_grass-ground_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_grass-ground_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_grass-ground_512_roughness.ktx2",
+            "diskBytes": 1391560
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_grass-ground_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_grass-ground_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_grass-ground_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_grass-ground_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_grass-ground_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_grass-ground_1024_roughness.ktx2",
+            "diskBytes": 5414295
+          }
+        },
+        "seam": {
+          "before": 1.35,
+          "after": 1
+        }
+      }
+    },
+    "terrain/dry-soil": {
+      "file": "textures/terrain/dry-soil.png",
+      "type": "tile",
+      "sizeM": [
+        4,
+        4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1.8,
+      "roughness": [
+        0.8,
+        0.96
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:soil"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_dry-soil_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_dry-soil_512_color.ktx2",
+            "normal": "textures/_processed/terrain_dry-soil_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_dry-soil_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_dry-soil_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_dry-soil_512_roughness.ktx2",
+            "diskBytes": 1379383
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_dry-soil_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_dry-soil_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_dry-soil_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_dry-soil_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_dry-soil_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_dry-soil_1024_roughness.ktx2",
+            "diskBytes": 5347686
+          }
+        },
+        "seam": {
+          "before": 1.69,
+          "after": 1
+        }
+      }
+    },
+    "terrain/forest-floor": {
+      "file": "textures/terrain/forest-floor.png",
+      "type": "tile",
+      "sizeM": [
+        4,
+        4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1.8,
+      "roughness": [
+        0.8,
+        0.96
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:forest"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_forest-floor_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_forest-floor_512_color.ktx2",
+            "normal": "textures/_processed/terrain_forest-floor_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_forest-floor_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_forest-floor_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_forest-floor_512_roughness.ktx2",
+            "diskBytes": 1395725
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_forest-floor_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_forest-floor_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_forest-floor_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_forest-floor_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_forest-floor_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_forest-floor_1024_roughness.ktx2",
+            "diskBytes": 5355662
+          }
+        },
+        "seam": {
+          "before": 1.26,
+          "after": 1
+        }
+      }
+    },
+    "terrain/mud-wet": {
+      "file": "textures/terrain/mud-wet.png",
+      "type": "tile",
+      "sizeM": [
+        4,
+        4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1.2,
+      "roughness": [
+        0.45,
+        0.8
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:mud"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_mud-wet_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_mud-wet_512_color.ktx2",
+            "normal": "textures/_processed/terrain_mud-wet_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_mud-wet_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_mud-wet_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_mud-wet_512_roughness.ktx2",
+            "diskBytes": 1392876
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_mud-wet_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_mud-wet_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_mud-wet_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_mud-wet_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_mud-wet_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_mud-wet_1024_roughness.ktx2",
+            "diskBytes": 5533369
+          }
+        },
+        "seam": {
+          "before": 1.28,
+          "after": 1
+        }
+      }
+    },
+    "terrain/mustard-field": {
+      "file": "textures/terrain/mustard-field.png",
+      "type": "tile",
+      "sizeM": [
+        8,
+        8
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1.2,
+      "roughness": [
+        0.75,
+        0.95
+      ],
+      "rotate": false,
+      "materials": [
+        "terrain:mustard"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_mustard-field_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_mustard-field_512_color.ktx2",
+            "normal": "textures/_processed/terrain_mustard-field_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_mustard-field_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_mustard-field_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_mustard-field_512_roughness.ktx2",
+            "diskBytes": 1432458
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_mustard-field_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_mustard-field_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_mustard-field_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_mustard-field_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_mustard-field_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_mustard-field_1024_roughness.ktx2",
+            "diskBytes": 5486858
+          }
+        },
+        "seam": {
+          "before": 1.46,
+          "after": 1
+        }
+      }
+    },
+    "terrain/paddy-field": {
+      "file": "textures/terrain/paddy-field.png",
+      "type": "tile",
+      "sizeM": [
+        8,
+        8
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1,
+      "roughness": [
+        0.6,
+        0.9
+      ],
+      "rotate": false,
+      "materials": [
+        "terrain:paddy"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_paddy-field_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_paddy-field_512_color.ktx2",
+            "normal": "textures/_processed/terrain_paddy-field_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_paddy-field_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_paddy-field_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_paddy-field_512_roughness.ktx2",
+            "diskBytes": 1299473
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_paddy-field_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_paddy-field_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_paddy-field_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_paddy-field_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_paddy-field_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_paddy-field_1024_roughness.ktx2",
+            "diskBytes": 5166290
+          }
+        },
+        "seam": {
+          "before": 2.72,
+          "after": 1
+        }
+      }
+    },
+    "terrain/red-laterite": {
+      "file": "textures/terrain/red-laterite.png",
+      "type": "tile",
+      "sizeM": [
+        4,
+        4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 2,
+      "roughness": [
+        0.8,
+        0.97
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:laterite"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_red-laterite_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_red-laterite_512_color.ktx2",
+            "normal": "textures/_processed/terrain_red-laterite_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_red-laterite_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_red-laterite_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_red-laterite_512_roughness.ktx2",
+            "diskBytes": 1390168
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_red-laterite_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_red-laterite_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_red-laterite_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_red-laterite_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_red-laterite_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_red-laterite_1024_roughness.ktx2",
+            "diskBytes": 5340782
+          }
+        },
+        "seam": {
+          "before": 1.81,
+          "after": 1
+        }
+      }
+    },
+    "terrain/riverbank-sand": {
+      "file": "textures/terrain/riverbank-sand.png",
+      "type": "tile",
+      "sizeM": [
+        4,
+        4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1.2,
+      "roughness": [
+        0.78,
+        0.95
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:sand"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_riverbank-sand_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_riverbank-sand_512_color.ktx2",
+            "normal": "textures/_processed/terrain_riverbank-sand_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_riverbank-sand_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_riverbank-sand_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_riverbank-sand_512_roughness.ktx2",
+            "diskBytes": 1322406
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_riverbank-sand_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_riverbank-sand_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_riverbank-sand_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_riverbank-sand_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_riverbank-sand_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_riverbank-sand_1024_roughness.ktx2",
+            "diskBytes": 5345738
+          }
+        },
+        "seam": {
+          "before": 1.44,
+          "after": 1
+        }
+      }
+    },
+    "terrain/rock-cliff": {
+      "file": "textures/terrain/rock-cliff.png",
+      "type": "tile",
+      "sizeM": [
+        8,
+        8
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 3,
+      "roughness": [
+        0.7,
+        0.92
+      ],
+      "rotate": false,
+      "triplanar": true,
+      "materials": [
+        "terrain:rock",
+        "tunnel"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_rock-cliff_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_rock-cliff_512_color.ktx2",
+            "normal": "textures/_processed/terrain_rock-cliff_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_rock-cliff_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_rock-cliff_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_rock-cliff_512_roughness.ktx2",
+            "diskBytes": 1377349
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_rock-cliff_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_rock-cliff_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_rock-cliff_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_rock-cliff_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_rock-cliff_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_rock-cliff_1024_roughness.ktx2",
+            "diskBytes": 5267337
+          }
+        },
+        "seam": {
+          "before": 1.56,
+          "after": 1
+        }
+      }
+    },
+    "terrain/wheat-field": {
+      "file": "textures/terrain/wheat-field.png",
+      "type": "tile",
+      "sizeM": [
+        8,
+        8
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "terrain",
+      "normal": 1,
+      "roughness": [
+        0.75,
+        0.95
+      ],
+      "rotate": false,
+      "materials": [
+        "terrain:wheat"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/terrain_wheat-field_512_color.webp",
+            "colorKtx2": "textures/_processed/terrain_wheat-field_512_color.ktx2",
+            "normal": "textures/_processed/terrain_wheat-field_512_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_wheat-field_512_normal.ktx2",
+            "roughness": "textures/_processed/terrain_wheat-field_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_wheat-field_512_roughness.ktx2",
+            "diskBytes": 1410844
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/terrain_wheat-field_1024_color.webp",
+            "colorKtx2": "textures/_processed/terrain_wheat-field_1024_color.ktx2",
+            "normal": "textures/_processed/terrain_wheat-field_1024_normal.webp",
+            "normalKtx2": "textures/_processed/terrain_wheat-field_1024_normal.ktx2",
+            "roughness": "textures/_processed/terrain_wheat-field_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/terrain_wheat-field_1024_roughness.ktx2",
+            "diskBytes": 5478891
+          }
+        },
+        "seam": {
+          "before": 1.38,
+          "after": 1
+        }
+      }
     },
     "track/ballast": {
       "file": "textures/track/ballast.png",
-      "tilingM": 2,
-      "tileable": true,
-      "normal": true,
+      "type": "tile",
+      "sizeM": [
+        2,
+        2
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "track",
+      "normal": 3,
+      "roughness": [
+        0.8,
+        0.97
+      ],
+      "rotate": true,
       "materials": [
         "ballast"
-      ]
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/track_ballast_512_color.webp",
+            "colorKtx2": "textures/_processed/track_ballast_512_color.ktx2",
+            "normal": "textures/_processed/track_ballast_512_normal.webp",
+            "normalKtx2": "textures/_processed/track_ballast_512_normal.ktx2",
+            "roughness": "textures/_processed/track_ballast_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_ballast_512_roughness.ktx2",
+            "diskBytes": 1365878
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/track_ballast_1024_color.webp",
+            "colorKtx2": "textures/_processed/track_ballast_1024_color.ktx2",
+            "normal": "textures/_processed/track_ballast_1024_normal.webp",
+            "normalKtx2": "textures/_processed/track_ballast_1024_normal.ktx2",
+            "roughness": "textures/_processed/track_ballast_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_ballast_1024_roughness.ktx2",
+            "diskBytes": 5210977
+          }
+        },
+        "seam": {
+          "before": 1.87,
+          "after": 1
+        }
+      }
     },
-    "track/sleeper": {
-      "file": "textures/track/sleeper.png",
-      "tilingM": 2.75,
-      "tileable": false,
-      "normal": true,
+    "track/formation-dirt": {
+      "file": "textures/track/formation-dirt.png",
+      "type": "tile",
+      "sizeM": [
+        3,
+        3
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "track",
+      "normal": 1.6,
+      "roughness": [
+        0.82,
+        0.97
+      ],
+      "rotate": true,
+      "materials": [
+        "terrain:formation"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/track_formation-dirt_512_color.webp",
+            "colorKtx2": "textures/_processed/track_formation-dirt_512_color.ktx2",
+            "normal": "textures/_processed/track_formation-dirt_512_normal.webp",
+            "normalKtx2": "textures/_processed/track_formation-dirt_512_normal.ktx2",
+            "roughness": "textures/_processed/track_formation-dirt_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_formation-dirt_512_roughness.ktx2",
+            "diskBytes": 1365276
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/track_formation-dirt_1024_color.webp",
+            "colorKtx2": "textures/_processed/track_formation-dirt_1024_color.ktx2",
+            "normal": "textures/_processed/track_formation-dirt_1024_normal.webp",
+            "normalKtx2": "textures/_processed/track_formation-dirt_1024_normal.ktx2",
+            "roughness": "textures/_processed/track_formation-dirt_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_formation-dirt_1024_roughness.ktx2",
+            "diskBytes": 5317135
+          }
+        },
+        "seam": {
+          "before": 1.27,
+          "after": 1
+        }
+      }
+    },
+    "track/sleeper-concrete": {
+      "file": "textures/track/sleeper-concrete.png",
+      "type": "tile",
+      "sizeM": [
+        1,
+        1
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 512,
+        "low": 256
+      },
+      "group": "track",
+      "normal": 2,
+      "roughness": [
+        0.75,
+        0.92
+      ],
+      "rotate": false,
       "materials": [
         "sleeper"
-      ]
+      ],
+      "processed": {
+        "sizes": {
+          "256": {
+            "size": [
+              256,
+              256
+            ],
+            "color": "textures/_processed/track_sleeper-concrete_256_color.webp",
+            "colorKtx2": "textures/_processed/track_sleeper-concrete_256_color.ktx2",
+            "normal": "textures/_processed/track_sleeper-concrete_256_normal.webp",
+            "normalKtx2": "textures/_processed/track_sleeper-concrete_256_normal.ktx2",
+            "roughness": "textures/_processed/track_sleeper-concrete_256_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_sleeper-concrete_256_roughness.ktx2",
+            "diskBytes": 315489
+          },
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/track_sleeper-concrete_512_color.webp",
+            "colorKtx2": "textures/_processed/track_sleeper-concrete_512_color.ktx2",
+            "normal": "textures/_processed/track_sleeper-concrete_512_normal.webp",
+            "normalKtx2": "textures/_processed/track_sleeper-concrete_512_normal.ktx2",
+            "roughness": "textures/_processed/track_sleeper-concrete_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_sleeper-concrete_512_roughness.ktx2",
+            "diskBytes": 1335732
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/track_sleeper-concrete_1024_color.webp",
+            "colorKtx2": "textures/_processed/track_sleeper-concrete_1024_color.ktx2",
+            "normal": "textures/_processed/track_sleeper-concrete_1024_normal.webp",
+            "normalKtx2": "textures/_processed/track_sleeper-concrete_1024_normal.ktx2",
+            "roughness": "textures/_processed/track_sleeper-concrete_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/track_sleeper-concrete_1024_roughness.ktx2",
+            "diskBytes": 5250720
+          }
+        },
+        "seam": {
+          "before": 1.51,
+          "after": 1
+        }
+      }
     },
-    "structure/brick": {
-      "file": "textures/structure/brick.png",
-      "tilingM": 1.5,
-      "tileable": true,
-      "normal": true,
+    "station/brick-red": {
+      "file": "textures/station/brick-red.png",
+      "type": "tile",
+      "sizeM": [
+        1.5,
+        1.5
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 2.5,
+      "roughness": [
+        0.75,
+        0.93
+      ],
+      "rotate": false,
       "materials": [
         "brick"
-      ]
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/station_brick-red_512_color.webp",
+            "colorKtx2": "textures/_processed/station_brick-red_512_color.ktx2",
+            "normal": "textures/_processed/station_brick-red_512_normal.webp",
+            "normalKtx2": "textures/_processed/station_brick-red_512_normal.ktx2",
+            "roughness": "textures/_processed/station_brick-red_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_brick-red_512_roughness.ktx2",
+            "diskBytes": 1270211
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/station_brick-red_1024_color.webp",
+            "colorKtx2": "textures/_processed/station_brick-red_1024_color.ktx2",
+            "normal": "textures/_processed/station_brick-red_1024_normal.webp",
+            "normalKtx2": "textures/_processed/station_brick-red_1024_normal.ktx2",
+            "roughness": "textures/_processed/station_brick-red_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_brick-red_1024_roughness.ktx2",
+            "diskBytes": 5158894
+          }
+        },
+        "seam": {
+          "before": 2.42,
+          "after": 1.03
+        }
+      }
+    },
+    "station/platform-tiles": {
+      "file": "textures/station/platform-tiles.png",
+      "type": "tile",
+      "sizeM": [
+        2,
+        2
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 1.5,
+      "roughness": [
+        0.6,
+        0.85
+      ],
+      "rotate": false,
+      "materials": [
+        "platform"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/station_platform-tiles_512_color.webp",
+            "colorKtx2": "textures/_processed/station_platform-tiles_512_color.ktx2",
+            "normal": "textures/_processed/station_platform-tiles_512_normal.webp",
+            "normalKtx2": "textures/_processed/station_platform-tiles_512_normal.ktx2",
+            "roughness": "textures/_processed/station_platform-tiles_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_platform-tiles_512_roughness.ktx2",
+            "diskBytes": 1284481
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/station_platform-tiles_1024_color.webp",
+            "colorKtx2": "textures/_processed/station_platform-tiles_1024_color.ktx2",
+            "normal": "textures/_processed/station_platform-tiles_1024_normal.webp",
+            "normalKtx2": "textures/_processed/station_platform-tiles_1024_normal.ktx2",
+            "roughness": "textures/_processed/station_platform-tiles_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_platform-tiles_1024_roughness.ktx2",
+            "diskBytes": 5248912
+          }
+        },
+        "seam": {
+          "before": 0.6,
+          "after": 0.77
+        }
+      }
+    },
+    "station/platform-edge": {
+      "file": "textures/station/platform-edge.png",
+      "type": "tile-x",
+      "sizeM": [
+        4,
+        2
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 1.5,
+      "roughness": [
+        0.6,
+        0.85
+      ],
+      "rotate": false,
+      "materials": [
+        "platformEdge"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              256
+            ],
+            "color": "textures/_processed/station_platform-edge_512_color.webp",
+            "colorKtx2": "textures/_processed/station_platform-edge_512_color.ktx2",
+            "normal": "textures/_processed/station_platform-edge_512_normal.webp",
+            "normalKtx2": "textures/_processed/station_platform-edge_512_normal.ktx2",
+            "roughness": "textures/_processed/station_platform-edge_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_platform-edge_512_roughness.ktx2",
+            "diskBytes": 637660
+          },
+          "1024": {
+            "size": [
+              1024,
+              512
+            ],
+            "color": "textures/_processed/station_platform-edge_1024_color.webp",
+            "colorKtx2": "textures/_processed/station_platform-edge_1024_color.ktx2",
+            "normal": "textures/_processed/station_platform-edge_1024_normal.webp",
+            "normalKtx2": "textures/_processed/station_platform-edge_1024_normal.ktx2",
+            "roughness": "textures/_processed/station_platform-edge_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_platform-edge_1024_roughness.ktx2",
+            "diskBytes": 2619841
+          }
+        },
+        "seam": {
+          "before": 1.4,
+          "after": 0.95
+        }
+      }
+    },
+    "station/station-wall": {
+      "file": "textures/station/station-wall.png",
+      "type": "tile-x",
+      "sizeM": [
+        6,
+        3
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 1.2,
+      "roughness": [
+        0.75,
+        0.93
+      ],
+      "rotate": false,
+      "materials": [
+        "wall"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              256
+            ],
+            "color": "textures/_processed/station_station-wall_512_color.webp",
+            "colorKtx2": "textures/_processed/station_station-wall_512_color.ktx2",
+            "normal": "textures/_processed/station_station-wall_512_normal.webp",
+            "normalKtx2": "textures/_processed/station_station-wall_512_normal.ktx2",
+            "roughness": "textures/_processed/station_station-wall_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_station-wall_512_roughness.ktx2",
+            "diskBytes": 548395
+          },
+          "1024": {
+            "size": [
+              1024,
+              512
+            ],
+            "color": "textures/_processed/station_station-wall_1024_color.webp",
+            "colorKtx2": "textures/_processed/station_station-wall_1024_color.ktx2",
+            "normal": "textures/_processed/station_station-wall_1024_normal.webp",
+            "normalKtx2": "textures/_processed/station_station-wall_1024_normal.ktx2",
+            "roughness": "textures/_processed/station_station-wall_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_station-wall_1024_roughness.ktx2",
+            "diskBytes": 2410995
+          }
+        },
+        "seam": {
+          "before": 1.5,
+          "after": 1
+        }
+      }
+    },
+    "station/tin-roof": {
+      "file": "textures/station/tin-roof.png",
+      "type": "tile",
+      "sizeM": [
+        2,
+        2
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 512,
+        "low": 256
+      },
+      "group": "buildings",
+      "normal": 1.6,
+      "roughness": [
+        0.35,
+        0.6
+      ],
+      "rotate": false,
+      "materials": [
+        "sheet"
+      ],
+      "processed": {
+        "sizes": {
+          "256": {
+            "size": [
+              256,
+              256
+            ],
+            "color": "textures/_processed/station_tin-roof_256_color.webp",
+            "colorKtx2": "textures/_processed/station_tin-roof_256_color.ktx2",
+            "normal": "textures/_processed/station_tin-roof_256_normal.webp",
+            "normalKtx2": "textures/_processed/station_tin-roof_256_normal.ktx2",
+            "roughness": "textures/_processed/station_tin-roof_256_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_tin-roof_256_roughness.ktx2",
+            "diskBytes": 212274
+          },
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/station_tin-roof_512_color.webp",
+            "colorKtx2": "textures/_processed/station_tin-roof_512_color.ktx2",
+            "normal": "textures/_processed/station_tin-roof_512_normal.webp",
+            "normalKtx2": "textures/_processed/station_tin-roof_512_normal.ktx2",
+            "roughness": "textures/_processed/station_tin-roof_512_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_tin-roof_512_roughness.ktx2",
+            "diskBytes": 984682
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/station_tin-roof_1024_color.webp",
+            "colorKtx2": "textures/_processed/station_tin-roof_1024_color.ktx2",
+            "normal": "textures/_processed/station_tin-roof_1024_normal.webp",
+            "normalKtx2": "textures/_processed/station_tin-roof_1024_normal.ktx2",
+            "roughness": "textures/_processed/station_tin-roof_1024_roughness.webp",
+            "roughnessKtx2": "textures/_processed/station_tin-roof_1024_roughness.ktx2",
+            "diskBytes": 4317763
+          }
+        },
+        "seam": {
+          "before": 3.7,
+          "after": 0.98
+        }
+      }
+    },
+    "station/name-board-blank": {
+      "file": "textures/station/name-board-blank.png",
+      "type": "decal",
+      "sizeM": [
+        4.2,
+        4.2
+      ],
+      "alpha": true,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 512,
+        "low": 512
+      },
+      "group": "signage",
+      "normal": 0,
+      "roughness": [
+        0.55,
+        0.7
+      ],
+      "rotate": false,
+      "materials": [
+        "nameboard"
+      ],
+      "processed": {
+        "sizes": {
+          "512": {
+            "size": [
+              512,
+              512
+            ],
+            "color": "textures/_processed/station_name-board-blank_512_color.webp",
+            "colorKtx2": "textures/_processed/station_name-board-blank_512_color.ktx2",
+            "diskBytes": 60162
+          },
+          "1024": {
+            "size": [
+              1024,
+              1024
+            ],
+            "color": "textures/_processed/station_name-board-blank_1024_color.webp",
+            "colorKtx2": "textures/_processed/station_name-board-blank_1024_color.ktx2",
+            "diskBytes": 166480
+          }
+        }
+      },
+      "alphaTest": 0.5
     },
     "structure/stone": {
       "file": "textures/structure/stone.png",
-      "tilingM": 2,
-      "tileable": true,
-      "normal": true,
+      "type": "tile",
+      "sizeM": [
+        2,
+        2
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 2.2,
+      "roughness": [
+        0.75,
+        0.95
+      ],
+      "rotate": false,
       "materials": [
         "stone"
       ]
     },
     "structure/concrete": {
       "file": "textures/structure/concrete.png",
-      "tilingM": 2,
-      "tileable": true,
-      "normal": true,
+      "type": "tile",
+      "sizeM": [
+        2,
+        2
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 1.4,
+      "roughness": [
+        0.7,
+        0.92
+      ],
+      "rotate": true,
       "materials": [
         "concrete"
       ]
     },
     "structure/roof-tiles": {
       "file": "textures/structure/roof-tiles.png",
-      "tilingM": 1.5,
-      "tileable": true,
-      "normal": true,
+      "type": "tile",
+      "sizeM": [
+        1.5,
+        1.5
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 512,
+        "low": 256
+      },
+      "group": "buildings",
+      "normal": 2,
+      "roughness": [
+        0.7,
+        0.9
+      ],
+      "rotate": false,
       "materials": [
         "roof"
       ]
     },
-    "structure/metal-sheet": {
-      "file": "textures/structure/metal-sheet.png",
-      "tilingM": 1,
-      "tileable": true,
-      "normal": true,
-      "materials": [
-        "sheet"
-      ]
-    },
-    "structure/tunnel-rock": {
-      "file": "textures/structure/tunnel-rock.png",
-      "tilingM": 4,
-      "tileable": true,
-      "normal": true,
-      "materials": [
-        "tunnel"
-      ]
-    },
     "building/facade": {
       "file": "textures/building/facade.png",
-      "tilingM": 12.4,
-      "tileable": true,
-      "normal": false,
+      "type": "tile",
+      "sizeM": [
+        12.4,
+        12.4
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "buildings",
+      "normal": 0,
+      "roughness": [
+        0.7,
+        0.9
+      ],
+      "rotate": false,
       "materials": [
         "facade"
       ]
     },
-    "vegetation/grass": {
+    "vegetation/grass-blades": {
       "file": "textures/vegetation/grass-blades.png",
-      "tilingM": 1,
-      "tileable": false,
-      "normal": false,
-      "alphaTest": 0.4,
+      "type": "sprite",
+      "sizeM": [
+        1,
+        1
+      ],
+      "alpha": true,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 512,
+        "medium": 512,
+        "low": 256
+      },
+      "group": "vegetation",
+      "normal": 0,
+      "roughness": [
+        0.8,
+        0.95
+      ],
+      "rotate": false,
+      "alphaTest": 0.5,
+      "foliage": true,
       "materials": [
         "grass"
       ]
     },
     "vegetation/tree-impostor": {
       "file": "textures/vegetation/tree-impostor.png",
-      "tilingM": 1,
-      "tileable": false,
-      "normal": false,
-      "alphaTest": 0.45,
+      "type": "atlas",
+      "grid": [
+        4,
+        1
+      ],
+      "sizeM": [
+        1,
+        1
+      ],
+      "alpha": true,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "vegetation",
+      "normal": 0,
+      "roughness": [
+        0.8,
+        0.95
+      ],
+      "rotate": false,
+      "alphaTest": 0.5,
+      "foliage": true,
       "materials": [
         "impostor"
       ]
     },
-    "signage/ads": {
+    "signage/ads-atlas": {
       "file": "textures/signage/ads-atlas.png",
-      "tilingM": 1,
-      "tileable": false,
-      "normal": false,
+      "type": "atlas",
+      "grid": [
+        2,
+        2
+      ],
+      "sizeM": [
+        1,
+        1
+      ],
+      "alpha": false,
+      "colorSpace": "srgb",
+      "maxSize": {
+        "high": 1024,
+        "medium": 1024,
+        "low": 512
+      },
+      "group": "signage",
+      "normal": 0,
+      "roughness": [
+        0.5,
+        0.7
+      ],
+      "rotate": false,
       "materials": [
         "billboard"
       ]

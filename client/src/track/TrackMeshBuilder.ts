@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { smoothstep } from '@rail/shared/util';
 import { tex } from '../core/Textures';
-import { assets } from '../core/AssetRegistry';
+import { textures } from '../core/TextureLibrary';
 import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
 import type { Railway } from '@rail/shared/track/Railway';
@@ -101,9 +101,9 @@ function sharedAssets() {
   if (shared) return shared;
   const rail = new THREE.MeshStandardMaterial({ color: 0x8a8580, metalness: 0.75, roughness: 0.38 });
   const ballast = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
-  assets.bindTextureSet(ballast, 'track/ballast', tex.ballast, 2); // ballast strip UVs: 1 unit = 2 m
+  textures.bind(ballast, 'ballast', tex.ballast, 2, { resident: true }); // ballast strip UVs: 1 unit = 2 m
   const sleeper = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
-  assets.bindTextureSet(sleeper, 'track/sleeper', tex.concrete, 1);
+  textures.bind(sleeper, 'sleeper', tex.concrete, 1, { resident: true });
   // top + two long sides only: the bottom and the ends are never visible
   const sleeperGeo = sleeperGeometry();
   const plate = new THREE.BoxGeometry(0.6, 0.1, 0.03);

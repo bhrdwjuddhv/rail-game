@@ -2,17 +2,36 @@ import { safeStorageGet, safeStorageSet } from '../core/storage';
 
 /**
  * Touch-device detection and the phone-specific bits of the page: fullscreen,
- * landscape lock and portrait detection. A device counts as touch if its
- * primary pointer is coarse and it has touch points (phones and tablets, not a
- * laptop with a touch screen used with a mouse). `?touch=1` / `?touch=0` force it.
+ * landscape lock and portrait detection.
+ *
+ * Touch layout when: the Settings "Controls" choice says so, or (Auto) the
+ * device has touch points and any of its pointers is coarse. Some phone browser
+ * modes ("Desktop site", a stylus or mouse attached) report a fine primary
+ * pointer, so Auto also switches to touch on the first real finger touch before
+ * a run starts. `?touch=1` / `?touch=0` force it (tests).
  */
+export type ControlMode = 'auto' | 'touch' | 'desktop';
 const forced = new URLSearchParams(location.search).get('touch');
+/** read straight from saved settings (Settings imports this module) */
+const pref: ControlMode = safeStorageGet<{ controls?: ControlMode }>('railbharat.settings.v1', {}).controls ?? 'auto';
+const detected = (matchMedia('(any-pointer: coarse)').matches || matchMedia('(pointer: coarse)').matches) && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
 
-export const isTouch: boolean = forced !== null
-  ? forced === '1'
-  : matchMedia('(pointer: coarse)').matches && (navigator.maxTouchPoints > 0 || 'ontouchstart' in window);
+export let isTouch: boolean = forced !== null ? forced === '1' : pref === 'touch' ? true : pref === 'desktop' ? false : detected;
+let locked = false;
+const applyClass = () => document.documentElement.classList.toggle('touch', isTouch);
+applyClass();
+if (forced === null && pref === 'auto' && !isTouch) {
+  const onTouch = (e: PointerEvent) => {
+    if (e.pointerType !== 'touch' || locked) return;
+    isTouch = true;
+    applyClass();
+    removeEventListener('pointerdown', onTouch, true);
+  };
+  addEventListener('pointerdown', onTouch, true);
+}
 
-if (isTouch) document.documentElement.classList.add('touch');
+/** A run is starting: the layout it was built for must not change under it. */
+export function lockControlMode() { locked = true; }
 
 /** iPhone / iPod: Safari has no page fullscreen there; "Add to Home Screen" is the way to play full screen. */
 export const isIPhone = /iPhone|iPod/.test(navigator.userAgent);

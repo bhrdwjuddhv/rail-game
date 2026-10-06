@@ -3,6 +3,7 @@ import { hash2, lerp } from '@rail/shared/util';
 import { Route, RegionData, RouteData } from '@rail/shared/track/Route';
 import { GroundSample, TerrainField } from './TerrainField';
 import { placeScenery, TileInfo } from './scenery/Placement';
+import { LAYER, LAYER_COUNT } from './terrainLayers';
 
 // Builds terrain tiles (heights, normals, colours, holes) and scenery instance
 // lists off the main thread.
@@ -78,6 +79,9 @@ function buildTile(req: TileRequest) {
   const nor = new Float32Array(vCount * 3);
   const col = new Float32Array(vCount * 3);
   const uv = new Float32Array(vCount * 2);
+  // texture splat: per-vertex weights of the terrain layers (terrainLayers.ts) and a road/dirt tint
+  const lw = new Float32Array(N * LAYER_COUNT);
+  const tint = new Float32Array(vCount);
   // UVs continuous across tiles (wrapped every 6 km to keep float precision), so
   // the large-scale anti-tiling mask in the terrain shader has no seams at tile edges
   const uo = ((x0 / 6) % 1000 + 1000) % 1000, vo = ((z0 / 6) % 1000 + 1000) % 1000;
@@ -91,9 +95,11 @@ function buildTile(req: TileRequest) {
     nor[k * 3] = nx / L; nor[k * 3 + 1] = ny / L; nor[k * 3 + 2] = nz / L;
     info.slope[k] = 1 - ny / L;
     uv[k * 2] = uo + (i * cell) / 6; uv[k * 2 + 1] = vo + (j * cell) / 6;
-    const c = colourAt(x0 + i * cell, z0 + j * cell, info, k, nat[k], riverD[k], pondD[k], ny / L);
+    const c = colourAt(x0 + i * cell, z0 + j * cell, info, k, nat[k], riverD[k], pondD[k], ny / L, lw.subarray(k * LAYER_COUNT, (k + 1) * LAYER_COUNT));
     col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2];
+    tint[k] = info.road[k] < 4.2 ? 0.62 : 1;
   }
+  const { ids, weights } = splat(lw, N, vCount);
 
   const idx: number[] = [];
   for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
@@ -108,6 +114,7 @@ function buildTile(req: TileRequest) {
     for (const k of list) {
       pos[v * 3] = pos[k * 3]; pos[v * 3 + 1] = pos[k * 3 + 1] - 12; pos[v * 3 + 2] = pos[k * 3 + 2];
       nor[v * 3 + 1] = 1; col.set(col.subarray(k * 3, k * 3 + 3), v * 3); uv[v * 2] = uv[k * 2]; uv[v * 2 + 1] = uv[k * 2 + 1];
+      weights.set(weights.subarray(k * 4, k * 4 + 4), v * 4); tint[v] = tint[k];
       v++;
     }
     for (let n = 0; n < list.length - 1; n++) {
@@ -130,9 +137,28 @@ function buildTile(req: TileRequest) {
     }
 
   const indices = new Uint32Array(idx);
-  const transfer: Transferable[] = [pos.buffer, nor.buffer, col.buffer, uv.buffer, indices.buffer];
+  const transfer: Transferable[] = [pos.buffer, nor.buffer, col.buffer, uv.buffer, indices.buffer, weights.buffer, tint.buffer];
   for (const a of Object.values(props)) transfer.push((a as Float32Array).buffer);
-  (self as any).postMessage({ type: 'tile', id: req.id, pos, nor, col, uv, indices, props, ponds, vCount: v }, transfer);
+  (self as any).postMessage({ type: 'tile', id: req.id, pos, nor, col, uv, indices, props, ponds, vCount: v, splatIds: ids, splatW: weights, tint }, transfer);
+}
+
+/**
+ * The tile's four strongest layers (by total weight) and, per vertex, its
+ * weights for those four, renormalised. Four layers per 400 m tile keeps the
+ * shader at four texture samples; a tile rarely needs more.
+ */
+function splat(lw: Float32Array, n: number, vCount: number) {
+  const total = new Float32Array(LAYER_COUNT);
+  for (let k = 0; k < n; k++) for (let l = 0; l < LAYER_COUNT; l++) total[l] += lw[k * LAYER_COUNT + l];
+  const ids = [...total.keys()].sort((a, b) => total[b] - total[a]).slice(0, 4);
+  const weights = new Float32Array(vCount * 4);
+  for (let k = 0; k < n; k++) {
+    let sum = 0;
+    for (let s = 0; s < 4; s++) { const w = lw[k * LAYER_COUNT + ids[s]]; weights[k * 4 + s] = w; sum += w; }
+    if (sum < 1e-4) { weights[k * 4] = 1; sum = 1; }
+    for (let s = 0; s < 4; s++) weights[k * 4 + s] /= sum;
+  }
+  return { ids: new Float32Array(ids), weights };
 }
 
 const GRAVEL = hex('#7b7266');
@@ -145,43 +171,66 @@ const LATERITE = hex('#8d5a3c');
 const PITCH = hex('#c7ab78');
 const OUTFIELD = hex('#5d9a3a');
 
-function colourAt(x: number, z: number, info: TileInfo, k: number, natural: number, river: number, pond: number, ny: number): [number, number, number] {
+/** Crop name -> terrain layer */
+const CROP_LAYER: Record<string, number> = { wheat: LAYER.wheat, mustard: LAYER.mustard, paddy: LAYER.paddy, fallow: LAYER.soil, green: LAYER.grass, sugarcane: LAYER.grass };
+
+/**
+ * Ground colour (the vertex colour: WebGPU path, and the look until the
+ * texture layers have loaded) and, into w, the matching terrain-layer weights.
+ * Each decision mixes both the same way, so the textured ground follows the
+ * same fields, roads, cuttings and river banks.
+ */
+function colourAt(x: number, z: number, info: TileInfo, k: number, natural: number, river: number, pond: number, ny: number, w: Float32Array): [number, number, number] {
   const km = info.km[k], dist = info.dist[k];
   const g = field.ghatAt(km);
   const n = hash2(Math.floor(x / 23), Math.floor(z / 23), 5);
   const pg = hex(plains.ground[Math.floor(n * plains.ground.length)]);
   const gg = hex(ghats.ground[Math.floor(n * ghats.ground.length)]);
   let c: [number, number, number] = [lerp(pg[0], gg[0], g), lerp(pg[1], gg[1], g), lerp(pg[2], gg[2], g)];
+  // base layers: plains grass with patches of dry soil; ghats forest floor and grass
+  w.fill(0);
+  const dry = hash2(Math.floor(x / 61), Math.floor(z / 61), 11) < 0.28 ? 1 : 0;
+  w[LAYER.grass] = (1 - g) * (1 - dry * 0.7) + g * 0.45;
+  w[LAYER.soil] = (1 - g) * dry * 0.7;
+  w[LAYER.forest] = g * 0.55;
   const zone = dist < 1800 ? route.zoneAt(km).zone : g > 0.5 ? 'ghats' : 'fields';
-  const mix = (o: [number, number, number], t: number) => { c = [lerp(c[0], o[0], t), lerp(c[1], o[1], t), lerp(c[2], o[2], t)]; };
+  /** mix the colour toward o, and (when given) the layer weights toward layer, by t */
+  const mix = (o: [number, number, number], t: number, layer = -1) => {
+    c = [lerp(c[0], o[0], t), lerp(c[1], o[1], t), lerp(c[2], o[2], t)];
+    if (layer < 0) return;
+    for (let l = 0; l < w.length; l++) w[l] *= 1 - t;
+    w[layer] += t;
+  };
 
   if ((zone === 'fields' || zone === 'village') && dist > 22) {
     // rectangular fields aligned to a slightly rotated grid, with bunds
     const a = 0.35 + Math.floor(x / 900) * 0.0 + hash2(Math.floor(x / 900), Math.floor(z / 900), 2) * 0.8;
     const ca = Math.cos(a), sa = Math.sin(a);
-    const u = x * ca + z * sa, w = -x * sa + z * ca;
-    const fu = Math.floor(u / 64), fw = Math.floor(w / 42);
+    const u = x * ca + z * sa, v = -x * sa + z * ca;
+    const fu = Math.floor(u / 64), fw = Math.floor(v / 42);
     const crops = (g > 0.5 ? ghats : plains).crops;
-    const crop = hex(crops[Math.floor(hash2(fu, fw, 9) * crops.length)].color);
-    const bu = Math.abs(u / 64 - fu - 0.5) > 0.47 || Math.abs(w / 42 - fw - 0.5) > 0.46;
-    mix(crop, bu ? 0.2 : 0.85);
+    const cropDef = crops[Math.floor(hash2(fu, fw, 9) * crops.length)];
+    const bu = Math.abs(u / 64 - fu - 0.5) > 0.47 || Math.abs(v / 42 - fw - 0.5) > 0.46;
+    mix(hex(cropDef.color), bu ? 0.2 : 0.85, CROP_LAYER[cropDef.name] ?? LAYER.grass);
   }
-  if (zone === 'town' || zone === 'colony') mix(DUST, 0.5);
-  if (zone === 'ghats' && dist < 120) mix(LATERITE, 0.18);
+  if (zone === 'town' || zone === 'colony') mix(DUST, 0.5, LAYER.soil);
+  if (zone === 'ghats' && dist < 120) mix(LATERITE, 0.18, LAYER.laterite);
   for (const gr of field.grounds) {
     const dg = Math.hypot(x - gr.x, z - gr.z);
     if (dg < gr.r) {
       const lx = (x - gr.x) * Math.cos(gr.heading) + (z - gr.z) * Math.sin(gr.heading);
       const lz = -(x - gr.x) * Math.sin(gr.heading) + (z - gr.z) * Math.cos(gr.heading);
-      mix(Math.abs(lx) < 11 && Math.abs(lz) < 1.6 ? PITCH : OUTFIELD, 0.9);
+      const pitch = Math.abs(lx) < 11 && Math.abs(lz) < 1.6;
+      mix(pitch ? PITCH : OUTFIELD, 0.9, pitch ? LAYER.soil : LAYER.grass);
     }
   }
   const W = dist < 300 ? route.formationHalfWidth(km) : 0;
-  if (dist < W + 1.5) mix(GRAVEL, 0.92);
-  else if (dist < W + 60 && Math.abs(info.h[k] - natural) > 0.4) mix(g > 0.5 ? LATERITE : MUD, 0.55);
+  if (dist < W + 1.5) mix(GRAVEL, 0.92, LAYER.formation);
+  else if (dist < W + 60 && Math.abs(info.h[k] - natural) > 0.4) mix(g > 0.5 ? LATERITE : MUD, 0.55, g > 0.5 ? LAYER.laterite : LAYER.mud);
+  // steep ground: the vertex colour greys toward rock; the texture shader adds triplanar rock by slope
   if (ny < 0.72) mix(ROCK, Math.min(1, (0.72 - ny) * 4));
-  for (const r of route.rivers) if (river < r.width / 2 + 25) mix(SAND, river < r.width / 2 ? 0.95 : 0.6);
-  if (pond < 4) mix(MUD, 0.8);
-  if (info.road[k] < 4.2) mix(ROAD, 0.9);
+  for (const r of route.rivers) if (river < r.width / 2 + 25) mix(SAND, river < r.width / 2 ? 0.95 : 0.6, LAYER.sand);
+  if (pond < 4) mix(MUD, 0.8, LAYER.mud);
+  if (info.road[k] < 4.2) mix(ROAD, 0.9, LAYER.soil);
   return c;
 }

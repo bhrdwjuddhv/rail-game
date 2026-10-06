@@ -29,6 +29,7 @@ export class PerfOverlay {
       `frame ${f.avgMs.toFixed(1)} ms  worst ${f.worst.toFixed(1)} ms  pixelRatio ${this.rs.renderer.getPixelRatio().toFixed(2)}\n` +
       `draw calls ${s.drawCalls}  tris ${(s.triangles / 1000).toFixed(0)}k\n` +
       `geometries ${s.geometries}  textures ${s.textures}` + (mem ? `  heap ${(mem.usedJSHeapSize / 1048576).toFixed(0)} MB` : '') + '\n' +
+      `file textures ${c.texCount ?? 0}  ${(c.texMB ?? 0).toFixed(1)} / ${c.texBudget ?? 0} MB${c.texQueued ? `  (${c.texQueued} loading)` : ''}\n` +
       `tiles ${c.tiles ?? 0}  track chunks ${c.trackChunks ?? 0}  grass ${c.grass ?? 0}  props ${c.props ?? 0}\n` +
       `ms: ${sec}\n` +
       `km ${(c.km ?? 0).toFixed(3)}  origin ${c.originX ?? 0},${c.originZ ?? 0}`;
