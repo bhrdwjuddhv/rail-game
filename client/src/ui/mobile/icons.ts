@@ -15,6 +15,10 @@ export const ICON = {
   cabLight: svg(`<path d="M12 3v4M7 13a5 5 0 0 1 10 0z" ${S}/><path d="M9 17l-1 2.5M12 17.5V20M15 17l1 2.5" ${S}/>`),
   /** two marker lamps on a buffer beam */
   markers: svg(`<path d="M3 16h18" ${S}/><circle cx="7" cy="11" r="2.6" ${S}/><circle cx="17" cy="11" r="2.6" ${S}/>`),
+  /** circuit breaker: two contacts and a switch blade, with a supply line above (our own symbol) */
+  vcb: svg(`<path d="M12 2.5v4.5M12 17v4.5" ${S}/><circle cx="12" cy="7.6" r="1.3" fill="currentColor"/><circle cx="12" cy="16.4" r="1.3" fill="currentColor"/><path class="blade" d="M12 16.4 18 9.2" ${S}/><path d="M6 9.5h3.5M6 14.5h3.5" ${S} stroke-width="1.4"/>`),
+  /** God Mode: lightning bolt */
+  god: svg(`<path d="M13.5 2 5 13.5h6L9.5 22 19 9.5h-6.2z" fill="currentColor"/>`),
   more: svg(`<circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>`),
   /** air horn trumpet */
   horn: svg(`<path d="M4 10h3l9-4.5v13L7 14H4z" ${S}/><path d="M7 14l1.2 4.5h2.4L10 14.6" ${S}/><path d="M19 9.5a4 4 0 0 1 0 5" ${S}/>`),

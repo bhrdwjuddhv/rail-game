@@ -3,7 +3,7 @@ import { ICON } from './icons';
 
 /** Next (lower) speed limit, shown once it is within 2 km. */
 export class SpeedLimitCard {
-  readonly el = h('div', 'm-card m-limitcard', `<span class="m-sign"><b></b></span><span class="m-txt">Next Speed Limit in <b class="m-dist"></b></span>`);
+  readonly el = h('div', 'm-card m-limitcard', `<span class="m-sign"><b></b></span><span class="m-txt"><span class="m-lbl">Next Speed Limit in </span><b class="m-dist"></b></span>`);
   update(r: { kmph: number; dist: number } | null) {
     const on = !!r && r.dist <= 2000;
     show(this.el, on);
@@ -15,7 +15,7 @@ export class SpeedLimitCard {
 
 /** Next station ahead, shown from 3 km out. */
 export class StationCard {
-  readonly el = h('div', 'm-card m-station', `<span class="m-ico">${ICON.station}</span><span class="m-txt"><b class="m-name"></b> in <b class="m-dist"></b></span>`);
+  readonly el = h('div', 'm-card m-station', `<span class="m-ico">${ICON.station}</span><span class="m-txt"><b class="m-name"></b><span class="m-lbl"> in</span> <b class="m-dist"></b></span>`);
   update(s: { name: string; dist: number } | null) {
     const on = !!s && s.dist <= 3000;
     show(this.el, on);
@@ -47,11 +47,11 @@ export class TimetableCard {
       const late = t.arrival.lateMin;
       state = late > 1 ? 'late' : 'ok';
       const note = late > 1 ? `${late} min late` : late < -1 ? `${-late} min early` : 'on time';
-      html = `Reach <b>${esc(t.arrival.station)}</b> in <b>${m} min</b><small>${note}</small>`;
+      html = `<span class="m-lbl">Reach </span><b>${esc(t.arrival.station)}</b><span class="m-lbl"> in</span> <b>${m} min</b><small>${note}</small>`;
     } else if (t.departure) {
-      html = `Depart <b>${esc(t.departure.station)}</b> at <b>${t.departure.time}</b>`;
+      html = `<span class="m-lbl">Depart </span><b>${esc(t.departure.station)}</b><span class="m-lbl"> at</span> <b>${t.departure.time}</b>`;
     } else if (t.nextStop) {
-      html = `Next stop: <b>${esc(t.nextStop)}</b>`;
+      html = `<span class="m-lbl">Next stop: </span><b>${esc(t.nextStop)}</b>`;
     }
     const key = html + state;
     if (key === this.key) return;

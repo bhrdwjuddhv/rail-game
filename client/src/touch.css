@@ -9,10 +9,11 @@
   --edge: 8px; --gap: 6px;
   --btn: clamp(44px, 12.4dvh, 58px);
   --card-h: clamp(38px, 10.5dvh, 52px);
-  --card-w: clamp(176px, 29vw, 250px);
+  /* each side column is at most a fifth of the width: the middle 60 % shows the track */
+  --card-w: clamp(104px, calc(20vw - 12px), 250px);
   --speedo-w: clamp(124px, 34dvh, 210px);
-  --right-w: clamp(152px, 40dvh, 210px);
-  --lever-w: clamp(56px, 15dvh, 76px);
+  --right-w: clamp(104px, calc(20vw - 12px), 210px);
+  --lever-w: min(76px, calc((var(--right-w) - 6px) / 2));
   --fs: clamp(11px, 3.3dvh, 15px);
   --panel: rgba(9, 11, 15, 0.66);
   --panel-line: rgba(255, 255, 255, 0.13);
@@ -32,13 +33,13 @@ html.touch #hud.details .hud-panel {
 html.touch #hud.details ~ .track-profile { display: block; bottom: auto; top: calc(100dvh - var(--speedo-w) * 0.55 - 118px); width: min(460px, calc(100vw - 2 * var(--right-w) - 40px)); }
 html.touch .minimap { display: none; }
 html.touch .minimap.shown { display: block; top: calc(var(--st) + var(--edge)); right: calc(var(--sr) + var(--right-w) + 16px); width: 150px; height: 150px; }
-html.touch .hud-vig { display: none !important; } /* the touch layer shows a tappable pop-up instead */
 html.touch #hud.bare > * { display: none !important; }
-html.touch .god-badge { left: 50%; top: calc(var(--st) + 6px); transform: translateX(-50%); padding: 4px 8px; font-size: 11px; }
+html.touch .god-badge { display: none !important; } /* touch: a small badge on the pause button instead */
+html.touch #hud.details .hud-panel::after { content: "\00d7"; position: absolute; top: 4px; right: 10px; font-size: 20px; color: #cfd6dd; }
+html.touch .minimap.shown { cursor: pointer; }
 
 /* toasts: top-centre between the left and right columns, 2 at most (HUD trims the list) */
 html.touch .hud-msgs { left: 50%; top: calc(var(--st) + 6px); transform: translateX(-50%); width: max-content; max-width: calc(100vw - 2 * max(var(--card-w), var(--right-w)) - 2 * var(--edge) - 24px); align-items: center; }
-html.touch .god-badge:not([hidden]) ~ .hud-msgs { top: calc(var(--st) + 34px); }
 html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 
 /* ---------------------------------------------------------------- the touch HUD */
@@ -48,7 +49,7 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .touch-ui button:hover { filter: none; }
 .touch-ui svg { display: block; }
 /* auto-fade: info and buttons dim, levers and speedometer stay */
-.touch-ui.idle > .m-tl, .touch-ui.idle > .m-cards, .touch-ui.idle > .m-bl, .touch-ui.idle .m-right > .m-card, .touch-ui.idle > .m-horn { opacity: 0.35; }
+.touch-ui.idle > .m-tl, .touch-ui.idle > .m-cards, .touch-ui.idle > .m-bar, .touch-ui.idle .m-right > .m-card, .touch-ui.idle .m-hornrow { opacity: 0.35; }
 .touch-ui.bare > :not(.m-tl), .touch-ui.bare .m-tl > :not(.m-pause) { display: none !important; }
 
 .m-card {
@@ -64,7 +65,10 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 /* top-left: pause + camera picker */
 .m-tl { z-index: 9; left: calc(var(--sl) + var(--edge)); top: calc(var(--st) + var(--edge)); display: flex; gap: var(--gap); align-items: flex-start; }
 .m-pause, .m-cam-btn { height: var(--btn); background: var(--panel); border: 1px solid var(--panel-line); border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
-.m-pause { width: var(--btn); display: grid; place-items: center; }
+.m-pause { position: relative; width: var(--btn); display: grid; place-items: center; }
+.m-god { position: absolute; top: -5px; right: -5px; width: 20px; height: 20px; border-radius: 50%; background: #ffd400; color: #1a1400; display: grid; place-items: center; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5); }
+.m-god[hidden] { display: none; }
+.m-god svg { width: 13px; height: 13px; }
 .m-pause svg { width: 58%; height: 58%; }
 .m-campick { position: relative; }
 .m-cam-btn { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px !important; font-weight: 700; }
@@ -74,6 +78,12 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-cam-list[hidden] { display: none; }
 .m-cam-list button { text-align: left; padding: 0 12px !important; border-radius: 8px; background: none; border: 0; }
 .m-cam-list button[aria-selected="true"] { background: rgba(95, 225, 255, 0.16); color: var(--cyan); }
+/* narrow screens: camera icon only (the list still names the views); card words hide, the values stay */
+@media (max-width: 900px) {
+  .m-cam-btn { width: var(--btn); justify-content: center; padding: 0 !important; }
+  .m-cam-btn span, .m-cam-btn svg:last-child { display: none; }
+}
+@media (max-width: 1000px) { .m-lbl { display: none; } .m-card { padding: 4px 8px; gap: 6px; } }
 
 /* left: info cards */
 .m-cards { left: calc(var(--sl) + var(--edge)); top: calc(var(--st) + var(--edge) + var(--btn) + var(--gap)); width: var(--card-w); display: flex; flex-direction: column; gap: var(--gap); }
@@ -95,18 +105,16 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-ico { width: 24px; height: 24px; flex: none; color: #cfd6dd; }
 .m-ico svg { width: 100%; height: 100%; }
 
-/* bottom-left: timetable card on top of the control bar */
-.m-bl { left: calc(var(--sl) + var(--edge)); bottom: calc(var(--sb) + var(--edge)); display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap); }
 .m-timetable { max-width: var(--card-w); }
 .m-timetable .m-clock { font-size: 1.25em; font-variant-numeric: tabular-nums; padding-right: 8px; border-right: 1px solid var(--panel-line); }
 .m-timetable .m-txt { white-space: normal; line-height: 1.25; }
 .m-timetable small { margin-left: 6px; white-space: nowrap; }
 .m-timetable.ontime small { color: var(--led-on); }
 .m-timetable.late small { color: var(--led-amber); }
-.m-bar {
-  flex-wrap: wrap; gap: 5px; padding: 5px; border-radius: 16px; min-height: 0;
-  max-width: calc(50vw - var(--speedo-w) / 2 - var(--edge) - var(--sl) - 10px);
-}
+/* bottom: one thin row (never wraps), split either side of the speedometer */
+.m-bar { flex-wrap: nowrap; gap: 5px; padding: 5px; border-radius: 16px; min-height: 0; bottom: calc(var(--sb) + var(--edge)); }
+.m-bar-l { left: calc(var(--sl) + var(--edge)); }
+.m-bar-r { right: calc(var(--sr) + var(--edge) + var(--right-w) + var(--gap)); }
 .m-btn { position: relative; width: var(--btn); height: var(--btn); border-radius: 50% !important; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.16); display: grid; place-items: center; }
 .m-btn > svg { width: 52%; height: 52%; margin-top: -4px; }
 .m-btn .led { position: absolute; left: 50%; bottom: 5px; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: var(--led-off); }
@@ -162,10 +170,12 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-sp-read small { color: #b9c2cb; font-size: 0.75em; font-weight: 700; }
 .m-speedo.over .m-sp-read b { color: #ff6a5e; }
 
-/* horn: big round blue button right of the speedometer */
+/* horn: round blue button beside the notch readout, above the levers */
+.m-hornrow { display: flex; gap: var(--gap); align-items: center; }
+.m-hornrow .m-notch { flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
 .m-horn {
-  left: calc(50% + var(--speedo-w) / 2 + 8px); bottom: calc(var(--sb) + var(--edge));
-  width: clamp(54px, 15dvh, 74px); height: clamp(54px, 15dvh, 74px); border-radius: 50%;
+  position: relative; flex: none;
+  width: var(--btn); height: var(--btn); border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, #4ea3ff, #1559b8 70%); border: 2px solid rgba(255, 255, 255, 0.35);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45); display: grid; place-items: center;
 }
@@ -179,9 +189,11 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-score .m-txt { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
 .m-score b { font-size: 1.2em; font-variant-numeric: tabular-nums; }
 .m-score .m-ico { color: var(--accent); }
-.m-rev { flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px 6px; min-height: 0; }
+.m-rev { flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 3px 5px; min-height: 0; }
 .m-rev small { text-align: center; font-size: 9px; }
-.m-seg { display: flex; gap: 4px; }
+.m-seg { display: flex; gap: 3px; }
+/* narrow phones: three segments share the 20 % column (44 px tall, narrower than 44) */
+.touch-ui .m-seg button { min-width: 0; }
 .m-seg button { position: relative; flex: 1; height: 44px; border-radius: 9px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.14); font-weight: 900; font-size: 15px; padding-bottom: 6px !important; }
 .m-seg button .led { position: absolute; left: 50%; bottom: 5px; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: var(--led-off); }
 .m-seg button.on { border-color: rgba(54, 224, 124, 0.55); }
@@ -211,14 +223,16 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-lever-brake.emergency .m-lv-track { border-color: #ff3b30; }
 /* split: throttle on the left edge; the left column moves over */
 .touch-ui.split > .m-lever-throttle { left: calc(var(--sl) + var(--edge)); top: calc(var(--st) + var(--edge) + var(--btn) + var(--gap)); bottom: calc(var(--sb) + var(--edge)); }
-.touch-ui.split > .m-cards, .touch-ui.split > .m-bl { left: calc(var(--sl) + var(--edge) + var(--lever-w) + 8px); }
-.touch-ui.split .m-bar, .touch-ui.split .m-timetable { max-width: calc(50vw - var(--speedo-w) / 2 - var(--lever-w) - var(--edge) - var(--sl) - 18px); }
+.touch-ui.split > .m-cards, .touch-ui.split > .m-bar-l { left: calc(var(--sl) + var(--edge) + var(--lever-w) + 8px); }
+.touch-ui.split > .m-cards { width: max(96px, calc(var(--card-w) - var(--lever-w) - 8px)); }
 @media (max-height: 420px) { .touch-ui.split .m-timetable { display: none; } }
+/* split on a narrow phone: the wipers go to the More drawer so the bar stays one row */
+@media (max-width: 760px) { .touch-ui.split .m-bar-l .m-wipers { display: none; } }
 
-/* vigilance pop-up: centre-right, left of the levers */
-.m-vig { right: calc(var(--sr) + var(--right-w) + 16px); top: 40%; padding: 8px 16px !important; background: #ffd400; color: #111 !important; border: 0; font-weight: 900; font-size: 15px; display: flex; flex-direction: column; align-items: center; animation: blink 0.6s steps(2) infinite; border-radius: 14px; }
-.m-vig small { font-size: 10px; }
-.m-vig[hidden], .t-drawer[hidden] { display: none !important; }
+.t-drawer[hidden] { display: none !important; }
+
+/* vigilance ACKNOWLEDGE pop-up (shared with desktop, see style.css): touch places it above the bar, left of the levers */
+html.touch .vig-pop { right: calc(var(--sr) + var(--edge) + var(--right-w) + 10px); bottom: calc(var(--sb) + var(--edge) + var(--btn) + 22px); top: auto; width: clamp(96px, 30dvh, 128px); }
 
 /* the More drawer */
 .t-drawer {

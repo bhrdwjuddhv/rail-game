@@ -8,7 +8,7 @@ export interface HudData {
   station: { name: string; dist: number; stop: boolean } | null;
   restriction: { kmph: number; dist: number } | null;
   clock: string; eta: string; due: string; gradient: string; km: number; score: number | null;
-  vigilance: 'ok' | 'warning' | 'penalty'; camera: string; weather: string;
+  camera: string; weather: string;
 }
 
 const ASPECT_HTML: Record<string, string> = {
@@ -21,7 +21,6 @@ export class HUD {
   private panel: HTMLElement;
   private msgs: HTMLElement;
   private tip: HTMLElement;
-  private vig: HTMLElement;
   private els: Record<string, HTMLElement> = {};
   visible = true;
   private godBadge: HTMLElement;
@@ -53,13 +52,11 @@ export class HUD {
         <div class="row dim"><span data-k="cam"></span><span data-k="score"></span></div>
       </div>
       <div class="hud-msgs"></div>
-      <div class="hud-tip"></div>
-      <div class="hud-vig">VIGILANCE - PRESS Q</div>`;
+      <div class="hud-tip"></div>`;
     parent.appendChild(this.root);
     this.panel = this.root.querySelector('.hud-panel')!;
     this.msgs = this.root.querySelector('.hud-msgs')!;
     this.tip = this.root.querySelector('.hud-tip')!;
-    this.vig = this.root.querySelector('.hud-vig')!;
     this.root.querySelectorAll<HTMLElement>('[data-k]').forEach(e => (this.els[e.dataset.k!] = e));
     this.offs.push(bus.on('message', m => this.message(m.text, m.kind ?? 'info', m.ms ?? 3500)));
     const btn = this.root.querySelector<HTMLButtonElement>('.pause-btn')!;
@@ -103,8 +100,6 @@ export class HUD {
     e.due.textContent = d.due;
     e.cam.textContent = `${d.camera} · ${d.weather}`;
     e.score.textContent = d.score === null ? '' : ` · Score ${d.score}`;
-    this.vig.style.display = d.vigilance === 'ok' ? 'none' : 'block';
-    this.vig.textContent = d.vigilance === 'penalty' ? 'PENALTY BRAKE - STOP, THEN PRESS Q' : 'VIGILANCE - PRESS Q';
   }
 
   dispose() { for (const o of this.offs) o(); this.root.remove(); }

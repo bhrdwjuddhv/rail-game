@@ -33,6 +33,7 @@ import { CabHighlight } from './train/cab/CabHighlight';
 import { godModePanel } from './ui/GodModePanel';
 import { TextureTest } from './ui/TextureTest';
 import { RoofCover, underRoof } from './infrastructure/Station';
+import { VigilancePopup } from './ui/VigilancePopup';
 import { BUG_CAMERAS, TrackPoint } from './gameplay/BugCameras';
 import { TutorialCard } from './ui/TutorialCard';
 import { applyOverrides, ScenarioData, ScenarioOverrides, startHeadKm, startTrack } from '@rail/shared/gameplay/Scenario';
@@ -323,7 +324,12 @@ export class Game {
     this.profile = new TrackProfile(ui);
     this.minimap = new Minimap(ui, this.route, () => this.line.running.id);
     this.perf = new PerfOverlay(ui, rs);
+    // vigilance ACKNOWLEDGE pop-up (desktop shows the key too)
+    this.vigPopup = new VigilancePopup(ui, () => (isTouch ? null : settings.get().keys.vigilance.replace(/^Key/, '')), () => this.sys.acknowledgeVigilance(this.dyn.speed));
     if (isTouch) {
+      // the full gauges, track profile and map are pop-ups from the More drawer: tap one to close it
+      this.hud.root.querySelector('.hud-panel')!.addEventListener('click', () => { if (this.hud.root.classList.contains('details')) this.hud.toggleDetails(); });
+      this.minimap.canvas.addEventListener('click', () => this.minimap.canvas.classList.remove('shown'));
       this.touch = new TouchControls(ui, {
         sys: this.sys, notches: loco.notches,
         brake: () => ({ handle: this.dyn.brakes.handle, independent: this.dyn.brakes.independent }),
@@ -570,6 +576,7 @@ export class Game {
   private applyGod() {
     const g = this.god, e = g.eff;
     this.hud.setGodMode(g.active);
+    this.touch?.setGodMode(g.active);
     this.hud.setHidden(e.hideHud);
     this.touch?.setBare(e.hideHud);
     this.profile.canvas.style.display = e.hideHud || !this.hud.visible ? 'none' : '';
@@ -619,6 +626,7 @@ export class Game {
   private texTest: TextureTest | null = null;
   /** camera in a tunnel or under a platform roof (no rain on it) */
   private sheltered = false;
+  private vigPopup!: VigilancePopup;
   /** God Mode -> Texture Test: its own scene and loop while the run stays paused; Back returns to God Mode. */
   private openTextureTest() {
     this.menus.hide();
@@ -1467,8 +1475,8 @@ export class Game {
       station: st ? { name: st.name, dist: stDist } : null,
       timetable: { clock: formatClock(this.time.seconds, true), arrival, departure, nextStop: st ? st.name : null },
       score: this.scenario.rules && this.scoring.enabled ? this.scoring.total : null,
-      vigilance: s.vigilanceState,
     });
+    this.vigPopup.update(s.vigilanceState, s.vigilanceLeft);
     this.hud.update({
       speed: Math.abs(d.speedKmph) * conv, units: units === 'mph' ? 'mph' : 'km/h', limit: Math.round(limit * conv),
       notch: s.notch > 0 ? `P${s.notch}` : s.regen > 0 ? `B${s.regen}` : '0', reverser: s.reverser > 0 ? 'F' : s.reverser < 0 ? 'R' : 'N',
@@ -1477,7 +1485,7 @@ export class Game {
       station: st ? { name: st.name, dist: stDist, stop: stopping } : null,
       restriction, clock: formatClock(this.time.seconds, true), eta, due,
       gradient: formatGradient(L.alignment.gradientAt(head)), km: L.canonicalKm(head),
-      score: this.scenario.rules ? this.scoring.total : null, vigilance: s.vigilanceState,
+      score: this.scenario.rules ? this.scoring.total : null,
       camera: CAMERA_NAMES[this.cameras.index], weather: WEATHER[this.weather.id].name,
     });
   }

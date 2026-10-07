@@ -56,7 +56,7 @@
       },
       "touch": {
         "text": {
-          "en": "Close the main circuit breaker (VCB): tap ⋯ at the end of the bottom bar, then Main breaker. The transformer starts humming."
+          "en": "Close the main circuit breaker (VCB): tap the VCB button next to the pantograph in the bottom bar. Its light turns amber while it closes (about a second), then green, and the transformer starts humming."
         },
         "highlight": "vcb"
       }
@@ -184,7 +184,7 @@
       },
       "touch": {
         "text": {
-          "en": "Sound the horn before moving off to warn anyone on or near the track: tap the big blue horn button (hold it for a long blast)."
+          "en": "Sound the horn before moving off to warn anyone on or near the track: tap the blue horn button on the right, above the levers (hold it for a long blast)."
         },
         "highlight": "horn"
       }

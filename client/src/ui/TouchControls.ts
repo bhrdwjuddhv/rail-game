@@ -42,7 +42,6 @@ export interface MobileHudData {
   station: { name: string; dist: number } | null;
   timetable: TimetableInfo;
   score: number | null;
-  vigilance: 'ok' | 'warning' | 'penalty';
 }
 
 const FULL_SERVICE = BRAKE_POSITIONS.indexOf('Full Service');
@@ -52,8 +51,9 @@ const IDLE_MS = 4000;
 /**
  * The landscape HUD and controls for phones and tablets. Info on the left
  * (signal / next limit / next station cards, timetable), the speedometer on the
- * bottom edge, the control bar bottom-left, horn, reverser and two cab levers
- * on the right. The middle of the screen stays clear for the track ahead.
+ * bottom edge between the two halves of a thin control bar, horn, reverser and
+ * two cab levers on the right. Each side column is at most a fifth of the
+ * width, so the middle 60 % above the bar shows only the track ahead.
  * Every control tracks its own pointer, so several can be used at once and none
  * of them moves the camera. The DOM is written only when a value changes.
  */
@@ -73,8 +73,8 @@ export class TouchControls {
   private notchOut: HTMLElement;
   private levers: HTMLElement;
   private drawer: HTMLElement;
-  private vig: HTMLElement;
-  private shown = { vcb: false, flasher: false, loco: -1, vig: '', layout: '' };
+  private god: HTMLElement;
+  private shown = { flasher: false, cab: false, markers: false, loco: -1, layout: '' };
   private lastTouch = performance.now();
   private hornDownAt = 0;
   private hornTimer = 0;
@@ -86,7 +86,9 @@ export class TouchControls {
     const s = hk.sys;
     // ---- top-left: pause + camera picker
     const tl = h('div', 'm-tl');
-    const pause = h('button', 'm-pause', ICON.pause);
+    // God Mode: a small icon badge on the pause button's corner
+    const pause = h('button', 'm-pause', `${ICON.pause}<i class="m-god" hidden title="God Mode on">${ICON.god}</i>`);
+    this.god = pause.querySelector('.m-god')!;
     pause.setAttribute('aria-label', 'Pause menu');
     pause.dataset.tid = 'pause';
     onTap(pause, () => hk.pause());
@@ -116,26 +118,27 @@ export class TouchControls {
     this.brakeLever = new Lever('BRAKE', 'brake', false, FULL_SERVICE, v => s.setTrainBrake(v), v => BRAKE_SHORT[v] ?? 'EMG');
     this.levers = h('div', 'm-levers');
     this.levers.append(this.brakeLever.el, this.throttle.el);
-    right.append(this.score.el, this.reverser.el, this.notchOut, this.levers);
+    // horn beside the notch readout, above the levers (right thumb)
+    const hornRow = h('div', 'm-hornrow');
+    hornRow.append(horn, this.notchOut);
+    right.append(this.score.el, this.reverser.el, hornRow, this.levers);
 
-    // ---- vigilance pop-up and the More drawer
-    this.vig = h('button', 'm-vig', 'VIGILANCE<small>tap</small>');
-    this.vig.dataset.tid = 'vigilance';
-    this.vig.hidden = true;
-    onTap(this.vig, () => hk.act('vigilance', true));
+    // ---- the More drawer: everything not on the bar
     this.drawer = h('div', 't-drawer', `
       <h3>More controls</h3>
       <div class="t-grid">
-        <button data-act="vcb" data-tid="vcb">Main breaker<small data-v="vcb">open</small></button>
+        <button data-act="cabLight" data-tid="cabLight">Cab light<small data-v="cab">off</small></button>
+        <button data-act="markers" data-tid="markers">Marker lights<small data-v="markers">on</small></button>
+        <button data-act="flasher" data-tid="flasher">Flasher<small data-v="flasher">off</small></button>
+        <button data-act="wipers" data-tid="wipersMore">Wipers<small>off / slow / fast</small></button>
         <button data-hold="sander" data-tid="sander">Sander<small>hold</small></button>
         <button data-act="vigilance" data-tid="vigilanceBtn">Vigilance<small>acknowledge</small></button>
-        <button data-act="flasher" data-tid="flasher">Flasher<small data-v="flasher">off</small></button>
       </div>
       <div class="t-row" data-tid="locoBrake"><span>Loco brake <small data-v="loco">0%</small></span><span class="t-seg"><button data-act="locoBrakeRelease">Release</button><button data-act="locoBrakeApply">Apply</button></span></div>
       <div class="t-grid">
         <button data-ui="free">Free camera</button>
-        <button data-ui="details">All gauges</button>
-        <button data-ui="map">Map</button>
+        <button data-ui="details" data-tid="details">All gauges<small>and track profile</small></button>
+        <button data-ui="map" data-tid="map">Map</button>
       </div>`);
     this.drawer.hidden = true;
     this.drawer.addEventListener('click', e => {
@@ -144,18 +147,16 @@ export class TouchControls {
       if (!b) return;
       if (b.dataset.act) { hk.act(b.dataset.act as Action, true); hk.act(b.dataset.act as Action, false); }
       if (b.dataset.ui === 'free') { hk.camera(6); this.setDrawer(false); }
-      if (b.dataset.ui === 'details') hk.toggleDetails();
-      if (b.dataset.ui === 'map') hk.toggleMap();
+      // the gauges and the map open as pop-ups over the view: the drawer gets out of the way
+      if (b.dataset.ui === 'details') { hk.toggleDetails(); this.setDrawer(false); }
+      if (b.dataset.ui === 'map') { hk.toggleMap(); this.setDrawer(false); }
     });
     const sander = this.drawer.querySelector<HTMLButtonElement>('[data-hold="sander"]')!;
     sander.addEventListener('pointerdown', e => { e.preventDefault(); sander.setPointerCapture(e.pointerId); hk.act('sander', true); });
     for (const ev of ['pointerup', 'pointercancel'] as const) sander.addEventListener(ev, () => hk.act('sander', false));
 
-    // bottom-left: the control bar (wraps to two rows on narrow screens); the timetable card
-    // sits at the foot of the left column, so nothing reaches up into the view of the track
-    const bl = h('div', 'm-bl');
-    bl.append(this.bar.el);
-    this.el.append(tl, cards, bl, this.speedo.el, horn, right, this.vig, this.drawer);
+    // bottom: the two halves of the control bar either side of the speedometer
+    this.el.append(tl, cards, this.bar.el, this.speedo.el, this.bar.right, right, this.drawer);
     parent.appendChild(this.el);
 
     // ---- pantograph: follow its travel every frame while it moves, toast start and finish
@@ -262,17 +263,15 @@ export class TouchControls {
     this.brakeLever.el.classList.toggle('emergency', b.handle > FULL_SERVICE);
     setText(this.notchOut.querySelector('b')!, s.regen > 0 ? `Regen ${s.regen}` : s.notch === 0 ? 'Idle' : `Notch ${s.notch}`);
     const text = (k: string, v: string) => setText(this.drawer.querySelector(`[data-v="${k}"]`)!, v);
-    if (s.vcb !== sh.vcb) { sh.vcb = s.vcb; text('vcb', s.vcb ? 'closed' : 'open'); this.drawer.querySelector('[data-act="vcb"]')!.classList.toggle('on', s.vcb); }
     if (s.flasher !== sh.flasher) { sh.flasher = s.flasher; text('flasher', s.flasher ? 'on' : 'off'); this.drawer.querySelector('[data-act="flasher"]')!.classList.toggle('on', s.flasher); }
+    if (s.cabLight !== sh.cab) { sh.cab = s.cabLight; text('cab', s.cabLight ? 'on' : 'off'); this.drawer.querySelector('[data-act="cabLight"]')!.classList.toggle('on', s.cabLight); }
+    if (s.markers !== sh.markers) { sh.markers = s.markers; text('markers', s.markers ? 'on' : 'off'); this.drawer.querySelector('[data-act="markers"]')!.classList.toggle('on', s.markers); }
     const loco = Math.round(b.independent * 100);
     if (loco !== sh.loco) { sh.loco = loco; text('loco', `${loco}%`); }
-    if (d.vigilance !== sh.vig) {
-      sh.vig = d.vigilance;
-      this.vig.hidden = d.vigilance === 'ok';
-      this.vig.firstChild!.textContent = d.vigilance === 'penalty' ? 'PENALTY - STOP' : 'VIGILANCE';
-      if (!this.vig.hidden) buzz(40);
-    }
   }
+
+  /** God Mode badge on the pause button. */
+  setGodMode(on: boolean) { this.god.hidden = !on; }
 
   /** God Mode "hide HUD": only the pause button stays (there is no Esc key on a phone). */
   setBare(bare: boolean) { this.el.classList.toggle('bare', bare); }
