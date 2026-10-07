@@ -96,6 +96,9 @@ export function runningLinesOf(data: RouteData): RunningLine[] {
  * its direction of travel (the Up view is the route mirrored end to end), so
  * signalling, physics and AI all simply move toward increasing km.
  */
+/** Length (km) at each tunnel end where the hill is cut back to the portal face. */
+export const TUNNEL_PORTAL_KM = 0.012;
+
 export class Route {
   readonly alignment: Alignment;
   readonly graph: TrackGraph;
@@ -351,6 +354,8 @@ export class Route {
     return null;
   }
   inTunnel(km: number) { return this.tunnels.some(t => km >= t.fromKm && km <= t.toKm); }
+  /** Inside a tunnel bore away from its portals: the hill stands closed over the track here. */
+  overTunnel(km: number) { return this.tunnels.some(t => km > t.fromKm + TUNNEL_PORTAL_KM && km < t.toKm - TUNNEL_PORTAL_KM); }
   /** Station whose yard (either direction) covers km. */
   stationAt(km: number, margin = 0) {
     return this.stations.find(s => km >= s.yardFromKm - margin && km <= s.yardToKm + margin);

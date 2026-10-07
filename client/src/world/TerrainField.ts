@@ -306,7 +306,7 @@ export class TerrainField {
       if (km < t.fromKm - 0.004 || km > t.toKm + 0.004) continue;
       const nearPortal = km < t.fromKm + 0.02 || km > t.toKm - 0.02;
       if (nearPortal && nt.dist < 9.5 + H) out.hole = true;
-      if (km > t.fromKm + 0.012 && km < t.toKm - 0.012) return nt.dist < 14 + H ? Math.max(h, bed + 13 + H * 0.5) : h;
+      if (R.overTunnel(km)) return nt.dist < 14 + H ? Math.max(h, bed + 13 + H * 0.5) : h;
     }
     for (const b of R.bridges) {
       if (km >= b.fromKm && km <= b.toKm) return nt.dist < 7 + H ? Math.min(h, bed - 3.5) : h;

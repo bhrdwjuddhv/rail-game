@@ -31,6 +31,9 @@ import { GodMode } from './gameplay/GodMode';
 import { Tutorial, TUTORIALS, TutorialState, tutorialPrefs } from './gameplay/Tutorial';
 import { CabHighlight } from './train/cab/CabHighlight';
 import { godModePanel } from './ui/GodModePanel';
+import { TextureTest } from './ui/TextureTest';
+import { RoofCover, underRoof } from './infrastructure/Station';
+import { BUG_CAMERAS, TrackPoint } from './gameplay/BugCameras';
 import { TutorialCard } from './ui/TutorialCard';
 import { applyOverrides, ScenarioData, ScenarioOverrides, startHeadKm, startTrack } from '@rail/shared/gameplay/Scenario';
 import { Scoring } from '@rail/shared/gameplay/Scoring';
@@ -588,7 +591,51 @@ export class Game {
       currentWeather: () => this.weather.id,
       teleport: target => { void this.teleportTo(target); },
       back, resume: () => this.resume(),
+      textureTest: () => this.openTextureTest(),
+      bugCameras: BUG_CAMERAS[this.route.data.id] ?? [],
+      bugCamera: id => { void this.bugCamera(id); },
     }), back);
+  }
+
+  /**
+   * God Mode -> Bug check cameras: bring the train near the place (stopped,
+   * brakes on), set time and weather if the preset asks, and put the free
+   * camera at the preset view - or the cab view for views inside tunnels.
+   */
+  private async bugCamera(id: string) {
+    const c = (BUG_CAMERAS[this.route.data.id] ?? []).find(x => x.id === id);
+    if (!c) return;
+    if (c.hours !== undefined) this.time.seconds = c.hours * 3600;
+    if (c.weather && c.weather !== this.weather.id) { this.god.set('weather', c.weather); this.weather.set(c.weather, true); }
+    await this.teleportTo({ km: c.trainKm ?? Math.max(0.6, (c.eye?.km ?? 1) - 0.15), line: this.railway.main.running.id });
+    const ctx = this.cameraContext(0.016);
+    if (c.cab || !c.eye || !c.look) { this.cameras.select(0, ctx); return; }
+    const a = this.railway.main.alignment, f = newFrame();
+    const at = (p: TrackPoint) => { a.sampleOffset(p.km * 1000, p.offset, f); return new THREE.Vector3(f.x, f.y + p.h, f.z); };
+    this.cameras.select(6, ctx);
+    this.freeCam.place(at(c.eye), at(c.look));
+  }
+
+  private texTest: TextureTest | null = null;
+  /** camera in a tunnel or under a platform roof (no rain on it) */
+  private sheltered = false;
+  /** God Mode -> Texture Test: its own scene and loop while the run stays paused; Back returns to God Mode. */
+  private openTextureTest() {
+    this.menus.hide();
+    const canvas = this.rs.renderer.domElement;
+    canvas.classList.remove('paused');
+    this.hud.setHidden(true);
+    this.touch?.setBare(true);
+    this.profile.canvas.style.display = this.minimap.canvas.style.display = 'none';
+    this.texTest = new TextureTest(this.rs, () => {
+      this.texTest = null;
+      canvas.classList.add('paused');
+      this.applyGod();
+      this.rs.setScene(this.scene, this.rcam);
+      this.rs.renderer.setAnimationLoop(t => this.engine.tick(t));
+      this.pausedNeedsRender = true;
+      this.openGodMode();
+    });
   }
 
   /**
@@ -636,7 +683,8 @@ export class Game {
     }
     this.teleporting = false;
     this.pausedNeedsRender = true;
-    if (wasPaused) this.resume(); else this.engine.paused = false;
+    // the loading overlay goes in both cases (teleports also come from God Mode tools while running)
+    if (wasPaused) this.resume(); else { this.menus.hide(); this.engine.paused = false; }
     bus.emit('message', { text: `Teleported to ${where}. Brakes applied.`, kind: 'info' });
   }
 
@@ -868,6 +916,7 @@ export class Game {
   /** Esc / Menu button: open the pause menu, or go back one level / resume when it is open. */
   private togglePause(help: boolean) {
     if (this.ended) return;
+    if (this.texTest) { this.texTest.dispose(); return; }
     if (!this.engine.paused) {
       this.pause();
       if (help) this.menus.help(() => this.showPauseMenu());
@@ -1077,7 +1126,12 @@ export class Game {
     const tunnelKm = this.cameraInTunnel();
     this.lighting.tunnel += ((tunnelKm ? 1 : 0) - this.lighting.tunnel) * Math.min(1, dt * 1.5);
     const speedVec = new THREE.Vector3(Math.cos(this.headHeading()) * d.speed, 0, Math.sin(this.headHeading()) * d.speed);
-    this.weather.update(dt, cam.position, inCab ? speedVec : new THREE.Vector3(), inCab ? 3.2 : 0);
+    // shelter: no rain inside tunnels; none under platform roofs near the camera (cab glass and roof drumming too)
+    const roofs: RoofCover[] = [];
+    for (const sv of this.stations.values()) for (const r of sv.roofs) if (Math.hypot(r.x - cam.position.x, r.z - cam.position.z) < r.halfLen + 60) roofs.push(r);
+    const covered = roofs.length ? (x: number, y: number, z: number) => underRoof(roofs, x, y, z) : undefined;
+    this.sheltered = !!tunnelKm || !!covered?.(cam.position.x, cam.position.y, cam.position.z);
+    this.weather.update(dt, cam.position, inCab ? speedVec : new THREE.Vector3(), inCab ? 3.2 : 0, !!tunnelKm, covered);
     wind.update(dt, this.weather.p.wind);
     this.sky.group.scale.setScalar((cam.far * 0.85) / 2000);
     this.sky.update(dt, this.rcam.position, this.time, this.weather);
@@ -1092,7 +1146,7 @@ export class Game {
 
     // cab
     if (inCab) {
-      this.cab.update(dt, this.weather.p.rain, d.speed, s.wipers);
+      this.cab.update(dt, this.sheltered ? 0 : this.weather.p.rain, d.speed, s.wipers);
       this.cab.lightMat.color.setScalar(s.cabLight ? 3 : 0.2);
       this.cab.cabLight.intensity = s.cabLight ? 2.5 : 0;
       const ns = this.nextSignal();
@@ -1360,7 +1414,7 @@ export class Game {
       if (!station || dd < station.d) station = { x: sv.centre.x, y: sv.centre.y, z: sv.centre.z, d: dd };
     }
     this.ambience!.update(dt, {
-      rain: this.weather.p.rain, wind: this.weather.p.wind, day: this.time.day, speed: d.speed, inCab: !!this.cameras.mode.inCab,
+      rain: this.sheltered ? this.weather.p.rain * 0.25 : this.weather.p.rain, wind: this.weather.p.wind, day: this.time.day, speed: d.speed, inCab: !!this.cameras.mode.inCab,
       river, station, cam: cam.position,
       bells: this.lcs.filter(l => l.manned).map((l, i) => ({ id: i, x: l.position.x, y: l.position.y, z: l.position.z, ringing: l.closing && l.position.distanceTo(cam.position) < 900 })),
     });

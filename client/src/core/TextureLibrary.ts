@@ -10,6 +10,8 @@ export interface TexEntry {
   sizeM: [number, number]; alpha: boolean; colorSpace: 'srgb' | 'linear'; maxSize: Record<Q, number>;
   group: string; normal: number; roughness: [number, number]; rotate: boolean; triplanar?: boolean;
   alphaTest?: number; foliage?: boolean; grid?: [number, number]; materials: string[];
+  /** the source image exists (written by npm run textures) */
+  source?: boolean;
   processed?: { sizes: Record<string, SizeSet>; cells?: number[][] };
 }
 const MANIFEST = TEXTURES as unknown as { textures: Record<string, TexEntry>; budgetsMB: Record<string, number> };
@@ -53,6 +55,10 @@ export class TextureLibrary {
   private pendingLoads = 0;
   private loggedMissing = new Set<string>();
   private loggedBudget = false;
+  /** entries loaded through loadRaw (terrain array layers), for report() */
+  private rawLoaded = new Set<string>();
+  /** source images loaded as-is because their processed files are missing */
+  private originals = new Set<string>();
   /** bytes on the GPU from file textures */
   bytes = 0;
 
@@ -149,16 +155,15 @@ export class TextureLibrary {
   private loadBinding(b: Binding) {
     if (FILES_OFF) return;
     const e = b.entry;
-    if (!e.processed) {
-      if (!this.loggedMissing.has(b.id)) { this.loggedMissing.add(b.id); console.info(`[textures] ${b.id}: no processed file, procedural texture in use`); }
+    if (!e.processed && !e.source) {
+      if (!this.loggedMissing.has(b.id)) { this.loggedMissing.add(b.id); console.info(`[textures] ${b.id}: no image file, procedural texture in use`); }
       return;
     }
-    const set = this.pickSize(e);
-    const kinds: Kind[] = ['color', ...(this.quality === 'low' ? [] : (['normal', 'roughness'] as Kind[]))];
+    const set = e.processed ? this.pickSize(e) : null;
+    const kinds: Kind[] = ['color', ...(this.quality === 'low' || !set ? [] : (['normal', 'roughness'] as Kind[]))];
     for (const kind of kinds) {
-      const webp = set[kind];
-      if (!webp || b.slots[kind]) continue;
-      const slot = this.slot(webp, set[`${kind}Ktx2` as const], kind, e);
+      if (b.slots[kind] || (set && !set[kind])) continue;
+      const slot = this.slot(set, kind, e);
       slot.users++;
       b.slots[kind] = slot;
       if (slot.state === 'ready') this.apply(b, kind, slot);
@@ -182,14 +187,13 @@ export class TextureLibrary {
     }
   }
 
-  /** A file texture, loaded once and shared; KTX2 first, WebP if that fails. */
-  private slot(webp: string, ktx2: string | undefined, kind: Kind, e: TexEntry) {
-    const key = ktx2 ?? webp;
+  /** A file texture, loaded once and shared (see fetchFile). */
+  private slot(set: SizeSet | null, kind: Kind, e: TexEntry) {
+    const key = set?.[`${kind}Ktx2` as const] ?? set?.[kind] ?? e.file;
     let s = this.slots.get(key);
     if (s) return s;
     s = { url: key, tex: null, state: 'loading', bytes: 0, users: 0 };
     this.slots.set(key, s);
-    const base = `${import.meta.env.BASE_URL}assets/`;
     const slot = s;
     this.pendingLoads++;
     const done = (tex: THREE.Texture) => {
@@ -198,12 +202,35 @@ export class TextureLibrary {
       slot.state = 'queued';
       this.queue.push({ slot, tex });
     };
-    (ktx2 ? this.loadKtx2(base + ktx2) : Promise.reject(new Error('no ktx2')))
-      .catch(() => new THREE.TextureLoader().loadAsync(base + webp))
+    this.fetchFile(set, kind, e)
       .then(done)
-      .catch(err => { slot.state = 'failed'; console.warn(`[textures] ${webp} failed - procedural texture stays`, err); })
+      .catch(err => {
+        slot.state = 'failed';
+        // a missing normal / roughness map next to an original image is expected (its warning already went out)
+        if (kind === 'color' || !e.source) console.warn(`[textures] ${key} failed - procedural texture stays`, err);
+      })
       .finally(() => { this.pendingLoads--; });
     return s;
+  }
+
+  /**
+   * KTX2 first, then WebP, then - colour only - the original image when the
+   * processed files are missing (npm run textures not run, or a failed entry),
+   * with one warning per file. Rejects when everything fails.
+   */
+  private fetchFile(set: SizeSet | null, kind: Kind, e: TexEntry): Promise<THREE.Texture> {
+    const base = `${import.meta.env.BASE_URL}assets/`;
+    const ktx = set?.[`${kind}Ktx2` as const], webp = set?.[kind];
+    return (ktx ? this.loadKtx2(base + ktx) : Promise.reject(new Error('no ktx2')))
+      .catch(() => (webp ? new THREE.TextureLoader().loadAsync(base + webp) : Promise.reject(new Error('no webp'))))
+      .catch(err => {
+        if (kind !== 'color' || !e.source) throw err;
+        return new THREE.TextureLoader().loadAsync(base + e.file).then(t => {
+          if (!this.originals.has(e.file)) console.warn(`[textures] processed files for ${e.file} are missing - using the original image (run "npm run textures")`);
+          this.originals.add(e.file);
+          return t;
+        });
+      });
   }
 
   private loadKtx2(url: string) {
@@ -293,29 +320,32 @@ export class TextureLibrary {
   async loadRaw(material: string): Promise<{ tex: THREE.Texture; entry: TexEntry } | null> {
     if (FILES_OFF) return null;
     const found = this.entryFor(material);
-    if (!found?.[1].processed) return null;
+    if (!found || (!found[1].processed && !found[1].source)) return null;
     const entry = found[1];
-    const set = this.pickSize(entry);
-    const base = `${import.meta.env.BASE_URL}assets/`;
     this.pendingLoads++;
     try {
-      const tex = await (set.colorKtx2 ? this.loadKtx2(base + set.colorKtx2) : Promise.reject(new Error('no ktx2')))
-        .catch(() => new THREE.TextureLoader().loadAsync(base + set.color));
+      const tex = await this.fetchFile(entry.processed ? this.pickSize(entry) : null, 'color', entry);
+      this.rawLoaded.add(found[0]);
       return { tex, entry };
     } catch (e) {
-      console.warn(`[textures] ${material}: ${set.color} failed`, e);
+      console.warn(`[textures] ${material}: ${entry.file} failed`, e);
       return null;
     } finally { this.pendingLoads--; }
   }
+
+  manifestEntry(id: string): TexEntry | undefined { return MANIFEST.textures[id]; }
 
   /** Every manifest entry with where its texture comes from (Texture Test, F3). */
   report() {
     return Object.entries(MANIFEST.textures).map(([id, e]) => {
       const set = e.processed ? this.pickSize(e) : null;
-      const slot = set ? this.slots.get(set.colorKtx2 ?? set.color) : undefined;
+      const slot = this.slots.get(set ? set.colorKtx2 ?? set.color : e.file);
+      const kind = this.originals.has(e.file) ? 'original PNG' : slot?.url.endsWith('.ktx2') ? 'KTX2' : 'WebP';
       return {
         id, type: e.type, materials: e.materials,
-        source: FILES_OFF ? 'procedural (files off)' : !e.processed ? 'procedural (no file)' : slot?.state === 'ready' ? (slot.url.endsWith('.ktx2') ? 'file (KTX2)' : 'file (WebP)') : slot?.state === 'failed' ? 'procedural (load failed)' : 'file (not loaded here)',
+        source: FILES_OFF ? 'procedural (files off)' : !e.processed && !e.source ? 'procedural (no file)'
+          : this.rawLoaded.has(id) ? `file (${this.originals.has(e.file) ? 'original PNG, ' : ''}terrain array)`
+          : slot?.state === 'ready' ? `file (${kind})` : slot?.state === 'failed' ? 'procedural (load failed)' : 'file (not loaded here)',
         size: set ? `${set.size[0]}x${set.size[1]}` : '-',
       };
     });
@@ -328,19 +358,22 @@ export class TextureLibrary {
    */
   async loadSet(id: string, uvMeters: [number, number]) {
     const e = MANIFEST.textures[id];
-    if (!e?.processed || FILES_OFF) return null;
-    const set = this.pickSize(e);
-    const base = `${import.meta.env.BASE_URL}assets/`;
+    if (!e || (!e.processed && !e.source) || FILES_OFF) return null;
+    const set = e.processed ? this.pickSize(e) : null;
     const one = async (kind: Kind) => {
-      const webp = set[kind];
-      if (!webp) return null;
-      const ktx = set[`${kind}Ktx2` as const];
-      const t = await (ktx ? this.loadKtx2(base + ktx) : Promise.reject(new Error('no ktx2'))).catch(() => new THREE.TextureLoader().loadAsync(base + webp)).catch(() => null);
+      if (kind !== 'color' && !set?.[kind]) return null;
+      const t = await this.fetchFile(set, kind, e).catch(() => null);
       if (t) this.configure(t, e, uvMeters, kind);
       return t;
     };
     const [color, normal, roughness] = await Promise.all([one('color'), one('normal'), one('roughness')]);
     return color ? { color, normal, roughness, entry: e } : null;
+  }
+
+  /** F3: entries showing their file / showing the procedural stand-in (not counting ones not needed here) */
+  sourceCounts() {
+    const r = this.report();
+    return { files: r.filter(x => x.source.startsWith('file (') && !x.source.includes('not loaded')).length, procedural: r.filter(x => x.source.startsWith('procedural')).length };
   }
 
   /** GPU memory of textures built outside the library (e.g. the terrain array). */

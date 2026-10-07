@@ -7,7 +7,7 @@ import type { TerrainField } from '../TerrainField';
 export const PROP_TYPES = [
   'mango', 'neem', 'palm', 'forest', 'bush', 'hut', 'house', 'building2', 'building4', 'building7', 'tank',
   'temple', 'mosque', 'church', 'kiln', 'buffalo', 'cow', 'rock', 'billboard', 'quarter', 'haystack', 'tubewell',
-  'hospital', 'school', 'grass', 'treeImp',
+  'hospital', 'school', 'grass', 'treeImp', 'palmImp',
 ] as const;
 export type PropType = typeof PROP_TYPES[number];
 export const PROP_STRIDE = 10; // x y z ry sx sy sz r g b
@@ -19,12 +19,40 @@ export interface TileInfo {
   road: Float32Array; water: Uint8Array; slope: Float32Array;
 }
 
+/**
+ * Half footprints (x, z, template metres before scale) of the props that are
+ * buildings. Each one sits on the highest ground under its four corners; its
+ * template has a plinth reaching PLINTH_DEPTH below its base, so on a slope the low side
+ * shows foundation, never a wall sunk into the ground.
+ */
+export const FOOTPRINT: Partial<Record<PropType, [number, number]>> = {
+  building2: [6.2, 5.2], building4: [6.2, 5.2], building7: [6.2, 5.2], hospital: [21.2, 7.2], school: [16.2, 5.7],
+  house: [3.7, 3.2], hut: [2.1, 1.8], quarter: [6.6, 3.6], temple: [4.1, 4.1], mosque: [7.3, 5.1], church: [4.1, 11.1], kiln: [17.1, 10.1],
+};
+/** plinth depth below the template base (m); also the steepest footprint a building is put on */
+export const PLINTH_DEPTH = 2.5;
+
 class Out {
   lists = new Map<PropType, number[]>();
+  constructor(private ground: (x: number, z: number) => number) {}
   push(t: PropType, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number, c: [number, number, number]) {
+    const fp = FOOTPRINT[t];
+    if (fp) {
+      // corners of the rotated, scaled footprint on the rendered terrain
+      const cs = Math.cos(ry), sn = Math.sin(ry);
+      let lo = Infinity, hi = -Infinity;
+      for (const [u, v] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const lx = u * fp[0] * sx, lz = v * fp[1] * sz;
+        const h = this.ground(x + lx * cs + lz * sn, z - lx * sn + lz * cs);
+        lo = Math.min(lo, h); hi = Math.max(hi, h);
+      }
+      if (hi - lo > PLINTH_DEPTH - 0.2) return NaN; // too steep for this building
+      y = hi;
+    }
     let l = this.lists.get(t);
     if (!l) this.lists.set(t, (l = []));
     l.push(x, y, z, ry, sx, sy, sz, c[0], c[1], c[2]);
+    return y;
   }
 }
 
@@ -38,7 +66,6 @@ const PASTELS: [number, number, number][] = [[0.95, 0.9, 0.78], [0.86, 0.9, 0.95
 const cellRng = (ix: number, iz: number, layer: number) => rng(Math.floor(hash2(ix, iz, layer) * 4294967296));
 
 export function placeScenery(field: TerrainField, route: Route, info: TileInfo, level: 'full' | 'impostor', grassDensity: number) {
-  const out = new Out();
   const { x0, z0, size, res } = info;
   const cellM = size / res;
   const at = (x: number, z: number) => {
@@ -54,6 +81,7 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
     const a = info.h[j * W + i], b = info.h[j * W + i + 1], c = info.h[(j + 1) * W + i], d = info.h[(j + 1) * W + i + 1];
     return tx + tz <= 1 ? a + (b - a) * tx + (c - a) * tz : d + (c - d) * (1 - tx) + (b - d) * (1 - tz);
   };
+  const out = new Out(hAt);
   const step = 8;
   let rand = cellRng(0, 0, 0);
   const plains = Object.values(route.regions).find(r => r.sideSlope === 0)!;
@@ -63,7 +91,7 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
     const reg = g > 0.5 ? ghats : plains;
     const t = reg.treeTypes[Math.floor(rand() * reg.treeTypes.length)] as PropType;
     const s = 0.75 + rand() * 0.6;
-    if (level === 'impostor' || !near) out.push('treeImp', x, y, z, rand() * 6.28, s * (t === 'forest' ? 1.3 : 1), s * (t === 'forest' ? 1.5 : 1), s, tint(rand, g > 0.5 ? [0.75, 0.9, 0.7] : [0.95, 1, 0.85], 0.2));
+    if (level === 'impostor' || !near) out.push(t === 'palm' ? 'palmImp' : 'treeImp', x, y, z, rand() * 6.28, s * (t === 'forest' ? 1.3 : 1), s * (t === 'forest' ? 1.5 : 1), s, tint(rand, g > 0.5 ? [0.75, 0.9, 0.7] : [0.95, 1, 0.85], 0.2));
     else out.push(t, x, y, z, rand() * 6.28, s, s, s, tint(rand, [1, 1, 1], 0.18));
   };
 
@@ -78,7 +106,8 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       const km = info.km[k];
       if (info.road[k] < 7) continue;
       const W = dist < 300 ? route.formationHalfWidth(km) : 0;
-      if (dist < W + 7 || dist < 13 + route.halfSpacing) continue;
+      // the track corridor stays clear - except over a tunnel, where trees and grass cover the hill
+      if ((dist < W + 7 || dist < 13 + route.halfSpacing) && !route.overTunnel(km)) continue;
       const g = field.ghatAt(km);
       const zone = dist < 1800 ? route.zoneAt(km).zone : g > 0.5 ? 'ghats' : 'fields';
       const y = hAt(x, z);
@@ -109,8 +138,8 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
           const floors = t === 'building2' ? 2 : t === 'building4' ? 4 : 7;
           const s = 0.85 + rand() * 0.3;
           const ry = -heading + (rand() < 0.5 ? 0 : Math.PI / 2);
-          out.push(t, x, y - 0.3, z, ry, s, 1, s, PASTELS[Math.floor(rand() * PASTELS.length)]);
-          if (near && rand() < 0.6) out.push('tank', x + (rand() - 0.5) * 6, y - 0.3 + floors * 3.1 + 0.6, z + (rand() - 0.5) * 5, 0, 1, 1, 1, [0.12, 0.12, 0.13]);
+          const by = out.push(t, x, y, z, ry, s, 1, s, PASTELS[Math.floor(rand() * PASTELS.length)]);
+          if (near && rand() < 0.6 && !Number.isNaN(by)) out.push('tank', x + (rand() - 0.5) * 6, by + floors * 3.1 + 0.6, z + (rand() - 0.5) * 5, 0, 1, 1, 1, [0.12, 0.12, 0.13]);
           continue;
         }
         if (near && r > 0.997) { const t: PropType = rand() < 0.5 ? 'temple' : rand() < 0.6 ? 'mosque' : 'church'; out.push(t, x, y, z, -heading, 1, 1, 1, [1, 1, 1]); continue; }

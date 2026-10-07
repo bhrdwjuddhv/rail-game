@@ -224,9 +224,12 @@ function colourAt(x: number, z: number, info: TileInfo, k: number, natural: numb
       mix(pitch ? PITCH : OUTFIELD, 0.9, pitch ? LAYER.soil : LAYER.grass);
     }
   }
+  // track corridor (formation gravel, cutting and bank earth) - not over a tunnel, where the hill is natural ground
   const W = dist < 300 ? route.formationHalfWidth(km) : 0;
-  if (dist < W + 1.5) mix(GRAVEL, 0.92, LAYER.formation);
-  else if (dist < W + 60 && Math.abs(info.h[k] - natural) > 0.4) mix(g > 0.5 ? LATERITE : MUD, 0.55, g > 0.5 ? LAYER.laterite : LAYER.mud);
+  if (!route.overTunnel(km)) {
+    if (dist < W + 1.5) mix(GRAVEL, 0.92, LAYER.formation);
+    else if (dist < W + 60 && Math.abs(info.h[k] - natural) > 0.4) mix(g > 0.5 ? LATERITE : MUD, 0.55, g > 0.5 ? LAYER.laterite : LAYER.mud);
+  }
   // steep ground: the vertex colour greys toward rock; the texture shader adds triplanar rock by slope
   if (ny < 0.72) mix(ROCK, Math.min(1, (0.72 - ny) * 4));
   for (const r of route.rivers) if (river < r.width / 2 + 25) mix(SAND, river < r.width / 2 ? 0.95 : 0.6, LAYER.sand);

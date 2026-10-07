@@ -6,14 +6,15 @@ import { textures } from '../core/TextureLibrary';
 import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
 import type { Railway } from '@rail/shared/track/Railway';
-import { RAMP_M, Switch } from '@rail/shared/track/TrackGraph';
+import { RAMP_M, Switch, SwitchDef } from '@rail/shared/track/TrackGraph';
 
 export const CHUNK_M = 400; // longer chunks = fewer draw calls (each chunk is ~3 draws)
 const SLEEPER_SPACING = 0.65;
+const SLEEPER_LEN = 2.75;
 const RAIL_C = 0.8735; // rail centre from track centre (1676 mm gauge + half head)
 
 /** A piece of track inside one chunk: s range (m) and lateral offset function. */
-export interface TrackPiece { s0: number; s1: number; offset: (s: number) => number; kind: 'main' | 'line' | 'ramp' }
+export interface TrackPiece { s0: number; s1: number; offset: (s: number) => number; kind: 'main' | 'line' | 'ramp'; sw?: SwitchDef }
 
 /** Every track of both directions in [s0, s1): running lines, loops and turnout ramps. */
 export function piecesIn(railway: Railway, s0: number, s1: number): TrackPiece[] {
@@ -26,7 +27,7 @@ export function piecesIn(railway: Railway, s0: number, s1: number): TrackPiece[]
   for (const sw of railway.layout.switches) {
     const d = sw.def;
     const a = Math.max(s0, d.rampStart * 1000), b = Math.min(s1, d.rampEnd * 1000);
-    if (b > a) out.push({ s0: a, s1: b, offset: s => d.from + (d.to - d.from) * smoothstep(d.rampStart * 1000, d.rampEnd * 1000, s), kind: 'ramp' });
+    if (b > a) out.push({ s0: a, s1: b, offset: s => d.from + (d.to - d.from) * smoothstep(d.rampStart * 1000, d.rampEnd * 1000, s), kind: 'ramp', sw: d });
   }
   return out;
 }
@@ -72,6 +73,9 @@ export class Strip {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    // white vertex colours: the shared textured materials use vertexColors, and a
+    // missing colour attribute reads whatever the last draw left (often black)
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(this.pos.length).fill(1), 3));
     g.setIndex(this.idx);
     g.computeBoundingSphere();
     return g;
@@ -82,11 +86,19 @@ export class Strip {
 const RAIL_PROFILE: [number, number][] = [
   [-0.07, 0], [0.07, 0], [0.012, 0.03], [0.036, 0.13], [0.036, 0.172], [-0.036, 0.172], [-0.036, 0.13], [-0.012, 0.03],
 ];
-const BALLAST_PROFILE: [number, number][] = [[-2.7, -0.02], [-1.75, 0.33], [1.75, 0.33], [2.7, -0.02]];
+/**
+ * Ballast bed cross-section (lateral, up from formation): a trapezoid with a
+ * 3.4 m top. Its top is 40 cm up so the 21 cm sleepers sit in it with about
+ * 6 cm showing; the toes go 6 cm under the ground (formation - 5 cm) so no gap
+ * shows. Listed counter-clockwise (right toe, over the top, left toe) like
+ * every extruded profile, so the faces point outward.
+ */
+const BED_TOP = 0.4, BED_HALF = 1.7, BED_TOE = 2.45, BED_TOE_Y = -0.06;
+const BALLAST_PROFILE: [number, number][] = [[BED_TOE, BED_TOE_Y], [BED_HALF, BED_TOP], [-BED_HALF, BED_TOP], [-BED_TOE, BED_TOE_Y]];
 const RAIL_BASE = RAIL_TOP - 0.172;
 
 function sleeperGeometry() {
-  const b = new THREE.BoxGeometry(0.25, 0.21, 2.75);
+  const b = new THREE.BoxGeometry(0.25, 0.21, SLEEPER_LEN);
   // BoxGeometry groups: +x, -x, +y, -y, +z, -z (6 indices per face pair of triangles)
   const idx = b.index!.array as ArrayLike<number>;
   const keep: number[] = [];
@@ -120,13 +132,13 @@ function infill(route: Route, s0: number, s1: number, h: number, ox: number, oz:
   const step = 5, f = newFrame();
   const n = Math.max(1, Math.ceil((s1 - s0) / step));
   const base = out.pos.length / 3;
-  const top = BALLAST_PROFILE[1][1] - 0.006; // just under the tracks' own beds where they overlap
+  const top = BED_TOP - 0.006; // just under the tracks' own beds where they meet
   for (let i = 0; i <= n; i++) {
     const s = s0 + ((s1 - s0) * i) / n;
     route.alignment.sample(s, f);
     const ch = Math.cos(f.heading), sh = Math.sin(f.heading), sc = Math.sin(f.cant), cc = Math.cos(f.cant);
-    // inner shoulder of the left track (lat +1.75 from -h) and of the right track (lat -1.75 from +h)
-    for (const [lat, rel] of [[-h + 1.75, 1.75], [h - 1.75, -1.75]] as const) {
+    // inner shoulder of the right track (lat -BED_HALF from +h), then of the left track: right to left, so the face points up
+    for (const [lat, rel] of [[h - BED_HALF, -BED_HALF], [-h + BED_HALF, BED_HALF]] as const) {
       const centre = lat - rel;
       const up = top * cc - rel * sc, l2 = centre + rel * cc + top * sc;
       out.pos.push(f.x - sh * l2 - ox, f.y + up, f.z + ch * l2 - oz);
@@ -156,7 +168,6 @@ export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
   const q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   const wood = new THREE.Color(0x6b4f35), conc = new THREE.Color(0xffffff);
 
-  const lines = railway.layout.lines;
   for (const piece of piecesIn(railway, s0, s1)) {
     const frames: TrackFrame[] = [], ss: number[] = [];
     // 2 m steps on curves and turnouts, 5 m on straight track
@@ -170,28 +181,16 @@ export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
     const km = (piece.s0 + piece.s1) / 2000;
     const st = route.structureAt(km);
     const openDeck = st?.type === 'bridge' && st.style !== 'arch-viaduct';
-    // ballast (ramps slightly lower so the through road wins where they overlap)
-    if (!openDeck) {
-      const prof = piece.kind === 'ramp' ? BALLAST_PROFILE.map(([a, b]) => [a, b - 0.012] as [number, number]) : BALLAST_PROFILE;
+    // ballast. A crossover between the two running lines lies wholly on their
+    // shared bed, so it adds none; other turnouts' beds sit 3 cm lower than the
+    // through bed so the two surfaces never fight where they overlap
+    const onSharedBed = piece.sw && route.double && Math.abs(Math.abs(piece.sw.from) - route.halfSpacing) < 0.01 && Math.abs(Math.abs(piece.sw.to) - route.halfSpacing) < 0.01;
+    if (!openDeck && !onSharedBed) {
+      const prof = piece.kind === 'ramp' ? BALLAST_PROFILE.map(([a, b]) => [a, b - 0.03] as [number, number]) : BALLAST_PROFILE;
       ballast.extrude(frames, ss, prof, ox, oz, 0.5, 0.5);
     }
     for (const side of [-1, 1]) {
       rails.extrude(frames, ss, RAIL_PROFILE.map(([a, b]) => [a + side * RAIL_C, b + RAIL_BASE] as [number, number]), ox, oz, 1, 0.1, true);
-    }
-    // sleepers
-    const first = Math.ceil(piece.s0 / SLEEPER_SPACING) * SLEEPER_SPACING;
-    for (let s = first; s < piece.s1; s += SLEEPER_SPACING) {
-      if (piece.kind === 'ramp') {
-        const o = piece.offset(s);
-        const covered = lines.some(l => Math.abs(l.offset - o) < 1.3 && s / 1000 >= l.fromKm && s / 1000 <= l.toKm);
-        if (covered) continue;
-      }
-      pieceFrame(route, piece, s, f);
-      e.set(f.cant, -f.heading, 0, 'YXZ');
-      q.setFromEuler(e);
-      p.set(f.x - ox, f.y + RAIL_BASE - 0.1, f.z - oz);
-      sleeperMats.push(new THREE.Matrix4().compose(p.clone(), q.clone(), one));
-      sleeperCols.push(openDeck ? wood : conc);
     }
     // fishplates at joints every 26 m (main and loop lines)
     if (piece.kind !== 'ramp') {
@@ -205,6 +204,32 @@ export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
           plateMats.push(new THREE.Matrix4().compose(p.clone(), q.clone(), one));
         }
       }
+    }
+  }
+
+  // sleepers: one row every 0.65 m across all the tracks at that point. Where
+  // tracks overlap (turnouts, crossovers) their sleepers merge into one long
+  // timber, square to the main line, so there is never a second set on top
+  const pieces = piecesIn(railway, s0, s1), half = SLEEPER_LEN / 2, scale = new THREE.Vector3(1, 1, 1);
+  for (let s = Math.ceil(s0 / SLEEPER_SPACING) * SLEEPER_SPACING; s < s1; s += SLEEPER_SPACING) {
+    const spans: [number, number][] = [];
+    for (const pc of pieces) if (s >= pc.s0 && s < pc.s1) { const o = pc.offset(s); spans.push([o - half, o + half]); }
+    if (!spans.length) continue;
+    spans.sort((a, b) => a[0] - b[0]);
+    const merged = [spans[0]];
+    for (const sp of spans.slice(1)) {
+      const m = merged[merged.length - 1];
+      if (sp[0] <= m[1] + 0.05) m[1] = Math.max(m[1], sp[1]); else merged.push(sp);
+    }
+    const st = route.structureAt(s / 1000);
+    const open = st?.type === 'bridge' && st.style !== 'arch-viaduct';
+    for (const [a, b] of merged) {
+      route.alignment.sampleOffset(s, (a + b) / 2, f);
+      e.set(f.cant, -f.heading, 0, 'YXZ');
+      q.setFromEuler(e);
+      p.set(f.x - ox, f.y + RAIL_BASE - 0.1, f.z - oz);
+      sleeperMats.push(new THREE.Matrix4().compose(p, q, scale.set(1, 1, (b - a) / SLEEPER_LEN)));
+      sleeperCols.push(open ? wood : conc);
     }
   }
 
@@ -233,7 +258,8 @@ export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
     g.deleteAttribute('uv');
     parts.push(g);
   }
-  for (const g of parts) if (g.attributes.uv) g.deleteAttribute('uv');
+  // rails are plain metal: position + normal only, so the parts merge
+  for (const g of parts) for (const a of ['uv', 'color']) if (g.attributes[a]) g.deleteAttribute(a);
   const railGeo = mergeGeometries(parts, false)!;
   railGeo.computeBoundingSphere();
   const rm = new THREE.Mesh(railGeo, S.rail);
@@ -250,52 +276,93 @@ export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
   return group;
 }
 
+interface TurnoutEnd { toeKm: number; through: number; other: number; dir: 1 | -1 }
+
+/** Where the turnout's inner rail crosses the through line's rail: km of the frog point. */
+function frogKm(d: SwitchDef, end: TurnoutEnd) {
+  const need = (2 * RAIL_C) / Math.abs(end.other - end.through); // fraction of the lateral move at the crossing
+  const t = end.dir > 0 ? need : 1 - need;
+  // invert smoothstep by bisection
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (m * m * (3 - 2 * m) < t) lo = m; else hi = m; }
+  return d.rampStart + (d.rampEnd - d.rampStart) * (lo + hi) / 2;
+}
+
+let turnoutMats: { blade: THREE.Material; frog: THREE.Material; check: THREE.Material; post: THREE.Material } | null = null;
+
 /**
- * Animated switch blades + point indicator for one turnout. The two switch
- * rails slide across by the throw of the point machine.
+ * One set of points: switch blades at each toe (a crossover has two), which
+ * slide across with the point machine, a cast crossing (frog) where the
+ * diverging rail crosses the through rail, check rails opposite it, and the
+ * point indicator. The sleepers under it are the merged long timbers of the
+ * track chunk.
  */
 export class SwitchView {
   readonly group = new THREE.Group();
-  private blades: THREE.Mesh[] = [];
+  private blades: { mesh: THREE.Mesh; base: number; sign: number }[] = [];
   private lamp: THREE.Mesh;
   private lampMat: THREE.MeshBasicMaterial;
 
   constructor(route: Route, readonly sw: Switch) {
     const d = sw.def;
-    const toeKm = d.kind === 'trailing' ? d.rampEnd : d.rampStart;
-    const throughOffset = d.kind === 'trailing' ? d.to : d.from;
+    turnoutMats ??= {
+      blade: new THREE.MeshStandardMaterial({ color: 0x9a948e, metalness: 0.75, roughness: 0.35 }),
+      frog: new THREE.MeshStandardMaterial({ color: 0x55504b, metalness: 0.6, roughness: 0.5 }),
+      check: new THREE.MeshStandardMaterial({ color: 0x7d7873, metalness: 0.7, roughness: 0.42 }),
+      post: new THREE.MeshStandardMaterial({ color: 0x333333 }),
+    };
+    const M = turnoutMats;
+    const ends: TurnoutEnd[] = d.kind === 'crossover'
+      ? [{ toeKm: d.rampStart, through: d.from, other: d.to, dir: 1 }, { toeKm: d.rampEnd, through: d.to, other: d.from, dir: -1 }]
+      : d.kind === 'trailing' ? [{ toeKm: d.rampEnd, through: d.to, other: d.from, dir: -1 }] : [{ toeKm: d.rampStart, through: d.from, other: d.to, dir: 1 }];
     const f = newFrame();
-    route.alignment.sampleOffset(toeKm * 1000, throughOffset, f);
-    this.group.position.set(f.x, f.y + RAIL_BASE, f.z);
-    this.group.rotation.set(0, -f.heading, 0);
-    const dir = d.kind === 'trailing' ? -1 : 1; // blades point away from the toe
-    const geo = new THREE.BoxGeometry(9, 0.15, 0.06);
-    const m = new THREE.MeshStandardMaterial({ color: 0x9a948e, metalness: 0.75, roughness: 0.35 });
-    for (const side of [-1, 1]) {
-      const b = new THREE.Mesh(geo, m);
-      b.position.set(dir * 4.5, 0.08, side * (RAIL_C - 0.06));
-      b.castShadow = true;
-      this.group.add(b);
-      this.blades.push(b);
+    const bladeGeo = new THREE.BoxGeometry(9, 0.15, 0.06);
+    const frogGeo = new THREE.BoxGeometry(2.6, 0.04, 0.18);
+    const checkGeo = new THREE.BoxGeometry(4.2, 0.13, 0.05);
+    const place = (geo: THREE.BufferGeometry, mat: THREE.Material, km: number, lat: number, up: number) => {
+      route.alignment.sampleOffset(km * 1000, lat, f);
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(f.x, f.y + RAIL_BASE + up, f.z);
+      m.rotation.set(0, -f.heading, 0);
+      m.castShadow = true;
+      this.group.add(m);
+      return m;
+    };
+    for (const end of ends) {
+      const sign = Math.sign(end.other - end.through) || 1;
+      // blades: in a frame at the toe, pointing away from it
+      const toe = new THREE.Group();
+      route.alignment.sampleOffset(end.toeKm * 1000, end.through, f);
+      toe.position.set(f.x, f.y + RAIL_BASE, f.z);
+      toe.rotation.set(0, -f.heading, 0);
+      for (const side of [-1, 1]) {
+        const b = new THREE.Mesh(bladeGeo, M.blade);
+        b.position.set(end.dir * 4.5, 0.08, side * (RAIL_C - 0.06));
+        b.castShadow = true;
+        toe.add(b);
+        this.blades.push({ mesh: b, base: side * (RAIL_C - 0.06), sign });
+      }
+      this.group.add(toe);
+      // frog (top 7 mm under the rail head) where the rails cross; check rails opposite it,
+      // inside the through line's far rail and inside the turnout's far rail
+      const fk = frogKm(d, end);
+      const o = end.through + sign * 2 * RAIL_C;
+      place(frogGeo, M.frog, fk + end.dir * 0.0008, end.through + sign * RAIL_C, 0.145);
+      place(checkGeo, M.check, fk, end.through - sign * (RAIL_C - 0.07), 0.095);
+      place(checkGeo, M.check, fk, o + sign * (RAIL_C - 0.07), 0.095);
     }
-    // point indicator on a short post beside the toe
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.1, 6), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-    const side = Math.sign(d.to - d.from) || 1;
-    post.position.set(-1.5 * dir, 0.55, -side * 2.4);
-    this.group.add(post);
+    // point indicator on a short post beside the first toe
+    const e0 = ends[0], side0 = Math.sign(e0.other - e0.through) || 1;
+    place(new THREE.CylinderGeometry(0.04, 0.04, 1.1, 6), M.post, e0.toeKm - e0.dir * 0.0015, e0.through - side0 * 2.4, 0.55);
     this.lampMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.lamp = new THREE.Mesh(new THREE.CircleGeometry(0.16, 12), this.lampMat);
-    this.lamp.position.set(-1.5 * dir - 0.05 * dir, 1.15, -side * 2.4);
-    this.lamp.rotation.y = dir > 0 ? -Math.PI / 2 : Math.PI / 2;
-    this.group.add(this.lamp);
-    this.sideSign = side;
+    this.lamp = place(new THREE.CircleGeometry(0.16, 12), this.lampMat, e0.toeKm - e0.dir * 0.00155, e0.through - side0 * 2.4, 1.15);
+    this.lamp.rotation.y += e0.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
+    this.lamp.castShadow = false;
   }
-  private sideSign: number;
 
   update() {
     const t = this.sw.throw; // 0 normal .. 1 reverse
-    const shift = (t - 0.5) * 0.12 * this.sideSign;
-    for (const b of this.blades) b.position.z = Math.sign(b.position.z) * (RAIL_C - 0.06) + shift;
+    for (const b of this.blades) b.mesh.position.z = b.base + (t - 0.5) * 0.12 * b.sign;
     this.lampMat.color.set(this.sw.moving ? 0x555555 : t > 0.5 ? 0xffc400 : 0xf2f2f2);
   }
 }

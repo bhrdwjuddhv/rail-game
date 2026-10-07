@@ -16,6 +16,11 @@ export interface GodPanelHooks {
   currentLine: string;
   back(): void;
   resume(): void;
+  /** debug scene with every texture (Texture Test) */
+  textureTest(): void;
+  /** fixed views of reported visual bugs on this route */
+  bugCameras: { id: string; label: string }[];
+  bugCamera(id: string): void;
 }
 
 type BoolKey = { [K in keyof GodSettings]: GodSettings[K] extends boolean ? K : never }[keyof GodSettings];
@@ -79,6 +84,10 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
       <section><h3>Camera</h3>
         ${tog('unlockFreeCamera', 'Unlock free camera range', 'Fly anywhere, no distance limit from the train')}
         ${tog('hideHud', 'Hide HUD (screenshots)', 'Esc still opens the menu')}
+        <h3>Debug</h3>
+        <div class="buttons left"><button data-a="texture-test" title="Every texture at real size, UV / mip / seam views, source list">Texture Test</button></div>
+        ${h.bugCameras.length ? `<label>Bug check cameras <select data-t="bugcam">${h.bugCameras.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></label>
+        <div class="buttons left"><button data-a="bugcam">Go to view</button></div>` : ''}
       </section>
     </div>
     ${h.freeRoam ? `<label class="tog"><input type="checkbox" data-g="remember" ${god.remember ? 'checked' : ''}><span>Remember for Free Roam</span></label>` : ''}
@@ -111,6 +120,8 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     const a = (e.target as HTMLElement).closest('button')?.dataset.a;
     if (a === 'back') h.back();
     if (a === 'resume') h.resume();
+    if (a === 'texture-test') h.textureTest();
+    if (a === 'bugcam') h.bugCamera((el.querySelector('[data-t="bugcam"]') as HTMLSelectElement).value);
     if (a === 'teleport') {
       const station = (el.querySelector('[data-t="station"]') as HTMLSelectElement).value;
       const km = Number((el.querySelector('[data-t="km"]') as HTMLInputElement).value);

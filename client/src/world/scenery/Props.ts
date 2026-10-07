@@ -1,12 +1,12 @@
 import * as THREE from 'three/webgpu';
 import { float, instanceIndex, positionLocal, sin, uniform, vec3 } from 'three/tsl';
-import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GeoBatch, mat } from '../../core/GeoBatch';
 import { canvasTexture, tex } from '../../core/Textures';
 import { materials } from '../../core/Materials';
 import { renderFlags } from '../../core/Renderer';
 import { textures } from '../../core/TextureLibrary';
-import type { PropType } from './Placement';
+import { FOOTPRINT, PLINTH_DEPTH, PropType } from './Placement';
+import { bakeImpostors, barkTexture, buildTree, grassTuft, grassTexture, leafAtlas, treeSize } from './Vegetation';
 
 /**
  * Vegetation wind. Phases are accumulated on the CPU and wrapped to [0, 2pi)
@@ -76,15 +76,19 @@ let mats: Record<string, THREE.Material> | null = null;
 export function propMaterials() {
   if (mats) return mats;
   const m = materials();
-  const tree = sway({ vertexColors: true, roughness: 0.9 }, 0.01);
-  // atlases use alpha cutout (alphaTest), never blending: no sorting flicker
-  const grass = sway({ alphaTest: 0.4, side: THREE.DoubleSide, roughness: 1 }, 0.12, true);
-  textures.bind(grass as THREE.MeshStandardMaterial, 'grass', tex.grass, 1, { resident: true });
+  // leaf cards and grass use alpha cut-out (alphaTest), never blending: no sorting flicker
+  const leaves = sway({ map: leafAtlas(), alphaTest: 0.45, vertexColors: true, roughness: 0.85 }, 0.012);
+  const bark = sway({ map: barkTexture(), vertexColors: true, roughness: 0.95 }, 0.006);
+  const grass = sway({ alphaTest: 0.4, roughness: 1 }, 0.12, true);
+  textures.bind(grass as THREE.MeshStandardMaterial, 'grass', grassTexture, 1, { resident: true });
+  // far trees: impostors baked from the near models (procedural stand-in on WebGPU)
+  const baked = bakeImpostors();
   const impostor = sway({ alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1 }, 0.006);
-  textures.bind(impostor as THREE.MeshStandardMaterial, 'impostor', tex.treeImpostor, 1, { resident: true });
+  textures.bind(impostor as THREE.MeshStandardMaterial, 'impostor', () => baked?.broadleaf ?? tex.treeImpostor(), 1, { resident: true });
+  const impostorPalm = sway({ alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, map: baked?.palm ?? tex.treeImpostor() }, 0.006);
   const billboard = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
   textures.bind(billboard, 'billboard', adAtlas, 1, { resident: true });
-  mats = { std: m.std, tree, grass, impostor, facade: m.facade, billboard, roof: m.roof, metal: m.metal, brick: m.brick };
+  mats = { std: m.std, leaves, bark, grass, impostor, impostorPalm, facade: m.facade, billboard, roof: m.roof, metal: m.metal, brick: m.brick };
   return mats;
 }
 
@@ -117,50 +121,22 @@ const crossedQuads = (w: number, h: number) => {
   return g.geometry('x')!;
 };
 
-/** Foliage blob with smooth shared normals: 42 vertices instead of 240 (detail 1), and softer shading. */
-function blob(r: number, sx = 1, sy = 1, sz = 1, detail = 1) {
-  let g: THREE.BufferGeometry = new THREE.IcosahedronGeometry(r, detail);
-  g.deleteAttribute('normal');
-  g.deleteAttribute('uv');
-  g = mergeVertices(g);
-  g.scale(sx, sy, sz);
-  g.computeVertexNormals();
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-  return g;
-}
-
 /** Build geometry for one prop type. Some types have several material parts. */
 function build(t: PropType): Template[] {
   const b = new GeoBatch();
+  const fp = FOOTPRINT[t];
+  // foundation from 15 cm above the base down to PLINTH_DEPTH below it (buildings sit on the highest corner)
+  if (fp) b.box(fp[0] * 2 + 0.3, PLINTH_DEPTH + 0.15, fp[1] * 2 + 0.3, mat(0, (0.15 - PLINTH_DEPTH) / 2, 0), t === 'hut' ? '#8a7356' : '#9c968c', t === 'kiln' ? 'brick' : 'std');
   const one = (material: string, shadow = true): Template[] => [{ geometry: b.geometry('std')!, material, shadow }];
   switch (t) {
-    case 'mango':
-      b.cyl(0.25, 0.35, 3, 6, mat(0, 1.5, 0), '#5a3d25');
-      b.add(blob(3.4, 1, 0.75, 1), mat(0, 5, 0), '#2f5a22');
-      b.add(blob(2.2, 1, 0.8, 1), mat(1.6, 6, 0.8), '#386b28');
-      return one('tree');
-    case 'neem':
-      b.cyl(0.2, 0.3, 4, 6, mat(0, 2, 0), '#6b5236');
-      b.add(blob(2.4, 1.1, 0.6, 1.1), mat(-1.2, 5.6, 0), '#557f2e');
-      b.add(blob(2.2, 1.1, 0.6, 1.1), mat(1.3, 6.2, 0.6), '#5e8a34');
-      b.add(blob(2.0, 1.1, 0.6, 1.1), mat(0, 7, -1), '#4f7a2b');
-      return one('tree');
-    case 'palm': {
-      for (let i = 0; i < 6; i++) b.cyl(0.18, 0.22, 1.6, 6, mat(Math.sin(i * 0.3) * 0.3 * i * 0.3, 0.8 + i * 1.55, 0, 0, 0, i * 0.03), '#7a6248');
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2;
-        b.add(new THREE.ConeGeometry(0.5, 4.2, 4), mat(Math.cos(a) * 1.6 + 0.6, 9.6, Math.sin(a) * 1.6, -a, 0, Math.PI / 2 + 0.35, 1, 1, 0.25), '#3f7a2c');
-      }
-      return one('tree');
+    case 'mango': case 'neem': case 'palm': case 'forest': case 'bush': {
+      // trunk and branches (bark), crown of leaf cards (leaves): see Vegetation
+      buildTree(t, b);
+      const parts: Template[] = [{ geometry: b.geometry('leaves')!, material: 'leaves', shadow: true }];
+      const trunk = b.geometry('bark');
+      if (trunk) parts.unshift({ geometry: trunk, material: 'bark', shadow: true });
+      return parts;
     }
-    case 'forest':
-      b.cyl(0.3, 0.45, 8, 6, mat(0, 4, 0), '#4b3824');
-      b.add(blob(3.6, 1, 0.9, 1), mat(0, 9.5, 0), '#24481c');
-      b.add(blob(2.8, 1, 0.9, 1), mat(0.6, 12.5, 0.4), '#2c5522');
-      return one('tree');
-    case 'bush':
-      b.add(blob(1.3, 1.2, 0.8, 1.1), mat(0, 0.8, 0), '#3e6a2a');
-      return one('tree');
     case 'hut':
       b.box(4, 2.3, 3.4, mat(0, 1.15, 0), '#9c7a55');
       b.add(new THREE.ConeGeometry(3.4, 2, 4), mat(0, 3.3, 0, Math.PI / 4, 0, 0, 1.2, 1, 1), '#c8a95e');
@@ -264,9 +240,9 @@ function build(t: PropType): Template[] {
       b.cyl(0.1, 0.1, 1.2, 6, mat(1.4, 0.6, 0, 0, 0, Math.PI / 2), '#555');
       return one('std');
     case 'grass':
-      return [{ geometry: crossedQuads(1.4, 0.9), material: 'grass', shadow: false }];
-    case 'treeImp':
-      return [{ geometry: crossedQuads(9, 10), material: 'impostor', shadow: false }];
+      return [{ geometry: grassTuft(), material: 'grass', shadow: false }];
+    case 'treeImp': { const s = treeSize('mango'); return [{ geometry: crossedQuads(s.w, s.h), material: 'impostor', shadow: false }]; }
+    case 'palmImp': { const s = treeSize('palm'); return [{ geometry: crossedQuads(s.w, s.h), material: 'impostorPalm', shadow: false }]; }
   }
 }
 

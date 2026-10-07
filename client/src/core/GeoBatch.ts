@@ -26,15 +26,19 @@ export class GeoBatch {
     // keep everything indexed: shared vertices let the GPU's post-transform cache work
     // (non-indexed boxes/blobs cost 1.5-6x the vertex shader invocations)
     let g = geo.clone();
-    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(name)) g.deleteAttribute(name);
     if (!g.attributes.normal) g.computeVertexNormals();
     if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
     if (!g.index) g = mergeVertices(g);
     if (matrix) g.applyMatrix4(matrix);
     _c.set(color);
     const n = g.attributes.position.count;
+    // a part that already has colours (a template built with GeoBatch) keeps them, tinted by \`color\`
+    const own = g.attributes.color as THREE.BufferAttribute | undefined;
     const col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { col[i * 3] = _c.r; col[i * 3 + 1] = _c.g; col[i * 3 + 2] = _c.b; }
+    for (let i = 0; i < n; i++) {
+      col[i * 3] = _c.r * (own ? own.getX(i) : 1); col[i * 3 + 1] = _c.g * (own ? own.getY(i) : 1); col[i * 3 + 2] = _c.b * (own ? own.getZ(i) : 1);
+    }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     let list = this.parts.get(key);
     if (!list) this.parts.set(key, (list = []));

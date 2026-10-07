@@ -117,7 +117,8 @@
           "before": 1.35,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/dry-soil": {
       "file": "textures/terrain/dry-soil.png",
@@ -176,7 +177,8 @@
           "before": 1.69,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/forest-floor": {
       "file": "textures/terrain/forest-floor.png",
@@ -235,7 +237,8 @@
           "before": 1.26,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/mud-wet": {
       "file": "textures/terrain/mud-wet.png",
@@ -294,7 +297,8 @@
           "before": 1.28,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/mustard-field": {
       "file": "textures/terrain/mustard-field.png",
@@ -353,7 +357,8 @@
           "before": 1.46,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/paddy-field": {
       "file": "textures/terrain/paddy-field.png",
@@ -412,7 +417,8 @@
           "before": 2.72,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/red-laterite": {
       "file": "textures/terrain/red-laterite.png",
@@ -471,7 +477,8 @@
           "before": 1.81,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/riverbank-sand": {
       "file": "textures/terrain/riverbank-sand.png",
@@ -530,7 +537,8 @@
           "before": 1.44,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/rock-cliff": {
       "file": "textures/terrain/rock-cliff.png",
@@ -591,7 +599,8 @@
           "before": 1.56,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "terrain/wheat-field": {
       "file": "textures/terrain/wheat-field.png",
@@ -650,7 +659,8 @@
           "before": 1.38,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "track/ballast": {
       "file": "textures/track/ballast.png",
@@ -709,7 +719,8 @@
           "before": 1.87,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "track/formation-dirt": {
       "file": "textures/track/formation-dirt.png",
@@ -768,7 +779,8 @@
           "before": 1.27,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "track/sleeper-concrete": {
       "file": "textures/track/sleeper-concrete.png",
@@ -840,7 +852,8 @@
           "before": 1.51,
           "after": 1
         }
-      }
+      },
+      "source": true
     },
     "station/brick-red": {
       "file": "textures/station/brick-red.png",
@@ -899,7 +912,8 @@
           "before": 2.42,
           "after": 1.03
         }
-      }
+      },
+      "source": true
     },
     "station/platform-tiles": {
       "file": "textures/station/platform-tiles.png",
@@ -958,7 +972,8 @@
           "before": 0.6,
           "after": 0.77
         }
-      }
+      },
+      "source": true
     },
     "station/platform-edge": {
       "file": "textures/station/platform-edge.png",
@@ -1017,11 +1032,12 @@
           "before": 1.4,
           "after": 0.95
         }
-      }
+      },
+      "source": true
     },
     "station/station-wall": {
       "file": "textures/station/station-wall.png",
-      "type": "tile-x",
+      "type": "tile",
       "sizeM": [
         6,
         3
@@ -1056,7 +1072,7 @@
             "normalKtx2": "textures/_processed/station_station-wall_512_normal.ktx2",
             "roughness": "textures/_processed/station_station-wall_512_roughness.webp",
             "roughnessKtx2": "textures/_processed/station_station-wall_512_roughness.ktx2",
-            "diskBytes": 548395
+            "diskBytes": 535672
           },
           "1024": {
             "size": [
@@ -1069,14 +1085,15 @@
             "normalKtx2": "textures/_processed/station_station-wall_1024_normal.ktx2",
             "roughness": "textures/_processed/station_station-wall_1024_roughness.webp",
             "roughnessKtx2": "textures/_processed/station_station-wall_1024_roughness.ktx2",
-            "diskBytes": 2410995
+            "diskBytes": 2387991
           }
         },
         "seam": {
-          "before": 1.5,
-          "after": 1
+          "before": 10.13,
+          "after": 0.95
         }
-      }
+      },
+      "source": true
     },
     "station/tin-roof": {
       "file": "textures/station/tin-roof.png",
@@ -1148,7 +1165,8 @@
           "before": 3.7,
           "after": 0.98
         }
-      }
+      },
+      "source": true
     },
     "station/name-board-blank": {
       "file": "textures/station/name-board-blank.png",
@@ -1196,7 +1214,8 @@
           }
         }
       },
-      "alphaTest": 0.5
+      "alphaTest": 0.5,
+      "source": true
     },
     "structure/stone": {
       "file": "textures/structure/stone.png",
@@ -1221,7 +1240,8 @@
       "rotate": false,
       "materials": [
         "stone"
-      ]
+      ],
+      "source": false
     },
     "structure/concrete": {
       "file": "textures/structure/concrete.png",
@@ -1246,7 +1266,8 @@
       "rotate": true,
       "materials": [
         "concrete"
-      ]
+      ],
+      "source": false
     },
     "structure/roof-tiles": {
       "file": "textures/structure/roof-tiles.png",
@@ -1271,7 +1292,8 @@
       "rotate": false,
       "materials": [
         "roof"
-      ]
+      ],
+      "source": false
     },
     "building/facade": {
       "file": "textures/building/facade.png",
@@ -1296,7 +1318,8 @@
       "rotate": false,
       "materials": [
         "facade"
-      ]
+      ],
+      "source": false
     },
     "vegetation/grass-blades": {
       "file": "textures/vegetation/grass-blades.png",
@@ -1323,7 +1346,8 @@
       "foliage": true,
       "materials": [
         "grass"
-      ]
+      ],
+      "source": false
     },
     "vegetation/tree-impostor": {
       "file": "textures/vegetation/tree-impostor.png",
@@ -1354,7 +1378,8 @@
       "foliage": true,
       "materials": [
         "impostor"
-      ]
+      ],
+      "source": false
     },
     "signage/ads-atlas": {
       "file": "textures/signage/ads-atlas.png",
@@ -1383,7 +1408,8 @@
       "rotate": false,
       "materials": [
         "billboard"
-      ]
+      ],
+      "source": false
     }
   },
   "ui": {

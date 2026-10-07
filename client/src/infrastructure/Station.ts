@@ -52,6 +52,8 @@ export class StationView {
   readonly crowd: Crowd;
   /** world positions of platform lamps (Lighting moves its pooled lights here at night) */
   readonly lampSpots: THREE.Vector3[] = [];
+  /** platform roofs as world-space boxes (rain stops under them) */
+  readonly roofs: RoofCover[] = [];
   readonly centre = new THREE.Vector3();
   private clockCanvas: HTMLCanvasElement;
   private clockTex: THREE.CanvasTexture;
@@ -107,13 +109,15 @@ export class StationView {
     const spots: { x: number; y: number; z: number; heading: number }[] = [];
     for (const p of st.platforms) {
       const mid = (p.from + p.to) / 2, w = Math.abs(p.to - p.from);
+      this.canopy(route, st.km - shelterHalf - 0.003, st.km + shelterHalf + 0.003, mid, w * 0.9, ox, oz);
       for (let km = st.km - shelterHalf; km <= st.km + shelterHalf; km += 0.006) {
         const o = top(km, mid);
         for (const dl of [-w * 0.18, w * 0.18]) {
           const q = top(km, mid + dl);
           b.box(0.12, 3.6, 0.12, mat(q.x, q.y + 1.8, q.z, q.ry), '#4d6b7a', 'metal');
         }
-        b.box(6.1, 0.08, w * 0.85, mat(o.x, o.y + 3.75, o.z, o.ry, 0, 0.05), '#a8b0b4', 'sheet');
+        // cross beam under the roof on each pair of posts
+        b.box(0.14, 0.18, w * 0.5, mat(o.x, o.y + 3.62, o.z, o.ry), '#4d6b7a', 'metal');
         if (r() < 0.5) {
           const q = top(km + 0.002, mid + (r() - 0.5) * w * 0.3);
           b.box(1.8, 0.08, 0.45, mat(q.x, q.y + 0.45, q.z, q.ry), '#5b4636');
@@ -160,7 +164,8 @@ export class StationView {
     // plains stations: rendered wall with a dado band (station-wall texture, band at the bottom); ghats: stone
     const wallKey = stone ? 'stone' : 'wall';
     const wallTint = stone ? '#c9c2b3' : '#ffffff';
-    const len = big ? 38 : 10, dep = big ? 9 : 5, hgt = big ? 6.5 : 3.6;
+    // heights in whole 3 m storeys, the height of one station-wall texture copy (dado band per floor)
+    const len = big ? 38 : 10, dep = big ? 9 : 5, hgt = big ? 6 : 3;
     b.box(len, hgt, dep, mat(bb.x, bb.y + PLATFORM_H + hgt / 2 - 0.2, bb.z, bb.ry), wallTint, wallKey);
     // arched verandah facing the platform
     const vl = bl - side * (dep / 2 + 1.6);
@@ -232,6 +237,36 @@ export class StationView {
     this.group.add(this.crowd.mesh);
   }
 
+  /**
+   * Platform roof: one continuous slab per platform following the line (no
+   * gaps between panels), 10 cm thick, falling 5 % away from the track side.
+   * Tin roof on top with its ridges running down the slope; the underside and
+   * edges are plain galvanised sheet so the roof reads as solid from below.
+   */
+  private canopy(route: Route, km0: number, km1: number, mid: number, width: number, ox: number, oz: number) {
+    const frames: TrackFrame[] = [], ss: number[] = [];
+    const f = newFrame();
+    for (let km = km0; km <= km1 + 1e-9; km += 0.002) {
+      route.alignment.sampleOffset(km * 1000, mid, f);
+      frames.push({ ...f, y: f.y + PLATFORM_H + 3.72, cant: 0 });
+      ss.push(km * 1000 - km0 * 1000);
+    }
+    const hw = width / 2, fall = width * 0.05 * (mid < 0 ? 1 : -1); // lower edge away from the tracks
+    const yR = fall / 2, yL = -fall / 2, T = 0.1;
+    // counter-clockwise profiles (outward faces): top surface right to left; then left edge, underside, right edge
+    const top = new Strip(), under = new Strip();
+    top.extrude(frames, ss, [[hw, yR], [-hw, yL]], ox, oz, 1, 1);
+    under.extrude(frames, ss, [[-hw, yL], [-hw, yL - T], [hw, yR - T], [hw, yR]], ox, oz, 1, 1);
+    // UVs: u along the platform, v across it, so the corrugations (vertical in the image) run down the slope
+    for (let i = 0; i < top.uv.length; i += 2) { const u = top.uv[i]; top.uv[i] = top.uv[i + 1]; top.uv[i + 1] = u; }
+    const M = materials();
+    route.alignment.sampleOffset((km0 + km1) * 500, mid, f);
+    this.roofs.push({ x: f.x, z: f.z, cos: Math.cos(f.heading), sin: Math.sin(f.heading), halfLen: (km1 - km0) * 500, halfWid: hw, top: f.y + PLATFORM_H + 3.72 });
+    const roof = new THREE.Mesh(top.geometry(), M.sheet);
+    const base = new THREE.Mesh(under.geometry(), CANOPY_UNDER);
+    for (const m of [roof, base]) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
+  }
+
   private drawClock(sec: number) {
     const g = this.clockCanvas.getContext('2d')!;
     g.fillStyle = '#fbfbf6'; g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
@@ -258,7 +293,21 @@ export class StationView {
   }
 }
 
+/** A platform roof footprint (world metres): centre, along-track axis (cos, sin), half sizes, underside height. */
+export interface RoofCover { x: number; z: number; cos: number; sin: number; halfLen: number; halfWid: number; top: number }
+
+/** Is world point (x, y, z) under one of these roofs? */
+export function underRoof(roofs: RoofCover[], x: number, y: number, z: number) {
+  for (const c of roofs) {
+    const dx = x - c.x, dz = z - c.z;
+    if (y < c.top && Math.abs(dx * c.cos + dz * c.sin) < c.halfLen && Math.abs(-dx * c.sin + dz * c.cos) < c.halfWid) return true;
+  }
+  return false;
+}
+
 const BOARD_GEO = new THREE.PlaneGeometry(4.2, 4.2);
+/** galvanised underside of platform roofs */
+const CANOPY_UNDER = new THREE.MeshStandardMaterial({ color: 0xe2e6e9, roughness: 0.7, metalness: 0.05 });
 const LABEL_GEO = new THREE.PlaneGeometry(3.15, 1.12);
 
 function labelMaterial2(t: THREE.Texture) {

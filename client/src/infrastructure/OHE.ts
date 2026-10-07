@@ -32,7 +32,39 @@ export function wiredOffsets(railway: Railway, s: number) {
   return o.sort((a, b) => a - b);
 }
 
-export const wireMaterial = new THREE.LineBasicMaterial({ color: 0x1d1d1d });
+export const wireMaterial = new THREE.LineBasicMaterial({ color: 0x2a2420 });
+
+/** galvanised steel, plain diffuse (the vertex-colour metal material renders near-black without an environment map) */
+const GALV = '#8f979b';
+const MAST_H = 8.2;
+
+let mastGeo: THREE.BufferGeometry | null = null;
+/** I-section mast (flanges face the track), base plate; origin at the base, local x along the track. */
+function iMast() {
+  if (mastGeo) return mastGeo;
+  const b = new GeoBatch();
+  // broad-flange section, 300 x 280 mm
+  for (const z of [-0.13, 0.13]) b.box(0.3, MAST_H, 0.03, mat(0, MAST_H / 2, z), GALV);
+  b.box(0.025, MAST_H, 0.26, mat(0, MAST_H / 2, 0), GALV);
+  b.box(0.5, 0.03, 0.5, mat(0, 0.015, 0), GALV);
+  return (mastGeo = b.geometry('std')!);
+}
+
+let latticeGeo: THREE.BufferGeometry | null = null;
+/** Lattice upright for portals: four corner angles with zig-zag bracing on each face. */
+function latticeMast(h: number) {
+  if (latticeGeo) return latticeGeo;
+  const b = new GeoBatch(), w = 0.36, bay = 0.9;
+  for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) b.box(0.05, h, 0.05, mat(x * w / 2, h / 2, z * w / 2), GALV);
+  const diag = Math.hypot(w, bay), ang = Math.atan2(bay, w);
+  for (let y = 0, k = 0; y + bay <= h; y += bay, k++) {
+    const sgn = k % 2 ? 1 : -1;
+    for (const z of [-w / 2, w / 2]) b.box(diag, 0.03, 0.02, mat(0, y + bay / 2, z, 0, 0, sgn * ang), GALV);
+    for (const x of [-w / 2, w / 2]) b.box(0.02, 0.03, diag, mat(x, y + bay / 2, 0, 0, sgn * -ang), GALV);
+  }
+  b.box(0.6, 0.03, 0.6, mat(0, 0.015, 0), GALV);
+  return (latticeGeo = b.geometry('std')!);
+}
 
 /** OHE for chunk [s0,s1): masts, cantilevers/portals into `batch`, wires into `lines`. */
 export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, oz: number, batch: GeoBatch, lines: number[]) {
@@ -59,10 +91,16 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
     if (!tunnel) {
       if (portal) {
         // portal spanning all tracks
-        for (const lat of [lo, hi]) { const p = at(lat, rail); batch.box(0.35, 8.4, 0.35, mat(p.x, rail + 4.2 - 0.6, p.z, ry), '#7b8086', 'metal'); }
+        // lattice uprights on concrete foundations (set into the ground, 30 cm showing), a boom across all tracks
+        const foot = f.y - 0.05 + 0.3;
+        for (const lat of [lo, hi]) {
+          const p = at(lat, rail);
+          batch.box(0.9, 0.9, 0.9, mat(p.x, foot - 0.45, p.z, ry), '#a9a59c', 'concrete');
+          batch.add(latticeMast(rail + 8.0 - foot), mat(p.x, foot, p.z, ry), '#ffffff');
+        }
         const c = at((lo + hi) / 2, rail);
-        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + 7.7, c.z, ry), '#7b8086', 'metal');
-        for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + 7.2, p.z, ry), '#555', 'metal'); }
+        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + 7.75, c.z, ry), GALV);
+        for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + 7.2, p.z, ry), GALV); }
       } else {
         // a mast outside each outer track, its cantilever reaching over that track
         // (single line: one mast on the left; double line: one each side)
@@ -71,12 +109,14 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
           const track = side < 0 ? minO : maxO;
           const lat = track + side * 3.3;
           const p = at(lat, rail);
-          batch.box(0.32, 8.2, 0.32, mat(p.x, rail + 4.1 - 0.6, p.z, ry), '#7b8086', 'metal');
-          batch.box(0.6, 0.4, 0.6, mat(p.x, rail - 0.6, p.z, ry), '#9a968e'); // foundation
+          // concrete foundation set into the ground (ground = formation - 5 cm), 25 cm showing; vertical I-section mast on it
+          const foot = f.y - 0.05 + 0.25;
+          batch.box(0.7, 0.8, 0.7, mat(p.x, foot - 0.4, p.z, ry), '#a9a59c', 'concrete');
+          batch.add(iMast(), mat(p.x, foot, p.z, ry, 0, 0, 1, (rail + CONTACT_H + SYSTEM_H + 0.5 - foot) / MAST_H, 1), '#ffffff');
           // cantilever: top tube + bracket + registration arm
           const mid = at(track + side * 1.65, rail);
-          batch.box(0.07, 0.07, 3.6, mat(mid.x, rail + CONTACT_H + SYSTEM_H, mid.z, ry), '#8c8f93', 'metal');
-          batch.box(0.07, 0.07, 3.7, mat(mid.x, rail + CONTACT_H + 0.65, mid.z, ry, 0.2 * -side), '#8c8f93', 'metal');
+          batch.box(0.07, 0.07, 3.6, mat(mid.x, rail + CONTACT_H + SYSTEM_H, mid.z, ry), GALV);
+          batch.box(0.07, 0.07, 3.7, mat(mid.x, rail + CONTACT_H + 0.65, mid.z, ry, 0.2 * -side), GALV);
           const ins = at(lat - side * 0.4, rail);
           batch.cyl(0.08, 0.08, 0.5, 8, mat(ins.x, rail + CONTACT_H + SYSTEM_H, ins.z, ry, Math.PI / 2), '#6b4d3a');
         }

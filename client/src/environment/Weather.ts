@@ -64,7 +64,11 @@ export class Weather {
   /** Adhesion coefficient for the given loco data. */
   adhesion(a: { dry: number; wet: number; damp: number }) { return a[this.p.adhesion]; }
 
-  update(dt: number, cam: THREE.Vector3, speedVec: THREE.Vector3, clearRadius: number) {
+  /**
+   * `sheltered`: the camera is inside a tunnel - no rain at all. `covered`:
+   * a test for points under a roof; drops there are not drawn.
+   */
+  update(dt: number, cam: THREE.Vector3, speedVec: THREE.Vector3, clearRadius: number, sheltered = false, covered?: (x: number, y: number, z: number) => boolean) {
     const k = Math.min(1, dt / 8);
     const P = this.p, T = this.target;
     P.fog = lerp(P.fog, T.fog, k); P.cloud = lerp(P.cloud, T.cloud, k); P.overcast = lerp(P.overcast, T.overcast, k);
@@ -84,7 +88,7 @@ export class Weather {
     }
 
     // rain streaks: wrap a 60x30x60 m box around the camera; tilt with wind and train speed
-    this.rainMesh.visible = P.rain > 0.02;
+    this.rainMesh.visible = P.rain > 0.02 && !sheltered;
     if (!this.rainMesh.visible) return;
     const n = Math.floor(RAIN_N * Math.min(1, P.rain));
     const fall = 10 * dt;
@@ -98,7 +102,7 @@ export class Weather {
       for (const c of [0, 2]) { if (this.seeds[s + c] < -30) this.seeds[s + c] += 60; if (this.seeds[s + c] > 30) this.seeds[s + c] -= 60; }
       const o = i * 6;
       let x = this.seeds[s], y = this.seeds[s + 1], z = this.seeds[s + 2];
-      if (i >= n || (clearRadius > 0 && x * x + z * z < clearRadius * clearRadius && y < 4)) { y = -1000; }
+      if (i >= n || (clearRadius > 0 && x * x + z * z < clearRadius * clearRadius && y < 4) || covered?.(cam.x + x, cam.y + y - 5.35, cam.z + z)) { y = -1000; }
       this.rainPos[o] = cam.x + x; this.rainPos[o + 1] = cam.y + y - 5; this.rainPos[o + 2] = cam.z + z;
       this.rainPos[o + 3] = cam.x + x + tx; this.rainPos[o + 4] = cam.y + y - 5 - 0.7; this.rainPos[o + 5] = cam.z + z + tz;
     }

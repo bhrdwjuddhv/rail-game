@@ -71,7 +71,8 @@ export class Lighting {
     }
     const flash = w.flash;
     this.hemi.color.copy(sky.zenith).lerp(new THREE.Color(1, 1, 1), 0.35);
-    this.hemi.groundColor.setRGB(0.35, 0.3, 0.24).multiplyScalar(0.3 + day * 0.7);
+    // ground bounce: sunlit ballast, platforms and fields light the undersides of roofs, bridges and vehicles
+    this.hemi.groundColor.setRGB(0.5, 0.44, 0.36).multiplyScalar(0.3 + day * 0.7);
     this.hemi.intensity = (0.12 + day * (0.75 + oc * 0.35) + flash * 2.5) * dark + 0.03;
 
     // fog follows the horizon colour; darker at night and in tunnels

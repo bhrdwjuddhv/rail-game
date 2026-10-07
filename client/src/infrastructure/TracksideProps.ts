@@ -2,7 +2,8 @@ import * as THREE from 'three/webgpu';
 import { GeoBatch, mat } from '../core/GeoBatch';
 import { labelTexture } from '../core/Textures';
 import { labelMaterial, materials } from '../core/Materials';
-import { newFrame } from '@rail/shared/track/Chainage';
+import { newFrame, TrackFrame } from '@rail/shared/track/Chainage';
+import { Strip } from '../track/TrackMeshBuilder';
 import type { BoardDef, Route } from '@rail/shared/track/Route';
 import type { Railway } from '@rail/shared/track/Railway';
 import type { TerrainField } from '../world/TerrainField';
@@ -26,7 +27,8 @@ export function boardMesh(route: Route, b: BoardDef, batch: GeoBatch, ox: number
   const st = BOARD_STYLE[b.kind];
   const f = newFrame();
   route.alignment.sampleOffset(b.km * 1000, b.offset, f);
-  const y0 = baseY ?? f.y;
+  // posts go 15 cm into the ground (ground = formation - 5 cm beside the track)
+  const y0 = baseY ?? f.y - 0.15;
   batch.box(0.08, st.post + st.h, 0.08, mat(f.x - ox, y0 + (st.post + st.h) / 2, f.z - oz), '#333');
   const t = labelTexture(b.text, { bg: st.bg, fg: st.fg, w: Math.round(256 * st.w / st.h), h: 256, border: st.border });
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(st.w, st.h), labelMaterial(t));
@@ -76,6 +78,22 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
 
   const f = newFrame();
   const at = (s: number, lat: number) => { route.alignment.sampleOffset(s, lat, f); return f; };
+  /**
+   * A small building beside the line: on the highest ground under its corners
+   * with a plinth down to the lowest, so it never sinks into or floats over a slope.
+   */
+  const seat = (p: { x: number; z: number; heading: number }, w: number, d: number) => {
+    const cs = Math.cos(p.heading), sn = Math.sin(p.heading);
+    let lo = Infinity, hi = -Infinity;
+    for (const [u, v] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const a = (u * w) / 2, b = (v * d) / 2;
+      const h = field.height(p.x + a * cs - b * sn, p.z + a * sn + b * cs);
+      lo = Math.min(lo, h); hi = Math.max(hi, h);
+    }
+    const depth = hi - lo + 0.3;
+    batch.box(w + 0.3, depth + 0.15, d + 0.3, mat(p.x - ox, hi + 0.15 - (depth + 0.15) / 2, p.z - oz, -p.heading), '#9c968c', 'std');
+    return hi + 0.15;
+  };
   const clearOf = (s: number, m = 0.05) => {
     const km = s / 1000;
     return !route.structureAt(km) && !route.stationAt(km, m) && !route.data.levelCrossings.some(l => Math.abs(l.km - km) < 0.04);
@@ -104,7 +122,7 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
   for (const v of railway.views) for (const sg of v.signals) {
     if (sg.kind !== 'automatic' || !inChunk(v, sg.km + 0.015)) continue;
     const p = (v.alignment.sampleOffset(sg.km * 1000 + 15, sg.offset - 6.5, vf), vf);
-    const y = field.height(p.x, p.z);
+    const y = seat(p, 2.6, 2.2);
     batch.box(2.6, 2.5, 2.2, mat(p.x - ox, y + 1.25, p.z - oz, -p.heading), '#d9d2bf', 'std');
     batch.box(2.9, 0.15, 2.5, mat(p.x - ox, y + 2.55, p.z - oz, -p.heading), '#8a8a85', 'std');
     batch.box(0.9, 1.9, 0.05, mat(p.x - ox, y + 0.95, p.z - oz, -p.heading, 0, 0, 1, 1, 1).multiply(mat(0, 0, -1.11)), '#3d5d7a', 'metal');
@@ -114,7 +132,7 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
   for (let s = Math.ceil(s0 / 4000) * 4000 + 1300; s < s1; s += 4000) {
     if (!clearOf(s, 0.4)) continue;
     const p = at(s, out(15));
-    const y = field.height(p.x, p.z);
+    const y = seat(p, 4, 3.2);
     batch.box(4, 2.8, 3.2, mat(p.x - ox, y + 1.4, p.z - oz, -p.heading), '#e3d6b8', 'std');
     batch.box(4.6, 0.2, 3.8, mat(p.x - ox, y + 2.9, p.z - oz, -p.heading, 0, 0.12), '#7d3b2c');
     for (let k = 0; k < 4; k++) for (let n = 0; n < 6; n++) {
@@ -123,17 +141,47 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
     }
   }
 
-  // cable trench (left cess) and cutting drains
-  for (let s = Math.ceil(s0 / 10) * 10; s < s1; s += 10) {
-    if (!clearOf(s, 0.02)) continue;
-    const p = at(s + 5, out(-4.7));
-    batch.box(10, 0.18, 0.5, mat(p.x - ox, p.y + 0.02, p.z - oz, -p.heading), '#a49f96', 'std');
-    for (const side of [-1, 1]) {
-      const n = at(s + 5, out(side * 14));
-      if (field.natural(n.x, n.z, null) < n.y + 1.8) continue;
-      const d = at(s + 5, out(side * 6.1));
-      batch.box(10, 0.12, 0.7, mat(d.x - ox, d.y + 0.03, d.z - oz, -d.heading), '#8d8a84', 'std');
+  // cable trough along the left cess and open drains in cuttings: continuous
+  // strips that follow the line (curves, gradients) on the flat formation
+  // (ground = formation - 5 cm there), so nothing lies off the cess or half
+  // buried in a cutting slope
+  const trough = new Strip(), drains = new Strip();
+  const run = (pred: (s: number) => boolean, add: (frames: TrackFrame[], ss: number[]) => void) => {
+    let frames: TrackFrame[] = [], ss: number[] = [];
+    const flush = () => { if (frames.length > 1) add(frames, ss); frames = []; ss = []; };
+    for (let s = Math.ceil(s0 / 5) * 5; s <= s1; s += 5) {
+      if (!pred(s)) { flush(); continue; }
+      route.alignment.sample(s, f);
+      frames.push({ ...f, cant: 0 });
+      ss.push(s);
     }
+    flush();
+  };
+  const G = -0.05;
+  // trough: 50 cm concrete channel with its lid 12 cm above the ground (counter-clockwise profile)
+  const tl = out(-4.7);
+  run(s => clearOf(s, 0.02), (fr, ss) => trough.extrude(fr, ss, [[tl + 0.25, G - 0.05], [tl + 0.25, G + 0.12], [tl - 0.25, G + 0.12], [tl - 0.25, G - 0.05]], ox, oz, 1, 1));
+  // drains: open U channels at the foot of each cutting side
+  for (const side of [-1, 1]) {
+    const c = out(side * 6.1);
+    // a real cutting (1.8 m+ of ground above the formation on this side over 20 m), not a dip in the fields
+    const deep = (s: number) => { const n = at(s, out(side * 14)); return field.natural(n.x, n.z, null) >= n.y + 1.8; };
+    const inCutting = (s: number) => clearOf(s, 0.02) && deep(s - 10) && deep(s) && deep(s + 10);
+    const w = 0.35, wall = 0.08, lip = G + 0.1, floor = G + 0.01;
+    run(inCutting, (fr, ss) => drains.extrude(fr, ss, [
+      [c + w, G - 0.05], [c + w, lip], [c + w - wall, lip], [c + w - wall, floor], [c - w + wall, floor], [c - w + wall, lip], [c - w, lip], [c - w, G - 0.05],
+    ], ox, oz, 1, 1));
+  }
+  const M = materials();
+  for (const [st, colour] of [[trough, 0xc9c4ba], [drains, 0xb3afa6]] as const) {
+    if (!st.pos.length) continue;
+    const g = st.geometry();
+    const col = g.getAttribute('color') as THREE.BufferAttribute;
+    const c = new THREE.Color(colour);
+    for (let i = 0; i < col.count; i++) col.setXYZ(i, c.r, c.g, c.b);
+    const m = new THREE.Mesh(g, M.concrete);
+    m.receiveShadow = true;
+    group.add(m);
   }
 
   // fencing along towns and colonies

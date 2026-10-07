@@ -478,7 +478,7 @@ const rows = [];
 console.log(`Processing textures from ${path.relative(process.cwd(), ASSETS)} (KTX2 via Basis Universal + WebP fallback)`);
 for (const [id, t] of Object.entries(manifest.textures)) {
   if (only && !id.includes(only)) continue;
-  const { processed: _p, ...def } = t;
+  const { processed: _p, source: _s, ...def } = t;
   const src = path.join(ASSETS, t.file);
   const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify(def)).update(JSON.stringify(manifest.groups?.[t.group] ?? null))
     .update(fs.existsSync(src) ? fs.readFileSync(src) : Buffer.alloc(0)).digest('hex');
@@ -493,6 +493,8 @@ for (const [id, t] of Object.entries(manifest.textures)) {
     cache[id] = { key, result: r };
   }
   if (r.processed) t.processed = r.processed; else delete t.processed;
+  // the game loads the original image when processed files are missing (pipeline not run, failed entry)
+  t.source = r.status !== 'missing';
   const disk = r.processed ? Object.values(r.processed.sizes).reduce((a, s) => a + s.diskBytes, 0) / 1048576 : 0;
   rows.push({ id, status: r.status + (r.cached ? ' (cached)' : ''), size: r.processed ? Object.keys(r.processed.sizes).sort((a, b) => b - a).join('/') : '-', seam: r.seam ? `${r.seam.before} -> ${r.seam.after}` : '-', mb: disk ? disk.toFixed(2) : '-', warnings: r.warnings });
   console.log(`  ${r.status.padEnd(7)} ${id}${r.cached ? ' (cached)' : r.seconds ? ` (${r.seconds.toFixed(0)} s)` : ''}`);

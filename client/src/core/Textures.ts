@@ -139,16 +139,6 @@ export const tex = {
       g.beginPath(); g.arc(w / 2 + Math.cos(a) * d, 52 + Math.sin(a) * d * 0.8, 6 + r() * 6, 0, Math.PI * 2); g.fill();
     }
   }, { repeat: false }),
-  grass: () => canvasTexture('grass', 64, 64, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    const r = rng(11);
-    for (let i = 0; i < 40; i++) {
-      const x = 4 + r() * (w - 8), lean = (r() - 0.5) * 16;
-      const v = 90 + r() * 80;
-      g.strokeStyle = `rgb(${v * 0.6},${v},${v * 0.35})`; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(x, h); g.quadraticCurveTo(x + lean * 0.3, h * 0.5, x + lean, 6 + r() * 20); g.stroke();
-    }
-  }, { repeat: false }),
   waterfall: () => canvasTexture('waterfall', 64, 256, (g, w, h) => {
     g.fillStyle = 'rgba(220,235,240,0.5)'; g.fillRect(0, 0, w, h);
     const r = rng(12);

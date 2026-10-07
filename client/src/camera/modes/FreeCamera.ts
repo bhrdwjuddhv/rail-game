@@ -18,6 +18,13 @@ export class FreeCamera implements CameraMode {
     this.e.setFromQuaternion(from.quat, 'YXZ');
     this.yaw = this.e.y; this.pitch = this.e.x;
   }
+  /** Put the camera at `pos` looking at `target` (bug check cameras). */
+  place(pos: THREE.Vector3, target: THREE.Vector3) {
+    this.pos.copy(pos);
+    const d = this.tmp.subVectors(target, pos);
+    this.yaw = Math.atan2(-d.x, -d.z);
+    this.pitch = clamp(Math.atan2(d.y, Math.hypot(d.x, d.z)), -1.5, 1.5);
+  }
   drag(dx: number, dy: number) { this.yaw -= dx * 0.004; this.pitch = clamp(this.pitch - dy * 0.004, -1.5, 1.5); }
   update(ctx: CameraContext, out: Pose) {
     const k = ctx.keys;
