@@ -1,25 +1,134 @@
 {
   "id": "wag-12b",
   "name": "WAG-12B",
-  "operator": "Indian Railways",
-  "number": "E0027",
+  "operator": "Bharat Rail Network",
+  "number": "60127",
   "type": "electric",
+  "bodyStyle": "freight-section",
+  "sections": 2,
   "massT": 180,
   "lengthM": 38.4,
   "axles": 8,
-  "bogieCentresM": 16.0,
-  "axleSpacingM": 3.7,
-  "wheelDiameterM": 1.25,
+  "bogieCentresM": 10.47,
+  "axleSpacingM": 2.4,
+  "wheelDiameterM": 1.1,
   "maxPowerKW": 9000,
-  "maxTractiveEffortKN": 706,
+  "maxTractiveEffortKN": 580,
   "maxSpeedKmph": 120,
   "notches": 8,
-  "regen": { "maxEffortKN": 514, "maxPowerKW": 9000, "fadeStartKmph": 15, "fadeEndKmph": 3, "notches": 8 },
-  "brakes": { "maxBrakeForceKN": 514, "independentMaxBarKgcm2": 3.5 },
-  "resistance": { "aN": 2400, "bNperMs": 55, "cNperMs2": 9.0 },
-  "adhesion": { "dry": 0.33, "wet": 0.22, "damp": 0.27, "sanderBonus": 0.07 },
-  "electrical": { "lineVoltageKV": 25, "motorCount": 8, "ampsPerKN": 3.4 },
-  "livery": { "body": "#009fe3", "band": "#006fae", "roof": "#007db8", "underframe": "#25292b", "logoText": "INDIAN RAILWAYS" },
+  "regen": {
+    "maxEffortKN": 460,
+    "maxPowerKW": 9000,
+    "fadeStartKmph": 15,
+    "fadeEndKmph": 3,
+    "notches": 8
+  },
+  "brakes": {
+    "maxBrakeForceKN": 190,
+    "independentMaxBarKgcm2": 3.5
+  },
+  "resistance": {
+    "aN": 2400,
+    "bNperMs": 55,
+    "cNperMs2": 9
+  },
+  "adhesion": {
+    "dry": 0.34,
+    "wet": 0.22,
+    "damp": 0.27,
+    "sanderBonus": 0.07
+  },
+  "electrical": {
+    "lineVoltageKV": 25,
+    "motorCount": 8,
+    "ampsPerKN": 3.4
+  },
+  "livery": {
+    "body": "#1d5a73",
+    "band": "#f2b705",
+    "roof": "#3f4a50",
+    "underframe": "#25292b",
+    "logoText": "BRN"
+  },
   "cabLayout": "wag12-prima-t8",
-  "soundProfile": { "motorBaseHz": 32, "motorHzPerKmph": 5.8, "hornLowHz": [247, 311], "hornHighHz": [370, 466], "blowerHz": 95 }
+  "soundProfile": {
+    "motorBaseHz": 32,
+    "motorHzPerKmph": 5.8,
+    "hornLowHz": [247, 311],
+    "hornHighHz": [370, 466],
+    "blowerHz": 95
+  },
+  "model": {
+    "file": "assets/models/locos/wag-12b.glb",
+    "author": "TO FILL IN: model author",
+    "licence": "TO FILL IN: licence",
+    "source": "TO FILL IN: link (Sketchfab)",
+    "keep": {
+      "axis": 2,
+      "min": 0
+    },
+    "scale": 1.196,
+    "rotationDeg": [0, 90, 0],
+    "offset": [-9.65, -0.024, 0.06],
+    "bogies": [
+      {
+        "node": [
+          "Cube_70",
+          "Cylinder.001_71",
+          "spring1_72",
+          "spring2_73",
+          "spring3_74",
+          "spring4_75"
+        ],
+        "wheels": []
+      },
+      {
+        "node": [
+          "Cube.001_76",
+          "Cylinder.002_77",
+          "spring1.001_78",
+          "spring2.001_79",
+          "spring3.001_80",
+          "spring4.001_81"
+        ],
+        "wheels": []
+      }
+    ],
+    "pantographs": [],
+    "proceduralPantographs": {
+      "remove": [
+        "Cylinder.003_57",
+        "Cylinder.004_58",
+        "Cylinder.005_59",
+        "Cube.004_48",
+        "Cube.003_47"
+      ],
+      "x": [
+        -5.85
+      ]
+    },
+    "hideInCab": [
+      "side1_44",
+      "side2_45"
+    ],
+    "lights": {
+      "head": [9.55, 3.7],
+      "markers": [9.62, 1.5, 1]
+    },
+    "look": {
+      "roughness": 0.55,
+      "metalness": 0.1
+    },
+    "glassMaterials": [
+      "Blue",
+      "Blue.001"
+    ],
+    "remove": [
+      "Cube.011_55"
+    ],
+    "cab": {
+      "eye": [7.95, 2.62, -0.42],
+      "interior": "wag12"
+    }
+  }
 }

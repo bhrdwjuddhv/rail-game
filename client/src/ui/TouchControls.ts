@@ -103,7 +103,7 @@ export class TouchControls {
     this.timetable.el.dataset.tid = 'timetable';
 
     // ---- bottom: control bar, speedometer, horn
-    this.bar = new ControlBar((a, d) => hk.act(a, d), () => this.setDrawer(this.drawer.hidden === true), () => hk.act('pantograph', true));
+    this.bar = new ControlBar((a, d) => hk.act(a, d), () => this.setDrawer(this.drawer.hidden === true), () => hk.act('pantograph', true), s.isDiesel);
     this.speedo.el.dataset.tid = 'speedo';
     const horn = h('button', 'm-horn', ICON.horn);
     horn.dataset.tid = 'horn';
@@ -133,6 +133,8 @@ export class TouchControls {
         <button data-act="wipers" data-tid="wipersMore">Wipers<small>off / slow / fast</small></button>
         <button data-hold="sander" data-tid="sander">Sander<small>hold</small></button>
         <button data-act="vigilance" data-tid="vigilanceBtn">Vigilance<small>acknowledge</small></button>
+        <button data-act="routeAhead" data-tid="routeAhead" class="t-route">Route ahead<small>platform / line</small></button>
+        <button data-act="throwPoints" data-tid="throwPoints" class="t-points">Throw points<small>next ahead</small></button>
       </div>
       <div class="t-row" data-tid="locoBrake"><span>Loco brake <small data-v="loco">0%</small></span><span class="t-seg"><button data-act="locoBrakeRelease">Release</button><button data-act="locoBrakeApply">Apply</button></span></div>
       <div class="t-grid">
@@ -146,6 +148,7 @@ export class TouchControls {
       const b = (e.target as HTMLElement).closest('button');
       if (!b) return;
       if (b.dataset.act) { hk.act(b.dataset.act as Action, true); hk.act(b.dataset.act as Action, false); }
+      if (b.dataset.act === 'routeAhead') this.setDrawer(false);
       if (b.dataset.ui === 'free') { hk.camera(6); this.setDrawer(false); }
       // the gauges and the map open as pop-ups over the view: the drawer gets out of the way
       if (b.dataset.ui === 'details') { hk.toggleDetails(); this.setDrawer(false); }
@@ -160,13 +163,14 @@ export class TouchControls {
     parent.appendChild(this.el);
 
     // ---- pantograph: follow its travel every frame while it moves, toast start and finish
-    this.bar.panto.onSettled = up => bus.emit('message', { text: up ? 'Pantograph up' : 'Pantograph down', kind: up ? 'good' : 'info', ms: 2000 });
+    if (this.bar.panto) this.bar.panto.onSettled = up => bus.emit('message', { text: up ? 'Pantograph up' : 'Pantograph down', kind: up ? 'good' : 'info', ms: 2000 });
     this.offs.push(
       bus.on('pantograph', e => {
         bus.emit('message', { text: e.up ? 'Raising pantograph…' : 'Lowering pantograph…', kind: 'info', ms: 2500 });
         this.followPanto();
       }),
-      bus.on('needs-pantograph', () => this.nudge(this.bar.panto.el)),
+      bus.on('needs-pantograph', () => { if (this.bar.panto) this.nudge(this.bar.panto.el); }),
+      bus.on('needs-engine', e => { const t = this.el.querySelector<HTMLElement>(e.action === 'start' || !this.hk.sys.fuelPump ? '.m-fuel' : '.m-engine'); if (t) this.nudge(t); }),
     );
 
     addEventListener('pointerdown', this.onAnyPointer, true);
@@ -177,7 +181,7 @@ export class TouchControls {
     cancelAnimationFrame(this.raf);
     const step = () => {
       const s = this.hk.sys;
-      this.bar.panto.update(s.pantoPos, s.pantoUp);
+      this.bar.panto?.update(s.pantoPos, s.pantoUp);
       if (s.pantoMoving) this.raf = requestAnimationFrame(step);
     };
     this.raf = requestAnimationFrame(step);
@@ -268,6 +272,12 @@ export class TouchControls {
     if (s.markers !== sh.markers) { sh.markers = s.markers; text('markers', s.markers ? 'on' : 'off'); this.drawer.querySelector('[data-act="markers"]')!.classList.toggle('on', s.markers); }
     const loco = Math.round(b.independent * 100);
     if (loco !== sh.loco) { sh.loco = loco; text('loco', `${loco}%`); }
+  }
+
+  /** Free Roam shows "Route ahead"; God Mode manual points shows "Throw points". */
+  setRouting(routeAhead: boolean, manualPoints: boolean) {
+    this.drawer.querySelector<HTMLElement>('.t-route')!.hidden = !routeAhead;
+    this.drawer.querySelector<HTMLElement>('.t-points')!.hidden = !manualPoints;
   }
 
   /** God Mode badge on the pause button. */

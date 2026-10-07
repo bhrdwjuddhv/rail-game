@@ -2,6 +2,7 @@ import { assets } from '../core/AssetRegistry';
 import { bus } from '@rail/shared/events';
 import type { LocoData } from '@rail/shared/train/Consist';
 import type { AudioEngine } from './AudioEngine';
+import { DieselVoice } from './synth/Diesel';
 import { HornVoice } from './synth/Horn';
 import { MotorVoice } from './synth/Motor';
 import type { OneShots } from './synth/OneShots';
@@ -13,6 +14,8 @@ export interface TrainAudioState {
   loco: { x: number; y: number; z: number };
   bogies: { key: number; km: number; x: number; y: number; z: number; axle: number }[];
   dt: number;
+  /** diesel: crankshaft rpm, load 0..1, starter engaged */
+  engine?: { rpm: number; load: number; cranking: boolean };
 }
 
 const LEVERS = new Set(['throttle', 'regen', 'trainBrake', 'locoBrake', 'reverser']);
@@ -20,6 +23,7 @@ const LEVERS = new Set(['throttle', 'regen', 'trainBrake', 'locoBrake', 'reverse
 /** All sounds made by the player's train, plus event-driven cab sounds. */
 export class TrainAudio {
   private motor!: MotorVoice;
+  private diesel: DieselVoice | null = null;
   private rolling!: RollingVoice;
   private hornLow!: HornVoice;
   private hornHigh!: HornVoice;
@@ -47,6 +51,7 @@ export class TrainAudio {
       bus.on('lightning', e => this.ready && shots.thunder(a.buses.env, 0.4 + Math.random() * 3.5, 0.7 * e.intensity)),
       bus.on('pantograph', () => this.ready && shots.clunk(this.locoPan, 0.4)),
       bus.on('vcb', e => this.ready && shots.clunk(this.locoPan, e.closed ? 0.9 : 0.6)),
+      bus.on('engine', e => this.ready && e.state !== 'cranking' && shots.clunk(this.locoPan, e.state === 'running' ? 0.7 : 0.5)),
     );
   }
 
@@ -56,6 +61,7 @@ export class TrainAudio {
       assets.audio(this.a.ctx, 'horn/low'), assets.audio(this.a.ctx, 'horn/high'),
     ]);
     this.motor = new MotorVoice(this.a, this.locoPan, motorBuf);
+    if (this.loco.diesel) this.diesel = new DieselVoice(this.a, this.locoPan, this.loco.diesel.cylinders);
     this.rolling = new RollingVoice(this.a, this.locoPan, rollBuf);
     this.hornLow = new HornVoice(this.a, this.loco.soundProfile.hornLowHz, this.hornPan, hlBuf);
     this.hornHigh = new HornVoice(this.a, this.loco.soundProfile.hornHighHz, this.hornPan, hhBuf);
@@ -69,6 +75,7 @@ export class TrainAudio {
     this.a.setPannerPos(this.hornPan, s.loco.x, s.loco.y + 4, s.loco.z);
     const sp = this.loco.soundProfile;
     this.motor.update(s.speedKmph, s.amps, s.vcb, s.compressor, sp.motorBaseHz, sp.motorHzPerKmph);
+    if (this.diesel && s.engine) this.diesel.update(s.dt, s.engine.rpm, s.engine.load, s.engine.cranking);
     this.rolling.update(s.dt, s.speedKmph, s.curvature, s.steelBridge, s.tunnel, s.slipping, s.bpRate, s.bc);
 
     // rail joints every 26 m: each bogie gives a double clack (two axles)

@@ -25,6 +25,10 @@ export interface GameEvents {
   /** the driver tried something that needs the pantograph up (UI can point at the control) */
   'needs-pantograph': { action: 'vcb' | 'throttle' };
   'vcb': { closed: boolean };
+  /** diesel engine state changed */
+  'engine': { state: 'stopped' | 'cranking' | 'running' };
+  /** the driver tried something that needs the diesel engine running (or the fuel pump on) */
+  'needs-engine': { action: 'throttle' | 'start' };
   'announcement': { stationCode: string };
   'ui-toggle': { what: 'hud' | 'map' | 'perf' | 'help' | 'pause' };
 }

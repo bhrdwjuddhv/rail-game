@@ -17,6 +17,7 @@ import type { BenchConfig, BenchView } from './core/Benchmark';
 import type { Quality } from './core/Settings';
 import { Menus } from './ui/Menus';
 import { setVegetationRenderer } from './world/scenery/Vegetation';
+import { initModelLoader } from './train/LocoModelLoader';
 
 const app = document.getElementById('app')!;
 const ui = document.getElementById('ui')!;
@@ -66,6 +67,7 @@ async function boot() {
   await assets.init(rs.renderer);
   textures.init(rs.renderer);
   setVegetationRenderer(rs.renderer);
+  initModelLoader(rs.renderer);
   rs.resize(innerWidth, innerHeight);
   document.body.dataset.backend = rs.backend;
   (window as any).__rail = { backend: rs.backend };

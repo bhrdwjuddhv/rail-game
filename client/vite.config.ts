@@ -41,17 +41,20 @@ function dropTextureSources(): Plugin {
     apply: 'build',
     configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
     closeBundle() {
-      const root = path.join(outDir, 'assets/textures');
-      if (!fs.existsSync(root)) return;
-      const walk = (d: string) => {
-        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-          const p = path.join(d, e.name);
-          if (e.isDirectory()) { if (e.name !== '_processed') walk(p); }
-          else if (/.(png|jpe?g)$/i.test(e.name)) fs.rmSync(p);
-        }
-        if (d !== root && !fs.readdirSync(d).length) fs.rmdirSync(d);
-      };
-      walk(root);
+      // source images and source 3D models: the game only loads the _processed copies
+      for (const [dir, ext] of [['assets/textures', /\.(png|jpe?g)$/i], ['assets/models', /\.(glb|gltf|bin)$/i]] as const) {
+        const root = path.join(outDir, dir);
+        if (!fs.existsSync(root)) continue;
+        const walk = (d: string) => {
+          for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+            const p = path.join(d, e.name);
+            if (e.isDirectory()) { if (e.name !== '_processed') walk(p); }
+            else if (ext.test(e.name)) fs.rmSync(p);
+          }
+          if (d !== root && !fs.readdirSync(d).length) fs.rmdirSync(d);
+        };
+        walk(root);
+      }
     },
   };
 }

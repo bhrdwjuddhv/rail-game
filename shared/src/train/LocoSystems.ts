@@ -45,11 +45,20 @@ export class LocoSystems {
   vigilanceEnabled = true;
   /** God Mode: ignore the loco's own max speed for the overspeed warning */
   ignoreMaxSpeed = false;
+  // ---- diesel (type "diesel"): fuel pump, engine start / stop
+  fuelPump = false;
+  engine: 'stopped' | 'cranking' | 'running' = 'stopped';
+  engineRpm = 0;
+  private crank = 0;
   private t = 0;
 
   constructor(readonly loco: LocoData, private brakes: BrakeSystem) {}
 
-  get powerAvailable() { return this.vcb && this.lineVoltage > MIN_LINE_KV && !this.brakes.penalty && !this.emergencyStop; }
+  get isDiesel() { return this.loco.type === 'diesel'; }
+  get powerAvailable() {
+    const supply = this.isDiesel ? this.engine === 'running' : this.vcb && this.lineVoltage > MIN_LINE_KV;
+    return supply && !this.brakes.penalty && !this.emergencyStop;
+  }
   /** vigilance: seconds left before the penalty brake (while the warning is on) */
   get vigilanceLeft() { return Math.max(0, VIGILANCE_PERIOD + VIGILANCE_GRACE - this.vigilanceTimer); }
   get pantoDown() { return this.pantoPos < 0.99; }
@@ -61,7 +70,38 @@ export class LocoSystems {
   // ---- driver actions ----
   /** Notching up with the pantograph down does nothing useful: say why (the notch still moves, as on the real controller). */
   private pantoHint(from: number, to: number) {
-    if (to > from && this.pantoPos < 0.99) bus.emit('needs-pantograph', { action: 'throttle' });
+    if (to <= from) return;
+    if (this.isDiesel) { if (this.engine !== 'running') bus.emit('needs-engine', { action: 'throttle' }); }
+    else if (this.pantoPos < 0.99) bus.emit('needs-pantograph', { action: 'throttle' });
+  }
+  private dieselOnly(what: string) { bus.emit('message', { text: `Diesel loco: no ${what} - use Fuel pump, then Engine start`, kind: 'info' }); }
+
+  /** Diesel: the fuel pump primes the engine; switching it off stops a running engine. */
+  toggleFuelPump() {
+    if (!this.isDiesel) return;
+    this.fuelPump = !this.fuelPump;
+    this.emit('fuelPump', this.fuelPump);
+    if (!this.fuelPump && this.engine !== 'stopped') this.stopEngine();
+  }
+  /**
+   * Diesel engine start / stop. Starting needs the fuel pump on and the
+   * throttle at idle; the engine cranks for diesel.crankS, then fires and
+   * settles at idle. Stop shuts it down (power is lost at once).
+   */
+  toggleEngine() {
+    if (!this.isDiesel) return;
+    if (this.engine !== 'stopped') { this.stopEngine(); return; }
+    if (!this.fuelPump) { bus.emit('needs-engine', { action: 'start' }); bus.emit('message', { text: 'Switch the fuel pump on first', kind: 'warn' }); return; }
+    if (this.notch > 0) { bus.emit('message', { text: 'Throttle must be at idle to start the engine', kind: 'warn' }); return; }
+    this.engine = 'cranking';
+    this.crank = this.loco.diesel?.crankS ?? 4;
+    this.emit('engine', 'cranking');
+    bus.emit('engine', { state: 'cranking' });
+  }
+  private stopEngine() {
+    this.engine = 'stopped'; this.notch = 0; this.regen = 0;
+    this.emit('engine', 'stopped');
+    bus.emit('engine', { state: 'stopped' });
   }
   /**
    * Driver activity (a real throttle or brake movement) resets the vigilance
@@ -112,6 +152,7 @@ export class LocoSystems {
     this.emit('emergencyStop', this.emergencyStop);
   }
   togglePanto() {
+    if (this.isDiesel) { this.dieselOnly('pantograph'); return; }
     this.pantoUp = !this.pantoUp;
     if (!this.pantoUp) this.openVcb();
     this.emit('panto', this.pantoUp);
@@ -124,6 +165,7 @@ export class LocoSystems {
    * closes changes nothing.
    */
   toggleVcb() {
+    if (this.isDiesel) { this.dieselOnly('main breaker'); return; }
     if (this.vcb) { this.openVcb(); return; }
     if (this.vcbClosing > 0) return;
     if (this.pantoPos < 0.99) { bus.emit('needs-pantograph', { action: 'vcb' }); return; }
@@ -171,6 +213,18 @@ export class LocoSystems {
     const touching = this.pantoPos > 0.99 && wired;
     this.lineVoltage = touching ? this.loco.electrical.lineVoltageKV + Math.sin(this.t * 0.7) * 0.6 + Math.sin(this.t * 3.1) * 0.25 : 0;
     if ((this.vcb || this.vcbClosing > 0) && !touching) this.openVcb();
+    // diesel engine: cranking, then rpm follows the notch (governor)
+    const D = this.loco.diesel;
+    if (D) {
+      if (this.engine === 'cranking') {
+        this.crank -= dt;
+        this.engineRpm = approach(this.engineRpm, D.idleRpm * 0.35, D.idleRpm, dt);
+        if (this.crank <= 0) { this.engine = 'running'; this.emit('engine', 'running'); bus.emit('engine', { state: 'running' }); }
+      } else {
+        const target = this.engine === 'running' ? D.idleRpm + (D.maxRpm - D.idleRpm) * (this.notch / this.loco.notches) : 0;
+        this.engineRpm = approach(this.engineRpm, target, target > this.engineRpm ? 90 : 160, dt);
+      }
+    }
     if (this.vcbClosing > 0) {
       this.vcbClosing = Math.max(0, this.vcbClosing - dt);
       if (this.vcbClosing === 0) { this.vcb = true; this.emit('vcb', true); bus.emit('vcb', { closed: true }); }

@@ -101,7 +101,16 @@ export function normaliseLoco(file: string, raw: unknown, issues: DataIssue[]) {
   const brakeDecel = (o.brakes.maxBrakeForceKN * 1000) / (o.massT * 1000);
   if (brakeDecel > 2.0) issues.push({ file, level: 'warning', message: `brakes.maxBrakeForceKN ${o.brakes.maxBrakeForceKN} gives ${brakeDecel.toFixed(1)} m/s^2 on a light engine (wheels would lock above ~1.5); typical is ${Math.round(o.massT * 1.1)} kN or less` });
   if (o.regen.maxEffortKN > o.maxTractiveEffortKN * 1.2) issues.push({ file, level: 'warning', message: `regen.maxEffortKN (${o.regen.maxEffortKN}) is far above maxTractiveEffortKN (${o.maxTractiveEffortKN})` });
-  if (o.bogieCentresM >= o.lengthM) issues.push({ file, level: 'error', message: `bogieCentresM (${o.bogieCentresM}) must be less than lengthM (${o.lengthM})` });
+  const secL = o.lengthM / Math.max(1, o.sections ?? 1);
+  if (o.bogieCentresM >= secL) issues.push({ file, level: 'error', message: `bogieCentresM (${o.bogieCentresM}) must be less than the section length (${secL.toFixed(1)} m)` });
+  if (o.type === 'diesel') {
+    const d = o.diesel;
+    if (!d) issues.push({ file, level: 'error', message: 'a diesel loco needs a "diesel" block (engineKW, idleRpm, maxRpm, cylinders, crankS, turboLagS, fuelLitres, stackX)' });
+    else for (const k of ['engineKW', 'idleRpm', 'maxRpm', 'cylinders', 'crankS', 'turboLagS', 'fuelLitres', 'stackX']) {
+      if (typeof d[k] !== 'number' || !Number.isFinite(d[k])) issues.push({ file, level: 'error', message: `diesel.${k} must be a number` });
+    }
+    if (d && d.maxRpm <= d.idleRpm) issues.push({ file, level: 'error', message: 'diesel.maxRpm must be above diesel.idleRpm' });
+  } else if (o.type !== 'electric') issues.push({ file, level: 'error', message: `type must be "electric" or "diesel", got ${JSON.stringify(o.type)}` });
   return issues.slice(before).some(i => i.level === 'error') ? null : o;
 }
 

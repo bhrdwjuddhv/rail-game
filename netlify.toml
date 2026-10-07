@@ -5,13 +5,15 @@
 #      client/public/assets/textures/_processed/ (not in git). The folder is kept
 #      in Netlify's build cache (netlify/plugins/texture-cache), so only new or
 #      changed images are encoded; the first deploy encodes all (~8-10 min).
-#   2. `npm run build` type-checks shared + client and runs `vite build` into
+#   2. `npm run models` optimises the committed 3D models (client/public/assets/models/locos)
+#      into client/public/assets/models/_processed/ (KTX2 + Meshopt, 3 LODs), also cached.
+#   3. `npm run build` type-checks shared + client and runs `vite build` into
 #      client/dist. Game data (data/) is bundled into the build; the source PNGs
 #      are left out of client/dist (the game only loads the processed files).
 
 [build]
   base = "."
-  command = "npm run textures && npm run build"
+  command = "npm run textures && npm run models && npm run build"
   publish = "client/dist"
 
 [[plugins]]

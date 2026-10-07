@@ -36,6 +36,7 @@ const SECTIONS: { title: string; toggles: [BoolKey, string, string][] }[] = [
       ['speedEnforcement', 'Speed limit enforcement', 'Overspeed penalties'],
       ['mustStop', 'Must stop at stations', 'Missed booked stops are penalised'],
       ['vigilance', 'Vigilance control (dead-man)', ''],
+      ['manualPoints', 'Manual points', 'Routes are not set for you: throw the next points ahead with J (touch: More)'],
     ],
   },
   {

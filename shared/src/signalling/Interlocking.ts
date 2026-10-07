@@ -25,6 +25,9 @@ export interface StationRoute {
   key: string;
 }
 
+/** Points only move when no train is on them or within this distance (km) of them. */
+export const POINTS_CLEAR_KM = 0.15;
+
 export class Interlocking {
   readonly routes: StationRoute[] = [];
 
@@ -71,6 +74,32 @@ export class Interlocking {
     return true;
   }
 
+  /**
+   * Can every switch that has to change position move now? Not while any
+   * train stands on it, nor while a train is running toward it within
+   * POINTS_CLEAR_KM (it could reach moving points). A train standing short of
+   * the points is fine: its signal stays red until they are set and locked.
+   * Switches already lying right are never a problem.
+   */
+  private pointsMovable(needs: StationRoute['needs'], occupants: Occupant[]) {
+    for (const n of needs) {
+      if (n.sw.state === n.state) continue;
+      const d = n.sw.def;
+      const lo = Math.min(d.from, d.to) - 2.5, hi = Math.max(d.from, d.to) + 2.5;
+      const a = d.rampStart - 0.02, b = d.rampEnd + 0.02;
+      for (const o of occupants) {
+        const moving = Math.abs((o as { speed?: number }).speed ?? 0) > 0.5;
+        if (moving && o.headKm < a && o.headKm > a - POINTS_CLEAR_KM && Math.abs(o.offsetAt(o.headKm) - (d.from + d.to) / 2) < hi - lo) return false;
+        if (o.headKm < a || o.tailKm > b) continue;
+        for (let km = Math.max(o.tailKm, a); km <= Math.min(o.headKm, b) + 1e-9; km += 0.01) {
+          const off = o.offsetAt(km);
+          if (off > lo && off < hi) return false;
+        }
+      }
+    }
+    return true;
+  }
+
   /** Points locked by another train's route in a different position. */
   private conflicts(needs: StationRoute['needs'], trainId: string) {
     return needs.some(n => n.sw.state !== n.state && [...n.sw.points.holders].some(h => !h.startsWith(`${trainId}|`)));
@@ -80,9 +109,9 @@ export class Interlocking {
     return this.routes.find(r => r.trainId === trainId && r.station === st && r.kind === kind);
   }
 
-  private establish(trainId: string, st: StationInfo, lineId: string, kind: 'reception' | 'departure', callingOn: boolean, crossTo?: string) {
+  private establish(trainId: string, st: StationInfo, lineId: string, kind: 'reception' | 'departure', callingOn: boolean, occupants: Occupant[], crossTo?: string) {
     const needs = this.requirements(st, lineId, kind, crossTo);
-    if (this.conflicts(needs, trainId)) return null;
+    if (this.conflicts(needs, trainId) || !this.pointsMovable(needs, occupants)) return null;
     const key = `${trainId}|${st.code}|${kind}`;
     for (const n of needs) { n.sw.state = n.state; n.sw.lock(key); }
     const r: StationRoute = { trainId, station: st, lineId, kind, needs, set: false, callingOn, key };
@@ -100,24 +129,25 @@ export class Interlocking {
     for (const lineId of order) {
       if (!st.lineInfo.some(l => l.id === lineId)) continue;
       if (!this.lineClear(st, lineId, occupants, trainId)) continue;
-      const r = this.establish(trainId, st, lineId, 'reception', false);
+      const r = this.establish(trainId, st, lineId, 'reception', false, occupants);
       if (r) return r;
     }
     return null;
   }
 
   /** Calling-on: admit a train into an occupied line at caution. */
-  requestCallingOn(trainId: string, st: StationInfo, lineId: string) {
+  requestCallingOn(trainId: string, st: StationInfo, lineId: string, occupants: Occupant[] = []) {
     if (this.routes.some(r => r.station === st && r.kind === 'reception')) return null;
-    return this.establish(trainId, st, lineId, 'reception', true);
+    return this.establish(trainId, st, lineId, 'reception', true, occupants);
   }
 
   /** Departure route; `crossTo` names a crossover to take onto the other running line. */
-  requestDeparture(trainId: string, st: StationInfo, lineId: string, crossTo?: string) {
-    return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false, crossTo);
+  requestDeparture(trainId: string, st: StationInfo, lineId: string, crossTo?: string, occupants: Occupant[] = []) {
+    return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false, occupants, crossTo);
   }
 
-  private release(r: StationRoute) {
+  /** Cancel one route (its points unlock; free points go back to normal). */
+  release(r: StationRoute) {
     this.routes.splice(this.routes.indexOf(r), 1);
     for (const n of r.needs) {
       n.sw.unlock(r.key);

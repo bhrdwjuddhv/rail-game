@@ -12,6 +12,7 @@ export const CONTROL_NAMES: Record<string, string> = {
   trainBrake: "Automatic train brake (' / ;)", locoBrake: 'Independent loco brake (] / [)',
   hornLow: 'Horn - low tone (Space)', hornHigh: 'Horn - high tone (Shift+Space)', headlight: 'Headlight off/dim/bright (L)',
   cabLight: 'Cab light (K)', markers: 'Marker lights (N)', flasher: 'Flasher (B)', panto: 'Pantograph up/down (P)',
+  fuelPump: 'Fuel pump on/off (U)', engine: 'Engine start/stop (E)',
   vcb: 'Main circuit breaker VCB (O)', wipers: 'Wipers off/slow/fast (V)', sander: 'Sander (X, hold)', vigilance: 'Vigilance acknowledge (Q)',
   emergencyStop: 'Emergency stop button', emergencyBrake: 'Emergency brake (Backspace)',
 };
@@ -63,13 +64,16 @@ export class CabControls {
     addG('speed', 0, 0, 'km/h', 0, 160, 'SPEED', 0.1, { majors: 8, redFrom: 140 });
     addG('bpbc', -0.29, 0.07, 'BP / BC', 0, 10, 'kg/cm²', 0.068, { majors: 5, needles: ['BP', 'BC'] });
     addG('mr', -0.46, 0.07, 'MR', 0, 12, 'kg/cm²', 0.06, { majors: 6 });
-    addG('kv', 0.29, 0.07, 'OHE', 0, 32, 'kV', 0.06, { majors: 8, redFrom: 29 });
+    // diesel: the OHE voltmeter is an engine tachometer
+    const diesel = sys.isDiesel;
+    if (diesel) addG('kv', 0.29, 0.07, 'ENGINE', 0, 1200, 'rpm', 0.06, { majors: 6, redFrom: 1100 });
+    else addG('kv', 0.29, 0.07, 'OHE', 0, 32, 'kV', 0.06, { majors: 8, redFrom: 29 });
     addG('amps', 0.46, 0.07, 'TM', 0, 1200, 'A', 0.06, { majors: 6, redFrom: 1000 });
     addG('te', -0.29, -0.1, 'TE', 0, 350, 'kN', 0.055, { majors: 7 });
     this.display = new DriverDisplay(0.26, 0.16);
     this.display.mesh.position.set(0.37, -0.1, 0.002);
     panel.add(this.display.mesh);
-    const lampDefs = [['SLIP', 0xffb000], ['OVERSPEED', 0xff2a1a], ['VCD', 0xffd000], ['BRAKE', 0xff5a1a], ['PANTO DN', 0x3aa0ff], ['VCB OPEN', 0xff2a1a]] as const;
+    const lampDefs: [string, number][] = [['SLIP', 0xffb000], ['OVERSPEED', 0xff2a1a], ['VCD', 0xffd000], ['BRAKE', 0xff5a1a], diesel ? ['FUEL OFF', 0x3aa0ff] : ['PANTO DN', 0x3aa0ff], diesel ? ['ENG STOP', 0xff2a1a] : ['VCB OPEN', 0xff2a1a]];
     this.lamps = new LampPanel(atlas, pFaces, lampDefs.map(([label, color], i) => ({ label, color, x: -0.45 + i * 0.18, y: 0.18 })));
     panel.add(this.lamps.mesh);
 
@@ -142,8 +146,8 @@ export class CabControls {
       labelOnDesk(text, 0.07, x + 0.045, y, z);
       this.add(id, moving, x, y, z, new THREE.Vector3(0.06, 0.06, 0.06));
     };
-    toggle('panto', -1.3, 'PANTO');
-    toggle('vcb', -1.18, 'VCB');
+    if (diesel) { toggle('fuelPump', -1.3, 'FUEL PUMP'); toggle('engine', -1.18, 'ENGINE'); }
+    else { toggle('panto', -1.3, 'PANTO'); toggle('vcb', -1.18, 'VCB'); }
     toggle('headlight', -1.06, 'HEAD LT', true);
     toggle('markers', -0.94, 'MARKER');
     toggle('flasher', -0.82, 'FLASHER');
@@ -189,6 +193,8 @@ export class CabControls {
       case 'flasher': s.toggleFlasher(); break;
       case 'panto': s.togglePanto(); break;
       case 'vcb': s.toggleVcb(); break;
+      case 'fuelPump': s.toggleFuelPump(); break;
+      case 'engine': s.toggleEngine(); break;
       case 'wipers': s.cycleWipers(); break;
       case 'sander': s.setSander(true); break;
       case 'vigilance': s.acknowledgeVigilance(speed); break;
@@ -217,7 +223,9 @@ export class CabControls {
     pressed('hornLow', s.hornLow); pressed('hornHigh', s.hornHigh); pressed('sander', s.sander);
     pressed('emergencyStop', s.emergencyStop);
     const tog = (id: string, on: boolean) => { g(id).rotation.z = on ? 0.45 : -0.45; };
-    tog('panto', s.pantoUp); tog('vcb', s.vcb); tog('markers', s.markers); tog('flasher', s.flasher); tog('cabLight', s.cabLight);
+    if (s.isDiesel) { tog('fuelPump', s.fuelPump); tog('engine', s.engine !== 'stopped'); }
+    else { tog('panto', s.pantoUp); tog('vcb', s.vcb); }
+    tog('markers', s.markers); tog('flasher', s.flasher); tog('cabLight', s.cabLight);
     g('headlight').rotation.y = -s.headlight * 0.7;
     g('wipers').rotation.y = -s.wipers * 0.7;
 
@@ -225,11 +233,12 @@ export class CabControls {
     this.gauges.speed.set([r.speedKmph], dt);
     this.gauges.bpbc.set([r.bp, r.bc], dt);
     this.gauges.mr.set([r.mr], dt);
-    this.gauges.kv.set([r.kV], dt);
+    this.gauges.kv.set([s.isDiesel ? s.engineRpm : r.kV], dt);
     this.gauges.amps.set([r.amps], dt);
     this.gauges.te.set([r.teKN], dt);
     const fl = Math.sin(this.blink * 8) > 0;
-    const on = [r.slip, r.overspeed && fl, r.vigilance === 'penalty' || (r.vigilance === 'warning' && fl), r.brakeApplied, r.pantoDown, r.vcbOpen];
+    const on = [r.slip, r.overspeed && fl, r.vigilance === 'penalty' || (r.vigilance === 'warning' && fl), r.brakeApplied,
+      s.isDiesel ? !s.fuelPump : r.pantoDown, s.isDiesel ? s.engine !== 'running' && (s.engine === 'stopped' || fl) : r.vcbOpen];
     LAMPS.forEach((_, i) => this.lamps.set(i, on[i]));
     this.displayTimer -= dt;
     if (this.displayTimer <= 0) {

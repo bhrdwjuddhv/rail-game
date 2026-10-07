@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { LocoData, sectionsOf } from '@rail/shared/train/Consist';
 import { GeoBatch, mat } from '../../core/GeoBatch';
 import { materials } from '../../core/Materials';
 import { rng } from '@rail/shared/util';
@@ -11,8 +12,13 @@ export interface CabLayout {
   deskTop: number;
 }
 
-export function cabLayout(locoLength: number): CabLayout {
-  const front = locoLength / 2;
+/**
+ * Cab position in the leading loco section's body. A twin-section loco has a
+ * cab at the outer end of each section; a diesel hood unit's cab sits behind
+ * its short hood.
+ */
+export function cabLayout(loco: LocoData): CabLayout {
+  const front = loco.lengthM / sectionsOf(loco) / 2 - (loco.bodyStyle === 'diesel-hood' ? 3.1 : 0);
   return { front, floor: 1.62, eye: new THREE.Vector3(front - 1.72, 2.92, -0.7), deskTop: 2.2 };
 }
 

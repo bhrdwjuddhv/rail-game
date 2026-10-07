@@ -17,6 +17,10 @@ export const ICON = {
   markers: svg(`<path d="M3 16h18" ${S}/><circle cx="7" cy="11" r="2.6" ${S}/><circle cx="17" cy="11" r="2.6" ${S}/>`),
   /** circuit breaker: two contacts and a switch blade, with a supply line above (our own symbol) */
   vcb: svg(`<path d="M12 2.5v4.5M12 17v4.5" ${S}/><circle cx="12" cy="7.6" r="1.3" fill="currentColor"/><circle cx="12" cy="16.4" r="1.3" fill="currentColor"/><path class="blade" d="M12 16.4 18 9.2" ${S}/><path d="M6 9.5h3.5M6 14.5h3.5" ${S} stroke-width="1.4"/>`),
+  /** diesel engine: engine block with a starter key arc */
+  engine: svg(`<path d="M4 9h3l2-2h6v3h2l2-2h1v8h-1l-2-2h-2v3H9l-2-2H4z" ${S}/><path d="M9 4.5h5M11.5 4.5V7" ${S}/>`),
+  /** fuel pump: fuel drop */
+  fuel: svg(`<path d="M12 3.5c3.2 4 5 6.7 5 9.3a5 5 0 0 1-10 0c0-2.6 1.8-5.3 5-9.3z" ${S}/>`),
   /** God Mode: lightning bolt */
   god: svg(`<path d="M13.5 2 5 13.5h6L9.5 22 19 9.5h-6.2z" fill="currentColor"/>`),
   more: svg(`<circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/>`),

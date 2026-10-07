@@ -137,14 +137,20 @@ const _f1 = newFrame(), _f2 = newFrame();
 const _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _m = new THREE.Matrix4();
 const _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4();
 
+const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
 /**
- * Renders a whole train: the loco as individual meshes, coaches as instanced
- * bodies/bogies/wheelsets (a handful of draw calls for 24 coaches). Each
- * vehicle hangs between its two bogies, so it swings correctly on curves.
+ * Renders a whole train: each loco section as its own model (a twin-section
+ * loco and a second loco in multiple are several), coaches and wagons as
+ * instanced bodies/bogies/wheelsets (a handful of draw calls for 90 vehicles).
+ * Each vehicle hangs between its two bogies, so it swings correctly on curves.
  */
 export class TrainView {
   readonly group = new THREE.Group();
+  /** the leading loco section (cab, lights, cameras) */
   readonly loco: LocoModel;
+  /** every loco section, in train order */
+  readonly locos: LocoModel[] = [];
   private bodies = new Map<string, { body: THREE.InstancedMesh; under: THREE.InstancedMesh; idx: number[] }>();
   private bogies: THREE.InstancedMesh;
   private wheels: THREE.InstancedMesh;
@@ -153,11 +159,11 @@ export class TrainView {
   readonly vehicleMatrices: THREE.Matrix4[] = [];
 
   constructor(readonly vehicles: Vehicle[], loco: LocoData, coachTypes: Record<string, CoachData>, variant: 'passenger' | 'freight' = 'passenger') {
-    this.loco = new LocoModel(loco, variant);
-    this.group.add(this.loco.group);
-    const coaches = vehicles.slice(1);
+    for (const v of vehicles) if (v.kind === 'loco') { const m = new LocoModel(loco, variant); this.locos.push(m); this.group.add(m.group); }
+    this.loco = this.locos[0];
+    const coaches = vehicles.filter(v => v.kind === 'coach');
     const byType = new Map<string, number[]>();
-    coaches.forEach((v, i) => { const l = byType.get(v.typeId) ?? []; l.push(i + 1); byType.set(v.typeId, l); });
+    vehicles.forEach((v, i) => { if (v.kind !== 'coach') return; const l = byType.get(v.typeId) ?? []; l.push(i); byType.set(v.typeId, l); });
     const M = materials();
     for (const [type, idx] of byType) {
       const t = coachTemplate(coachTypes[type]);
@@ -190,7 +196,7 @@ export class TrainView {
     const ox = head.x, oy = head.y, oz = head.z;
     this.group.position.set(ox, oy, oz);
     this.wheelAngle = distanceM / 0.46;
-    let bi = 0, wi = 0;
+    let bi = 0, wi = 0, li = 0;
     const vs = this.vehicles;
     for (let i = 0; i < vs.length; i++) {
       const v = vs[i];
@@ -207,16 +213,22 @@ export class TrainView {
       _p.set((fx + R.x) / 2 - ox, (fy + R.y) / 2 - oy, (fz + R.z) / 2 - oz);
       _m.compose(_p, _q, _s);
       this.vehicleMatrices[i].copy(_m).setPosition(_p.x + ox, _p.y + oy, _p.z + oz);
-      if (i === 0) {
-        this.loco.group.position.copy(_p);
-        this.loco.group.quaternion.copy(_q);
-        // bogies relative to body: yaw difference only
-        const bogieH = [fh, R.heading];
-        this.loco.bogies.forEach((b, k) => {
-          b.position.set((k === 0 ? 1 : -1) * v.bogieCentres / 2, 0, 0);
-          b.rotation.set(0, -(bogieH[k] - yaw), 0);
+      if (v.kind === 'loco') {
+        const lm = this.locos[li++];
+        // a reversed section (the rear half of a twin loco) faces backwards: its cab end at the rear
+        lm.group.position.copy(_p);
+        lm.group.quaternion.copy(_q);
+        if (v.reversed) lm.group.quaternion.multiply(_flip);
+        // bogies relative to body: yaw difference only (model front bogie first)
+        const turn = v.reversed ? Math.PI : 0;
+        const bogieH = v.reversed ? [R.heading + turn, fh + turn] : [fh, R.heading];
+        // bogies come in (front, rear) pairs - a 3D model has a pair per level of detail
+        lm.bogies.forEach((b, k) => {
+          b.position.set((k % 2 === 0 ? 1 : -1) * v.bogieCentres / 2, 0, 0);
+          b.rotation.set(0, -(bogieH[k % 2] - yaw - turn), 0);
         });
-        for (const ws of this.loco.wheelsets) ws.rotation.z = -this.wheelAngle * (0.46 / (this.loco.data.wheelDiameterM / 2));
+        lm.spin(-this.wheelAngle * (0.46 / (lm.data.wheelDiameterM / 2)) * (v.reversed ? -1 : 1));
+        lm.syncLod();
         continue;
       }
       const set = this.bodies.get(v.typeId)!;

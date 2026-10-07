@@ -52,11 +52,16 @@ export class AutoDriver {
   /** Full auto-drive: follows limits and signals, stops at booked stations. */
   drive(dt: number, dyn: TrainDynamics, sys: LocoSystems, t: DriveTargets) {
     // prepare the loco first, like a driver would
-    if (!sys.pantoUp) sys.togglePanto();
-    if (sys.pantoPos > 0.99 && !sys.vcb && sys.notch === 0) sys.toggleVcb();
+    if (sys.isDiesel) {
+      if (!sys.fuelPump) sys.toggleFuelPump();
+      if (sys.engine === 'stopped' && sys.notch === 0) sys.toggleEngine();
+    } else {
+      if (!sys.pantoUp) sys.togglePanto();
+      if (sys.pantoPos > 0.99 && !sys.vcb && sys.notch === 0) sys.toggleVcb();
+    }
     if (sys.reverser !== 1 && sys.notch === 0) sys.setReverser(1);
     if (dyn.brakes.independent > 0) sys.locoBrake(-1);
-    if (!sys.vcb) return;
+    if (!sys.powerAvailable) return;
 
     const v = dyn.speed;
     const target = this.targetSpeed(dyn, t);

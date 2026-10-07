@@ -13,7 +13,8 @@
     "preview": "npm run preview -w @rail/client",
     "test": "vitest run",
     "typecheck": "tsc -p shared && tsc -p client",
-    "textures": "npm run textures -w @rail/client"
+    "textures": "npm run textures -w @rail/client",
+    "models": "npm run models -w @rail/client"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

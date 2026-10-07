@@ -46,7 +46,7 @@ export class TrainDynamics {
   noSlip = false;
 
   constructor(readonly consist: Consist, public headKm: number) {
-    this.traction = createTraction(consist.loco);
+    this.traction = createTraction(consist.loco, consist.locoUnits);
     this.brakes = new BrakeSystem(consist.vehicles);
   }
 

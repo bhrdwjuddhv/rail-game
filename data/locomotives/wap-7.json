@@ -1,7 +1,7 @@
 {
   "id": "wap7",
   "name": "WAP-7",
-  "operator": "Indian Railways",
+  "operator": "Bharat Rail Network",
   "number": "30259",
   "type": "electric",
 
@@ -22,8 +22,8 @@
     "widthM": 3.152,
     "wheelbaseM": 15.7,
     "bogieWheelbaseM": 3.7,
-    "bogieCentresM": 12.0,
-    "axleSpacingM": 1.85,
+    "bogieCentresM": 11.68,
+    "axleSpacingM": 1.73,
     "wheelDiameterM": 1.092
   },
 
@@ -101,7 +101,7 @@
     "bogie": "#303030",
     "windowFrame": "#3c3c3c",
     "cabFront": "#e8e6dc",
-    "logoText": "INDIAN RAILWAYS",
+    "logoText": "BRN",
     "classText": "WAP-7",
     "numberText": "30259"
   },
@@ -118,6 +118,162 @@
     "bogieStyle": "Co-Co Flexicoil",
     "headlights": "dual front headlights",
     "bufferBeams": true
+  },
+
+  "model": {
+    "file": "assets/models/locos/wap7.glb",
+    "author": "FILL IN: model author",
+    "licence": "FILL IN: licence (e.g. CC BY 4.0)",
+    "source": "FILL IN: where the model came from (URL)",
+    "scale": 1.6546,
+    "rotationDeg": [
+      0,
+      90,
+      0
+    ],
+    "offset": [
+      -0.248,
+      1.575,
+      1.456
+    ],
+    "bogies": [
+      {
+        "node": "boggi2_35",
+        "wheels": [
+          "wheel.002_32",
+          "wheel1.004_33",
+          "wheel1.005_34"
+        ]
+      },
+      {
+        "node": "boggi_65",
+        "wheels": ["wheel.001_62", "wheel1.002_63", "wheel1.003_64"]
+      }
+    ],
+    "pantographs": [
+      {
+        "lower": "Pentograf Body_3",
+        "upper": "pentograf top_1",
+        "joint": "Cylinder.006_4"
+      },
+      {
+        "lower": "pentograf body2_2",
+        "upper": "pentograf top 2_0",
+        "joint": "Cylinder.005_5"
+      }
+    ],
+    "hideInCab": [
+      "Cabin1_67",
+      "cabin2_68",
+      "controler_69",
+      "controler.001_70",
+      "meater box1_165",
+      "meater box2_166",
+      "FAN1 _159",
+      "FAN1 .001_160",
+      "FAN2_161",
+      "FAN2.001_162",
+      "Window_171",
+      "Window grell_172",
+      "Wiper L_173",
+      "wiperR_174"
+    ],
+    "cab": { "eye": [7.75, 3.05, -0.45] },
+    "lights": {
+      "head": [
+        9.9,
+        3.95
+      ],
+      "markers": [
+        10.3,
+        1.6,
+        1.2
+      ]
+    },
+    "look": {
+      "roughness": 0.55,
+      "metalness": 0.1
+    },
+    "texturePatches": [
+      {
+        "texture": 6,
+        "rect": [
+          330,
+          62,
+          380,
+          56
+        ],
+        "fill": "#ffffff",
+        "text": "भारत रेल नेटवर्क",
+        "color": "#111111",
+        "size": 32
+      },
+      {
+        "texture": 6,
+        "rect": [
+          300,
+          180,
+          340,
+          50
+        ],
+        "fill": "#ffffff",
+        "text": "Bharat Rail Network",
+        "color": "#111111",
+        "size": 25
+      },
+      {
+        "texture": 6,
+        "rect": [
+          505,
+          128,
+          92,
+          22
+        ],
+        "fill": "#ffffff",
+        "text": "30259",
+        "color": "#111111",
+        "size": 20
+      },
+      {
+        "texture": 6,
+        "rect": [
+          436,
+          238,
+          92,
+          22
+        ],
+        "fill": "#ffffff",
+        "text": "30259",
+        "color": "#111111",
+        "size": 20
+      },
+      {
+        "texture": 6,
+        "rect": [
+          255,
+          508,
+          78,
+          30
+        ],
+        "fill": "#ffffff",
+        "text": "30259",
+        "color": "#111111",
+        "size": 22
+      },
+      {
+        "texture": 6,
+        "rect": [
+          560,
+          508,
+          78,
+          30
+        ],
+        "fill": "#ffffff",
+        "text": "30259",
+        "color": "#111111",
+        "size": 22
+      }
+    ]
   },
 
   "soundProfile": {

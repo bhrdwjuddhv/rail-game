@@ -14,6 +14,8 @@ export interface GodSettings {
   speedEnforcement: boolean;
   mustStop: boolean;
   vigilance: boolean;
+  /** routes are not set for the player: points ahead are thrown by hand */
+  manualPoints: boolean;
   // train
   unlimitedSpeed: boolean;
   instantBrakes: boolean;
@@ -33,7 +35,7 @@ export interface GodSettings {
 
 /** What every system uses when God Mode is off. */
 export const NORMAL: Readonly<GodSettings> = Object.freeze({
-  obeySignals: true, autoStopAtRed: false, forceGreen: false, spadPenalty: true, speedEnforcement: true, mustStop: true, vigilance: true,
+  obeySignals: true, autoStopAtRed: false, forceGreen: false, spadPenalty: true, speedEnforcement: true, mustStop: true, vigilance: true, manualPoints: false,
   unlimitedSpeed: false, instantBrakes: false, noWheelSlip: false, infiniteAir: false, powerMultiplier: 1, massMultiplier: 1, autoDrive: false,
   freezeTime: false, timeSpeed: 1, weather: null,
   unlockFreeCamera: false, hideHud: false,

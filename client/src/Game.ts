@@ -34,6 +34,11 @@ import { godModePanel } from './ui/GodModePanel';
 import { TextureTest } from './ui/TextureTest';
 import { RoofCover, underRoof } from './infrastructure/Station';
 import { VigilancePopup } from './ui/VigilancePopup';
+import { Wag12Cab } from './train/cab/Wag12Cab';
+import { RouteChoice, RoutePicker } from './ui/RoutePicker';
+import { DieselSmoke } from './train/Smoke';
+import type { DieselTraction } from '@rail/shared/physics/TractionModel';
+import type { StationInfo } from '@rail/shared/track/Route';
 import { BUG_CAMERAS, TrackPoint } from './gameplay/BugCameras';
 import { TutorialCard } from './ui/TutorialCard';
 import { applyOverrides, ScenarioData, ScenarioOverrides, startHeadKm, startTrack } from '@rail/shared/gameplay/Scenario';
@@ -291,11 +296,17 @@ export class Game {
     if (startSt) this.dispatcher.startAt(this.player, startSt.code, this.time.seconds);
     this.trainView = new TrainView(this.consist.vehicles, loco, COACHES);
     this.world.add(this.trainView.group);
-    const layout = cabLayout(loco.lengthM);
+    const layout = cabLayout(loco);
     this.cab = new CabModel(layout);
     this.controls = new CabControls(layout, this.sys, this.dyn.brakes);
     this.cab.group.add(this.controls.group);
     this.trainView.loco.body.add(this.cab.group);
+    // a 3D model's own cab can come with a purpose-built interior (shown once the model has loaded)
+    if (loco.model?.cab?.interior === 'wag12') {
+      this.modelInterior = new Wag12Cab(this.sys, this.dyn.brakes);
+      this.modelInterior.group.visible = false;
+      this.trainView.loco.body.add(this.modelInterior.group);
+    }
 
     // ---- AI trains: scenario trains (km in the data are surveyed km), then traffic on the other line ----
     for (const def of s.aiTrains) {
@@ -325,6 +336,8 @@ export class Game {
     this.minimap = new Minimap(ui, this.route, () => this.line.running.id);
     this.perf = new PerfOverlay(ui, rs);
     // vigilance ACKNOWLEDGE pop-up (desktop shows the key too)
+    this.routePicker = new RoutePicker(ui);
+    if (loco.type === 'diesel') { this.smoke = new DieselSmoke(); this.world.add(this.smoke.group); }
     this.vigPopup = new VigilancePopup(ui, () => (isTouch ? null : settings.get().keys.vigilance.replace(/^Key/, '')), () => this.sys.acknowledgeVigilance(this.dyn.speed));
     if (isTouch) {
       // the full gauges, track profile and map are pop-ups from the More drawer: tap one to close it
@@ -365,6 +378,9 @@ export class Game {
     this.offs.push(() => document.removeEventListener('visibilitychange', this.onVisibility));
     this.traffic.onHonk = p => this.trainAudio?.honk(p.x, p.y, p.z);
     let pantoHintAt = -Infinity;
+    this.offs.push(bus.on('needs-engine', e => {
+      if (e.action === 'throttle') bus.emit('message', { text: isTouch ? 'Start the engine first: Fuel pump, then Engine (bottom bar)' : 'Start the engine first: U fuel pump, then E engine', kind: 'warn', ms: 2500 });
+    }));
     this.offs.push(bus.on('needs-pantograph', () => {
       const now = performance.now();
       if (now - pantoHintAt < 3000) return;
@@ -420,7 +436,8 @@ export class Game {
     this.ai.splice(i, 1);
     view.group.removeFromParent();
     // loco geometry is per model; coach geometry is shared (cached), only its instance buffers go
-    view.loco.group.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+    // the 3D model's geometry is shared by every loco of the type: only procedural parts are freed
+    for (const lm of view.locos) lm.group.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && !m.userData.sharedGeometry) m.geometry.dispose(); });
     view.group.traverse(o => { if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose(); });
   }
 
@@ -585,6 +602,87 @@ export class Game {
     if (g.active && e.weather && e.weather !== this.weather.id) this.weather.set(e.weather, true);
     if (e.autoDrive) this.dispatcher.departNow.add('player');
     else if (!this.tutorialPractice) this.dispatcher.departNow.delete('player');
+    // manual points: the player's routes are not set automatically (existing ones are cancelled)
+    const manual = this.dispatcher.manual.has('player');
+    if (e.manualPoints && !manual) { this.dispatcher.manual.add('player'); this.interlocking.releaseTrain('player'); }
+    else if (!e.manualPoints && manual) this.dispatcher.manual.delete('player');
+    this.touch?.setRouting(!this.scenario.rules, e.manualPoints);
+  }
+
+  // ------------------------------------------------------------------ routes
+  /** Next interlocked station ahead whose points can still be changed for this train. */
+  private stationAhead(): StationInfo | undefined {
+    const head = this.dyn.headKm;
+    return this.line.stations.find(s => s.type !== 'halt' && s.entryKm > head + 0.35 && s.lineInfo.length > 1);
+  }
+
+  /** Name of a line at a station as a driver would say it. */
+  private lineLabel(st: StationInfo, id: string) {
+    const pf = st.platforms.find(p => p.lines.includes(id));
+    if (id === this.line.running.id) return `Main line (${id})${pf ? ` - Platform ${pf.num}` : ''}`;
+    return `Loop ${id}${pf ? ` - Platform ${pf.num}` : ""}`;
+  }
+
+  /**
+   * Free Roam "Route ahead": pick the line to be received on at the next
+   * station. The interlocking sets it when the points are free (scenarios
+   * follow their route plan).
+   */
+  private openRouteAhead() {
+    if (this.routePicker.open) { this.routePicker.hide(); return; }
+    if (this.scenario.rules) { bus.emit('message', { text: 'In scenarios the route follows the timetable plan', kind: 'info' }); return; }
+    const st = this.stationAhead();
+    if (!st) { bus.emit('message', { text: 'No junction or loop ahead to route into', kind: 'info' }); return; }
+    const cur = this.player.plan.get(st.code)?.line || this.line.running.id;
+    const choices: RouteChoice[] = st.lineInfo.map(l => ({ id: l.id, label: this.lineLabel(st, l.id), current: l.id === cur }));
+    this.routePicker.show(st.name, choices, id => {
+      const ok = this.dispatcher.reroute(this.player, st, id);
+      bus.emit('message', ok ? { text: `Route requested: ${this.lineLabel(st, id)} at ${st.name}`, kind: 'info' } : { text: `Too late to change the route at ${st.name}`, kind: 'warn' });
+    });
+  }
+
+  /**
+   * Diesel exhaust from every diesel unit's stack: dark puffs while cranking
+   * and when the engine is notched up (turbo still catching up), a light haze
+   * at steady power, nothing when stopped.
+   */
+  private updateSmoke(dt: number) {
+    if (!this.smoke) return;
+    const s = this.sys, tr = this.dyn.traction as DieselTraction;
+    const rise = Math.max(0, (s.engineRpm - this.lastRpm) / Math.max(dt, 1e-3));
+    this.lastRpm = s.engineRpm;
+    const demand = s.notch / this.consist.loco.notches;
+    const dark = s.engine === 'cranking' ? 0.95 : Math.min(1, 0.1 + rise / 220 + Math.max(0, demand - tr.load) * 1.4);
+    const rate = s.engine === 'stopped' ? 0 : s.engine === 'cranking' ? (s.engineRpm > 60 ? 9 : 0) : 2.5 + tr.load * 9 + dark * 8;
+    const w = this.weather.p.wind;
+    const wind = new THREE.Vector3(w * 1.4, 0, w * 0.6);
+    const lm = this.trainView.locos.find(m => m.stack);
+    const pos = lm ? this.world.worldToLocal(lm.body.localToWorld(lm.stack!.clone())) : null;
+    this.smoke.update(dt, pos, rate, dark, wind);
+  }
+
+  /** God Mode manual points: throw the next unlocked switch ahead (never under a train). */
+  private throwNextPoints() {
+    if (!this.dispatcher.manual.has('player')) { bus.emit('message', { text: 'Turn on Manual points in God Mode first', kind: 'info' }); return; }
+    const head = this.dyn.headKm;
+    const sw = this.line.graph.switches.find(s => s.def.rampStart > head + 0.02 && s.def.rampStart < head + 3 && !s.locked);
+    if (!sw) { bus.emit('message', { text: 'No free points within 3 km ahead', kind: 'info' }); return; }
+    const onIt = this.ctl.occupantsFor(this.lc).some(o => o.headKm > sw.def.rampStart - 0.02 && o.tailKm < sw.def.rampEnd + 0.02);
+    if (onIt) { bus.emit('message', { text: 'A train is on those points', kind: 'warn' }); return; }
+    sw.state = sw.state === 'normal' ? 'reverse' : 'normal';
+    bus.emit('message', { text: `Points ${sw.def.id} thrown ${sw.state}`, kind: 'info' });
+  }
+
+  /** "Route set: Platform 2 at Rampur Jn" once the player's route into a station is set off the main line. */
+  private announceRoute() {
+    const st = this.line.stations.find(s => s.exitKm > this.dyn.headKm && s.type !== 'halt');
+    const r = st ? this.interlocking.reception(st) : undefined;
+    const key = r && r.trainId === 'player' && r.set ? `${st!.code}:${r.lineId}` : '';
+    if (!key || key === this.routeNote) return;
+    this.routeNote = key;
+    if (r!.lineId !== this.line.running.id || this.player.plan.get(st!.code)?.line) {
+      bus.emit('message', { text: `Route set: ${this.lineLabel(st!, r!.lineId)} at ${st!.name}`, kind: 'info', ms: 4500 });
+    }
   }
 
   openGodMode() {
@@ -626,7 +724,23 @@ export class Game {
   private texTest: TextureTest | null = null;
   /** camera in a tunnel or under a platform roof (no rain on it) */
   private sheltered = false;
+  /** the 3D model's own cab is in use (our procedural cab hidden) */
+  private modelCabShown = false;
+  /** interior built for a loco model's own cab (WAG-12B) */
+  private modelInterior: Wag12Cab | null = null;
+
+  /** Driver's eye in the loco body frame: the model's own cab seat, or our cab's. */
+  private cabEye() {
+    const c = this.trainView.loco.usesModelCab ? this.consist.loco.model!.cab! : null;
+    return c ? new THREE.Vector3(...c.eye) : cabLayout(this.consist.loco).eye;
+  }
   private vigPopup!: VigilancePopup;
+  private routePicker!: RoutePicker;
+  /** diesel exhaust (null for electric locos) */
+  private smoke: DieselSmoke | null = null;
+  private lastRpm = 0;
+  /** last announced route ("station:line") */
+  private routeNote = '';
   /** God Mode -> Texture Test: its own scene and loop while the run stays paused; Back returns to God Mode. */
   private openTextureTest() {
     this.menus.hide();
@@ -780,7 +894,7 @@ export class Game {
     if (!a) return;
     const p = a.getWorldPosition(new THREE.Vector3());
     this.trainView.loco.body.worldToLocal(p);
-    const eye = cabLayout(this.consist.loco.lengthM).eye;
+    const eye = this.cabEye();
     const dx = p.x - eye.x, dy = p.y - eye.y, dz = p.z - eye.z;
     this.cabCam.yaw = Math.atan2(-dz, dx);
     this.cabCam.pitch = Math.atan2(dy, Math.hypot(dx, dz));
@@ -865,9 +979,13 @@ export class Game {
       case 'vigilance': s.acknowledgeVigilance(this.dyn.speed); break;
       case 'pantograph': s.togglePanto(); break;
       case 'vcb': s.toggleVcb(); break;
+      case 'fuelPump': s.toggleFuelPump(); break;
+      case 'engine': s.toggleEngine(); break;
       case 'cabLight': s.toggleCabLight(); break;
       case 'markers': s.toggleMarkers(); break;
       case 'flasher': s.toggleFlasher(); break;
+      case 'routeAhead': this.openRouteAhead(); break;
+      case 'throwPoints': this.throwNextPoints(); break;
       case 'hud': this.hud.toggle(); this.profile.canvas.style.display = this.hud.visible ? '' : 'none'; break;
       case 'map': this.minimap.toggle(); break;
       case 'perf': this.perf.toggle(); break;
@@ -950,7 +1068,8 @@ export class Game {
   private controlAt(x: number, y: number): string | null {
     if (!this.cameras.mode.inCab) return null;
     this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.rcam);
-    const hit = this.raycaster.intersectObjects(this.controls.hitTargets, false)[0];
+    // the model's own cab has no clickable controls (keyboard / gamepad / touch drive it)
+    const hit = this.trainView.loco.usesModelCab ? undefined : this.raycaster.intersectObjects(this.controls.hitTargets, false)[0];
     return hit && hit.distance < 2.5 ? (hit.object.userData.control as string) : null;
   }
 
@@ -1055,7 +1174,7 @@ export class Game {
     return {
       dt, time: this.t, train: this.trainView, route: this.line, field: this.field, headKm: this.dyn.headKm, speed: v,
       lateralAccel: v * v * this.line.alignment.curvatureAt(this.dyn.headKm), slack: this.dyn.slack, jolt: this.jolt, shake: this.shake,
-      eye: cabLayout(this.consist.loco.lengthM).eye, keys: c => this.keyboard.isDown(c),
+      eye: this.cabEye(), keys: c => this.keyboard.isDown(c),
       freeRange: this.god.eff.unlockFreeCamera ? Infinity : 4000,
     };
   }
@@ -1091,9 +1210,14 @@ export class Game {
 
     // trains
     this.trainView.update(this.line, d.headKm, km => this.path.offsetAt(km), d.odometer, night);
-    const lm = this.trainView.loco;
-    lm.setPantograph(s.pantoPos);
-    lm.setLights(s.headlight, s.markers, s.flasher, this.t, s.reverser);
+    // every loco section: pantographs follow the switch; lights on the leading cab, red tail markers on
+    // the rear cab of a light engine (the last vehicle is a loco section facing backwards)
+    const tv = this.trainView, vs = this.consist.vehicles, last = vs[vs.length - 1], lm = tv.loco;
+    tv.locos.forEach((lm, k) => {
+      lm.setPantograph(s.pantoPos);
+      if (k === 0) lm.setLights(s.headlight, s.markers, s.flasher, this.t, s.reverser);
+      else lm.setLights(0, s.markers && k === tv.locos.length - 1 && last.kind === 'loco' && !!last.reversed, false, this.t, -s.reverser);
+    });
     for (const a of this.ai) {
       if (a.train.gone) continue;
       a.view.update(a.route, a.train.headKm, km => a.train.offsetAt(km), a.train.headKm * 1000, night);
@@ -1101,6 +1225,7 @@ export class Game {
       a.view.loco.setLights(night > 0.3 || this.weather.p.fog > 0.004 ? 2 : 1, true, false, this.t, 1);
     }
     this.updatePassing(dt);
+    this.updateSmoke(dt);
 
     // camera
     const ctx = this.cameraContext(dt);
@@ -1109,12 +1234,18 @@ export class Game {
     const cam = this.cameras.camera;
     const inCab = !!this.cameras.mode.inCab;
     this.cab.group.visible = inCab;
+    if (this.modelInterior) this.modelInterior.group.visible = inCab && this.trainView.loco.usesModelCab;
+    // a loco model with its own cab: ours is not drawn (only its cab lamp stays)
+    const modelCab = this.trainView.loco.usesModelCab;
+    if (modelCab !== this.modelCabShown) {
+      this.modelCabShown = modelCab;
+      this.cab.group.traverse(o => { if ((o as THREE.Mesh).isMesh) o.visible = !modelCab; });
+      this.lastInCab = !inCab; // re-apply the cab view hiding below
+    }
     if (inCab !== this.lastInCab) {
       // from the driver's seat the undercarriage, pantographs and outer glass are never visible: skip their draws
       this.lastInCab = inCab;
-      lm.body.traverse(o => { if (o.name === 'glass') o.visible = !inCab; });
-      for (const b of lm.bogies) b.visible = !inCab;
-      for (const pt of lm.pantos) pt.base.visible = !inCab;
+      lm.setCabView(inCab);
     }
     this.audio?.setCab(inCab);
 
@@ -1160,13 +1291,15 @@ export class Game {
       const ns = this.nextSignal();
       const units = settings.get().units;
       const conv = units === 'mph' ? 0.6214 : 1;
-      this.controls.update(dt, {
+      const readings = {
         speedKmph: Math.abs(d.speedKmph), limit: Math.round(this.currentLimit() * conv), bp: d.brakes.locoBP, bc: d.brakes.locoBC, mr: d.brakes.mr, er: d.brakes.er,
         kV: s.lineVoltage, amps: d.traction.motorCurrent, teKN: Math.abs(d.traction.tractiveForce) / 1000,
         slip: d.traction.slipping, overspeed: s.overspeed, vigilance: s.vigilanceState, brakeApplied: d.brakes.locoBC > 0.3,
         pantoDown: s.pantoDown, vcbOpen: !s.vcb, km: this.line.canonicalKm(d.headKm), nextSignal: ns ? ns.id : '-', signalDist: ns ? (ns.km - d.headKm) * 1000 : 99999,
         aspect: ns ? ns.aspect : '-', clock: formatClock(this.time.seconds, true), units: units === 'mph' ? 'mph' : 'km/h', displaySpeed: Math.abs(d.speedKmph) * conv,
-      }, night);
+      };
+      if (this.modelInterior?.group.visible) this.modelInterior.update(dt, readings, night);
+      else this.controls.update(dt, readings, night);
     }
 
     // signals, switches, stations, crossings, traffic
@@ -1399,7 +1532,8 @@ export class Game {
     }
     bogies.sort((a, b) => Math.hypot(a.x - cam.position.x, a.z - cam.position.z) - Math.hypot(b.x - cam.position.x, b.z - cam.position.z));
     this.trainAudio.update({
-      speedKmph: d.speedKmph, amps: d.traction.motorCurrent, vcb: this.sys.vcb, compressor: d.brakes.compressorOn,
+      speedKmph: d.speedKmph, amps: d.traction.motorCurrent, vcb: this.sys.isDiesel ? this.sys.engine === 'running' : this.sys.vcb, compressor: d.brakes.compressorOn,
+      engine: this.sys.isDiesel ? { rpm: this.sys.engineRpm, load: (d.traction as DieselTraction).load, cranking: this.sys.engine === 'cranking' } : undefined,
       curvature: this.line.alignment.curvatureAt(head), steelBridge: st?.type === 'bridge' && st.style !== 'arch-viaduct', tunnel: st?.type === 'tunnel',
       slipping: d.traction.slipping, bpRate: this.bpRate, bc: d.brakes.locoBC, overspeed: this.sys.overspeed,
       loco: locoPos, bogies: bogies.slice(0, 10), dt,
@@ -1477,6 +1611,7 @@ export class Game {
       score: this.scenario.rules && this.scoring.enabled ? this.scoring.total : null,
     });
     this.vigPopup.update(s.vigilanceState, s.vigilanceLeft);
+    this.announceRoute();
     this.hud.update({
       speed: Math.abs(d.speedKmph) * conv, units: units === 'mph' ? 'mph' : 'km/h', limit: Math.round(limit * conv),
       notch: s.notch > 0 ? `P${s.notch}` : s.regen > 0 ? `B${s.regen}` : '0', reverser: s.reverser > 0 ? 'F' : s.reverser < 0 ? 'R' : 'N',

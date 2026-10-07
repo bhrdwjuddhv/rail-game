@@ -8,19 +8,21 @@ export interface StopPlan {
   station: string;
   line: string;
   stop: boolean;
+  /** leave this station on the other running line (double line): its crossover is set in the departure route */
+  exitLine?: string;
   arr?: number; // seconds since midnight
   dep?: number;
   dwellS?: number;
 }
 
-export interface TimetableEntry { station: string; arr?: string; dep?: string; line?: string; dwellS?: number }
+export interface TimetableEntry { station: string; arr?: string; dep?: string; line?: string; dwellS?: number; exitLine?: string }
 
 /** `line` defaults to the running line of the train's direction (resolved by the Dispatcher). */
 export function planFromTimetable(entries: TimetableEntry[]): Map<string, StopPlan> {
   const m = new Map<string, StopPlan>();
   for (const e of entries) {
     m.set(e.station, {
-      station: e.station, line: e.line ?? '', stop: true,
+      station: e.station, line: e.line ?? '', stop: true, exitLine: e.exitLine,
       arr: e.arr ? parseClock(e.arr) : undefined, dep: e.dep ? parseClock(e.dep) : undefined, dwellS: e.dwellS,
     });
   }
@@ -51,6 +53,8 @@ export class Dispatcher {
   listeners: DispatchListener[] = [];
   /** trains allowed to leave as soon as their route can be set (tutorial practice, God Mode auto-drive) */
   readonly departNow = new Set<string>();
+  /** trains whose routes are not set automatically (God Mode "Manual points") */
+  readonly manual = new Set<string>();
 
   constructor(private route: Route, private interlocking: Interlocking, private block: BlockSystem) {}
 
@@ -83,9 +87,36 @@ export class Dispatcher {
     return line && st.lineInfo.some(l => l.id === line) ? line : this.route.running.id;
   }
 
+  /**
+   * The crossover at a station that takes a train from `fromLine` onto the
+   * running line `exitLine` (by lateral offsets), or undefined.
+   */
+  crossoverTo(st: StationInfo, fromLine: string, exitLine: string) {
+    const off = (id: string) => st.lineInfo.find(l => l.id === id)?.offset ?? this.route.runningLines.find(l => l.id === id)?.offset;
+    const a = off(fromLine), b = off(exitLine);
+    if (a === undefined || b === undefined || a === b) return undefined;
+    return this.route.graph.switches.find(sw => sw.def.station === st.code && sw.def.kind === 'crossover' && Math.abs(sw.def.from - a) < 0.5 && Math.abs(sw.def.to - b) < 0.5)?.def.id;
+  }
+
+  /**
+   * Change the line a train will be received on at `st` (Free Roam "Route
+   * ahead"). A route already set is cancelled only while the train is far
+   * enough from the station for the points to move (the next update sets
+   * the new one). Returns false when it is too late.
+   */
+  reroute(t: WorkedTrain, st: StationInfo, line: string) {
+    if (t.headKm > st.entryKm - 0.35) return false;
+    const p = t.plan.get(st.code);
+    t.plan.set(st.code, { station: st.code, line, stop: p?.stop ?? false, arr: p?.arr, dep: p?.dep, dwellS: p?.dwellS, exitLine: p?.exitLine });
+    const r = this.interlocking.find(t.id, st, 'reception');
+    if (r && r.lineId !== line) this.interlocking.release(r);
+    return true;
+  }
+
   /** `occupants`: every train on the railway (defaults to `trains`), for line-clear checks. */
   update(dt: number, trains: WorkedTrain[], clock: number, occupants: Occupant[] = trains) {
     for (const t of trains) {
+      if (this.manual.has(t.id)) continue;
       for (const st of this.route.stations) {
         if (st.exitKm < t.tailKm - 0.01 || st.entryKm - 3.5 > t.headKm) continue;
         const s = this.st(t.id, st.code);
@@ -100,7 +131,7 @@ export class Dispatcher {
           if (!r && home) {
             const nearHome = home.km - t.headKm < 0.4 && home.km > t.headKm;
             s.waitHome = nearHome && Math.abs(t.speed) < 0.1 ? s.waitHome + dt : 0;
-            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line);
+            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line, occupants);
           }
         }
 
@@ -118,7 +149,8 @@ export class Dispatcher {
           const recv = this.interlocking.reception(st);
           const lineId = recv && recv.trainId === t.id ? recv.lineId : this.lineOf(st, t.offsetAt(Math.max(t.tailKm, Math.min(t.headKm, st.platformToKm))));
           if (!plan.stop || t.headKm > st.entryKm + 0.1 || recv?.trainId === t.id) {
-            this.interlocking.requestDeparture(t.id, st, lineId);
+            const crossTo = plan.exitLine ? this.crossoverTo(st, lineId, plan.exitLine) : undefined;
+            this.interlocking.requestDeparture(t.id, st, lineId, crossTo, occupants);
             s.departRequested = true;
           }
         }

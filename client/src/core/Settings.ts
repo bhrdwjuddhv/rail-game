@@ -33,6 +33,8 @@ export const ACTIONS = {
   horn: 'Horn (Shift = high tone)', headlights: 'Headlights', wipers: 'Wipers', sander: 'Sander',
   vigilance: 'Vigilance acknowledge', pantograph: 'Pantograph', vcb: 'Main breaker (VCB)',
   cabLight: 'Cab light', markers: 'Marker lights', flasher: 'Flasher',
+  fuelPump: 'Fuel pump (diesel)', engine: 'Engine start / stop (diesel)',
+  routeAhead: 'Route ahead (Free Roam)', throwPoints: 'Throw next points (God Mode manual points)',
   hud: 'Toggle HUD', map: 'Toggle map', pause: 'Pause', perf: 'Performance overlay', help: 'Help',
   prevVehicle: 'Camera: previous vehicle', nextVehicle: 'Camera: next vehicle',
 } as const;
@@ -45,6 +47,8 @@ export const DEFAULT_KEYS: Record<Action, string> = {
   emergency: 'Backspace', reverserFwd: 'KeyW', reverserBack: 'KeyS',
   horn: 'Space', headlights: 'KeyL', wipers: 'KeyV', sander: 'KeyX', vigilance: 'KeyQ',
   pantograph: 'KeyP', vcb: 'KeyO', cabLight: 'KeyK', markers: 'KeyN', flasher: 'KeyB',
+  fuelPump: 'KeyU', engine: 'KeyE',
+  routeAhead: 'KeyG', throwPoints: 'KeyJ',
   hud: 'KeyH', map: 'KeyM', pause: 'Escape', perf: 'F3', help: 'F1',
   prevVehicle: 'Comma', nextVehicle: 'Period',
 };
