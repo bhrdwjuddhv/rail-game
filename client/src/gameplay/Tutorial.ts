@@ -31,6 +31,8 @@ export interface TutorialState {
   pantoPos: number; vcb: boolean; headlight: number; reverser: number; signalAspect: string;
   bp: number; trainBrake: number; locoBrake: number; hornSounded: boolean; notch: number;
   speedKmph: number; underLimitSeconds: number; stoppedAfterMoving: boolean;
+  /** diesel: fuel pump on, engine running */
+  fuelPump: boolean; engineRunning: boolean;
 }
 
 export const TUTORIALS: Record<string, TutorialData> = {};

@@ -1,0 +1,19 @@
+{
+  "id": "diesel-shunt-run",
+  "name": "Diesel Shunt & Run",
+  "difficulty": "Easy",
+  "description": "A WDM-3D with a short rake of covered wagons stands cold in the loop at Saranpura Junction. Switch on the fuel pump, start the engine, and work the train through the hills and over the Reti Nadi bridge, past the old hill fort, to the loop at Pahadgarh.",
+  "route": "freight-corridor",
+  "start": { "km": 31, "track": "DOWN", "atPlatform": "SRPJ", "line": "DL" },
+  "consist": { "loco": "wdm-3d", "coaches": [ { "type": "boxcar", "count": 12 }, { "type": "brakevan", "count": 1 } ], "loaded": true },
+  "time": "10:15",
+  "timeScale": 1,
+  "weather": "clear",
+  "timetable": [
+    { "station": "SRPJ", "dep": "10:22", "line": "DL" },
+    { "station": "PHGH", "arr": "10:45", "line": "DL" }
+  ],
+  "aiTrains": [],
+  "endStation": "PHGH",
+  "rules": true
+}

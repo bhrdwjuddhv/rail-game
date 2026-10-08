@@ -31,7 +31,7 @@ export interface AnyRenderer {
   setPixelRatio(r: number): void;
   getPixelRatio(): number;
   setSize(w: number, h: number, style?: boolean): void;
-  compileAsync(scene: THREE.Object3D, camera: THREE.Camera): Promise<unknown>;
+  compileAsync(scene: THREE.Object3D, camera: THREE.Camera, targetScene?: THREE.Scene): Promise<unknown>;
   render(scene: THREE.Object3D, camera: THREE.Camera): void;
 }
 

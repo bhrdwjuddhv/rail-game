@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { GeoBatch, mat } from '../core/GeoBatch';
-import { canvasTexture, labelTexture } from '../core/Textures';
+import { canvasTexture } from '../core/Textures';
 import { materials } from '../core/Materials';
 import { CONTACT_H } from '../infrastructure/OHE';
 import { LocoData, sectionsOf } from '@rail/shared/train/Consist';
@@ -131,11 +131,11 @@ export class LocoModel {
     this.bogieX = data.bogieCentresM / 2;
     const M = materials();
     const full = new THREE.Group(), mid = new THREE.Group();
-    let headY = 3.95, headX = L / 2 - 0.62, markerY = 1.6;
+    let headY = 3.95, headX = L / 2 - 0.62, markerY = 1.6, lampZ = [0];
 
     if (this.style === 'diesel-hood') {
       const d = this.dieselBody(L, full, mid);
-      headY = d.headY; headX = d.headX;
+      headY = d.headY; headX = d.headX; lampZ = d.lampZ;
       this.stack = new THREE.Vector3(data.diesel?.stackX ?? 1.6, d.stackTop, 0);
     } else {
       const twin = this.style === 'twin-cab';
@@ -163,11 +163,15 @@ export class LocoModel {
     this.headMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const ends = this.style === 'twin-cab' ? [1, -1] : [1];
     for (const end of ends) {
-      const hl = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.12, 14), end > 0 ? this.headMat : new THREE.MeshBasicMaterial({ color: 0x222222 }));
-      hl.rotation.z = Math.PI / 2;
-      hl.position.set(end * headX, headY, 0);
-      this.body.add(hl);
-      this.lamps.push({ mesh: hl, end });
+      // one headlight, or a twin lamp (diesel hood units)
+      const r = lampZ.length > 1 ? 0.13 : 0.2;
+      for (const lz of lampZ) {
+        const hl = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.12, 14), end > 0 ? this.headMat : new THREE.MeshBasicMaterial({ color: 0x222222 }));
+        hl.rotation.z = Math.PI / 2;
+        hl.position.set(end * headX, headY, lz);
+        this.body.add(hl);
+        this.lamps.push({ mesh: hl, end });
+      }
       for (const z of [-1.2, 1.2]) {
         const mm = new THREE.MeshBasicMaterial({ color: 0x222222 });
         const mk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 10), mm);
@@ -270,89 +274,153 @@ export class LocoModel {
   }
 
   /**
-   * WDM-3D style hood unit: a frame with walkways and handrails, short hood,
-   * cab, long hood (radiator fans at the rear, exhaust stack), fuel tank.
-   * Returns where the headlight and stack top are.
+   * WDM-3D style hood unit (Alco family look): a frame with walkways and white
+   * handrails, red buffer beams with round buffers, a low short hood with a
+   * twin headlight on top, an upright cab with small barred windows and horns
+   * on the roof, and a long hood of louvred doors with radiator grilles and
+   * fans at the rear. Blue body with a white band; numbers painted in yellow.
+   * Returns where the headlight(s) and stack top are.
    */
   private dieselBody(L: number, full: THREE.Group, mid: THREE.Group) {
     const M = materials();
     const lv = this.data.livery, body = lv.body, band = lv.band, uf = lv.underframe;
+    const beam = lv.bufferBeam ?? '#d9b21c', rail = '#ecebe6', dark = '#1e2326';
     const cabFront = L / 2 - 3.1, cabBack = cabFront - 2.7;
-    const hoodW = 2.55, frameY = 1.42;
+    const hoodW = 2.55, frameY = 1.42, shortTop = 3.0, cabTop = 4.0, longTop = 3.62;
+    const bandY = 2.6, bandH = 0.3;
+    const winLo = 2.95, winHi = 3.7, winMid = (winLo + winHi) / 2;
     const b = new GeoBatch(), m = new GeoBatch();
-    // frame + walkway, buffer beams, cowcatchers, buffers, couplers
+
+    // frame and walkway with a white edge stripe
     for (const g of [b, m]) g.box(L - 0.3, 0.32, WIDTH, mat(0, frameY - 0.16, 0), uf, 'metal');
+    for (const z of [-1, 1]) b.box(L - 0.3, 0.07, 0.02, mat(0, frameY - 0.05, z * (WIDTH / 2 + 0.005)), rail);
     for (const end of [-1, 1]) {
       const x = end * (L / 2);
-      b.box(0.25, 0.6, WIDTH, mat(x - end * 0.1, 1.05, 0), '#d9b21c');
+      // red buffer beam, round buffers, centre coupler with brake hoses, pilot
+      for (const g of [b, m]) g.box(0.28, 0.78, WIDTH, mat(x - end * 0.12, 1.02, 0), beam);
       for (const z of [-0.98, 0.98]) {
-        b.cyl(0.11, 0.11, 0.45, 10, mat(x + end * 0.22, 1.05, z, 0, 0, Math.PI / 2), '#2a2a2a', 'metal');
-        b.cyl(0.22, 0.22, 0.06, 14, mat(x + end * 0.46, 1.05, z, 0, 0, Math.PI / 2), '#3a3a3a', 'metal');
+        b.cyl(0.13, 0.15, 0.42, 12, mat(x + end * 0.2, 1.05, z, 0, 0, Math.PI / 2), beam, 'metal');
+        b.cyl(0.24, 0.24, 0.07, 18, mat(x + end * 0.44, 1.05, z, 0, 0, Math.PI / 2), beam, 'metal');
+        b.cyl(0.17, 0.17, 0.075, 16, mat(x + end * 0.445, 1.05, z, 0, 0, Math.PI / 2), '#b42419', 'metal');
       }
-      b.box(0.55, 0.22, 0.3, mat(x + end * 0.3, 0.95, 0), '#2a2a2a', 'metal');
-      b.box(0.3, 0.45, WIDTH * 0.9, mat(x + end * 0.25, 0.45, 0, 0, 0, end * 0.35), '#3a3a3a', 'metal');
-      // end handrails
-      b.box(0.04, 0.04, WIDTH - 0.2, mat(x - end * 0.12, frameY + 0.95, 0), '#e8e8e8', 'metal');
+      b.box(0.55, 0.24, 0.32, mat(x + end * 0.3, 0.95, 0), '#2a2a2a', 'metal');
+      for (const z of [-0.45, 0.45]) b.cyl(0.035, 0.035, 0.5, 6, mat(x + end * 0.12, 0.75, z, 0, 0, end * 0.5), z < 0 ? '#c83a2a' : '#e2c13a', 'metal');
+      b.box(0.3, 0.5, WIDTH * 0.92, mat(x + end * 0.2, 0.42, 0, 0, 0, end * 0.35), '#2f3336', 'metal');
+      // end handrail and corner steps up to the walkway
+      b.box(0.04, 0.04, WIDTH - 0.2, mat(x - end * 0.2, frameY + 0.95, 0), rail, 'metal');
+      for (const z of [-1, 1]) {
+        b.cyl(0.025, 0.025, 0.95, 6, mat(x - end * 0.2, frameY + 0.48, z * (WIDTH / 2 - 0.1)), rail, 'metal');
+        for (let k = 0; k < 3; k++) b.box(0.45, 0.04, 0.3, mat(x - end * 0.6, 0.55 + k * 0.3, z * (WIDTH / 2 - 0.12)), '#d9b21c', 'metal');
+      }
     }
-    // side handrails along the walkway
+    // walkway railings: white posts and two rails
     for (const z of [-1, 1]) {
-      b.cyl(0.025, 0.025, L - 0.8, 6, mat(0, frameY + 0.95, z * (WIDTH / 2 - 0.05), 0, 0, Math.PI / 2), '#e8e8e8', 'metal');
-      for (let x = -L / 2 + 0.6; x <= L / 2 - 0.6; x += 1.6) b.cyl(0.02, 0.02, 0.95, 6, mat(x, frameY + 0.48, z * (WIDTH / 2 - 0.05)), '#e8e8e8', 'metal');
+      for (const y of [0.55, 0.95]) b.cyl(0.022, 0.022, L - 1.0, 6, mat(0, frameY + y, z * (WIDTH / 2 - 0.05), 0, 0, Math.PI / 2), rail, 'metal');
+      for (let x = -L / 2 + 0.5; x <= L / 2 - 0.5; x += 1.45) b.cyl(0.02, 0.02, 0.95, 6, mat(x, frameY + 0.48, z * (WIDTH / 2 - 0.05)), rail, 'metal');
     }
-    // fuel tank and battery boxes between the bogies
-    b.box(4.6, 0.9, 2.3, mat(0, frameY - 0.85, 0), '#2a2e31', 'metal');
-    m.box(4.6, 0.9, 2.3, mat(0, frameY - 0.85, 0), '#2a2e31', 'metal');
-    // hoods and cab (body colour with a band); full and mid share the shapes
+    // fuel tank between the bogies, air reservoirs beside it
+    for (const g of [b, m]) g.box(4.6, 0.95, 2.3, mat(0, frameY - 0.85, 0), '#3a3f43', 'metal');
+    for (const z of [-1.3, 1.3]) b.cyl(0.18, 0.18, 2.6, 10, mat(0, 0.95, z, 0, 0, Math.PI / 2), '#2d3134', 'metal');
+
+    // hoods and cab: blue with the white band along the whole body; mid shares the shapes
     const hood = (g: GeoBatch, x0: number, x1: number, top: number, w: number) => {
       const len = x1 - x0, cx = (x0 + x1) / 2, h = top - frameY;
       g.box(len, h, w, mat(cx, frameY + h / 2, 0), body);
-      g.box(len + 0.02, 0.22, w + 0.02, mat(cx, frameY + h * 0.55, 0), band);
-      g.box(len - 0.1, 0.08, w - 0.25, mat(cx, top + 0.04, 0), lv.roof);
+      // the band as thin plates round the sides and ends (a solid slab would show inside the cab)
+      for (const z of [-1, 1]) g.box(len + 0.02, bandH, 0.02, mat(cx, bandY, z * (w / 2 + 0.005)), band);
+      for (const x of [x0, x1]) g.box(0.02, bandH, w + 0.02, mat(x + (x === x0 ? -0.005 : 0.005), bandY, 0), band);
+      g.box(len + 0.06, 0.07, w + 0.06, mat(cx, top + 0.02, 0), lv.roof);
     };
     for (const g of [b, m]) {
-      hood(g, cabFront + 0.05, L / 2 - 0.35, 2.95, 2.3);       // short hood
-      hood(g, cabBack, cabFront, 4.05, WIDTH - 0.15);           // cab
-      hood(g, -L / 2 + 0.35, cabBack - 0.05, 3.7, hoodW);       // long hood
+      hood(g, cabFront + 0.05, L / 2 - 0.42, shortTop, 2.2);
+      hood(g, cabBack, cabFront, cabTop, WIDTH - 0.15);
+      hood(g, -L / 2 + 0.42, cabBack - 0.05, longTop, hoodW);
     }
-    // cab glazing (front, rear, sides) and doors
-    for (const end of [1, -1]) {
-      const x = end > 0 ? cabFront + 0.02 : cabBack - 0.02;
-      for (const z of [-0.7, 0.7]) b.box(0.03, 0.85, 1.05, mat(x, 3.35, z), '#1d2b33', 'glass');
+    // short hood: bevelled top front, twin headlight housing, sand box lids
+    b.box(0.32, 0.32, 2.2, mat(L / 2 - 0.5, shortTop - 0.12, 0, 0, 0, Math.PI / 4), body);
+    b.box(0.5, 0.36, 0.9, mat(L / 2 - 0.62, shortTop + 0.18, 0), body);
+    b.box(0.52, 0.06, 0.94, mat(L / 2 - 0.62, shortTop + 0.38, 0), lv.roof);
+    for (const z of [-0.22, 0.22]) b.cyl(0.15, 0.15, 0.06, 16, mat(L / 2 - 0.4, shortTop + 0.18, z, 0, 0, Math.PI / 2), '#1b1b1b', 'metal');
+    for (const z of [-0.75, 0.75]) b.box(0.4, 0.05, 0.35, mat(cabFront + 0.5, shortTop + 0.03, z), '#2f3336', 'metal');
+    // cab roof with a slight crown, horns on top (one facing each way)
+    b.box(2.9, 0.1, WIDTH - 0.35, mat((cabBack + cabFront) / 2, cabTop + 0.1, 0), lv.roof);
+    for (const [z, dir] of [[-0.32, 1], [0.32, -1]] as const) {
+      b.box(0.08, 0.14, 0.08, mat(cabFront - 0.45, cabTop + 0.21, z), '#555b60', 'metal');
+      b.add(new THREE.CylinderGeometry(0.1, 0.035, 0.5, 12), mat(cabFront - 0.45 + dir * 0.22, cabTop + 0.3, z, 0, 0, -dir * Math.PI / 2), '#9aa0a5', 'metal');
+    }
+    // cab windows: two small fronts with guard bars, two rear, sliding side windows
+    for (const z of [-0.71, 0.71]) {
+      b.box(0.03, winHi - winLo, 0.95, mat(cabFront + 0.02, winMid, z), '#1d2b33', 'glass');
+      b.box(0.03, winHi - winLo, 0.95, mat(cabBack - 0.02, winMid, z), '#1d2b33', 'glass');
+      for (const y of [winLo, winHi]) b.box(0.06, 0.05, 1.0, mat(cabFront + 0.03, y, z), dark);
+      for (const k of [-1, 0, 1]) b.cyl(0.012, 0.012, winHi - winLo, 6, mat(cabFront + 0.07, winMid, z + k * 0.24), '#2a2f2c', 'metal');
     }
     for (const z of [-1, 1]) {
-      b.box(1.0, 0.75, 0.03, mat(cabFront - 1.0, 3.35, z * (WIDTH / 2 - 0.06)), '#1d2b33', 'glass');
-      b.box(0.8, 1.9, 0.02, mat(cabFront - 2.05, frameY + 1.2, z * (WIDTH / 2 - 0.06)), '#7c2a1c');
+      const zs = z * ((WIDTH - 0.15) / 2);
+      b.box(1.2, winHi - winLo, 0.03, mat(cabFront - 1.85, winMid, zs + z * 0.005), '#1d2b33', 'glass');
+      b.box(1.26, 0.05, 0.05, mat(cabFront - 1.85, winLo, zs + z * 0.02), dark);
+      b.box(0.04, 0.6, 0.04, mat(cabFront - 0.25, 2.2, zs + z * 0.05), rail, 'metal');   // grab handle
     }
-    // long hood: access doors / louvres down the sides, radiator grilles and two fans on the roof at the rear
-    for (const z of [-1, 1]) for (let x = -L / 2 + 0.9; x < cabBack - 0.6; x += 1.15) {
-      b.box(0.9, 1.5, 0.02, mat(x + 0.45, frameY + 1.15, z * (hoodW / 2 + 0.005)), '#9b3622');
-      if (x < -L / 2 + 3.6) for (let y = 0; y < 6; y++) b.box(0.8, 0.04, 0.03, mat(x + 0.45, frameY + 0.6 + y * 0.2, z * (hoodW / 2 + 0.01)), '#2b2b2b');
+    // long hood: louvred access doors, radiator grilles at the rear, grab rails along the sides
+    const doorH = longTop - frameY - 0.35;
+    for (const z of [-1, 1]) {
+      const zs = z * (hoodW / 2 + 0.006);
+      for (let x = -L / 2 + 0.75; x < cabBack - 0.6; x += 1.15) {
+        const rad = x < -L / 2 + 3.4;
+        b.box(0.02, doorH, 0.012, mat(x - 0.02, frameY + 0.2 + doorH / 2, zs), dark);   // door seam
+        b.box(0.05, 0.12, 0.03, mat(x + 0.9, frameY + 1.2, zs), '#c9c9c9', 'metal');    // handle
+        const rows = rad ? 9 : 4, top = rad ? longTop - 0.25 : bandY - 0.25;
+        for (let r = 0; r < rows; r++) b.box(0.9, 0.035, 0.03, mat(x + 0.55, top - r * 0.11, zs), '#163055');
+      }
+      const r0 = -L / 2 + 0.8, r1 = cabBack - 0.8;
+      b.cyl(0.02, 0.02, r1 - r0, 6, mat((r0 + r1) / 2, 3.05, z * (hoodW / 2 + 0.07), 0, 0, Math.PI / 2), rail, 'metal');
+      for (let x = r0; x <= r1 + 0.01; x += (r1 - r0) / 4) b.box(0.03, 0.03, 0.08, mat(x, 3.05, z * (hoodW / 2 + 0.035)), rail, 'metal');
     }
-    for (const fx of [-L / 2 + 1.25, -L / 2 + 2.6]) {
-      b.cyl(0.62, 0.62, 0.08, 18, mat(fx, 3.75, 0), '#2b2f33', 'metal');
-      b.box(1.3, 0.02, 0.06, mat(fx, 3.8, 0, 0.4), '#555');
-      b.box(1.3, 0.02, 0.06, mat(fx, 3.8, 0, -0.75), '#555');
+    // roof: radiator fans and grilles at the rear, hatches, exhaust silencer and stack
+    for (const fx of [-L / 2 + 1.35, -L / 2 + 2.75]) {
+      b.cyl(0.6, 0.6, 0.1, 20, mat(fx, longTop + 0.07, 0), '#22272b', 'metal');
+      for (const a of [0, 1.05, 2.1]) b.box(1.1, 0.02, 0.07, mat(fx, longTop + 0.13, 0, a), '#5a6066', 'metal');
     }
-    // exhaust stack and silencer
+    for (let x = -L / 2 + 3.6; x < cabBack - 1.9; x += 1.7) b.box(1.4, 0.05, hoodW - 0.5, mat(x + 0.7, longTop + 0.04, 0), '#3b4247', 'metal');
     const sx = this.data.diesel?.stackX ?? 1.6;
-    const stackX = Math.max(-L / 2 + 3.5, Math.min(cabBack - 1, sx));
-    b.box(1.4, 0.35, 0.8, mat(stackX, 3.87, 0), '#3d4246', 'metal');
-    b.cyl(0.17, 0.2, 0.45, 12, mat(stackX, 4.25, 0), '#26292c', 'metal');
-    // horn and headlight housing on the short hood
-    b.box(0.5, 0.35, 0.5, mat(L / 2 - 0.55, 3.12, 0), body);
-    for (const z of [-0.25, 0.25]) b.cyl(0.05, 0.08, 0.35, 8, mat(cabFront + 0.2, 4.2, z, 0, 0, Math.PI / 2), '#888', 'metal');
-    // number board on the long hood sides
-    const plate = labelTexture(`${this.data.name} ${this.data.number}|hood`, { bg: lv.band, fg: '#1a1a1a', w: 512, h: 96, lines: [`${this.data.livery.logoText}  ${this.data.name}  ${this.data.number}`] });
-    for (const z of [-1, 1]) {
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 0.6), new THREE.MeshStandardMaterial({ map: plate, roughness: 0.6 }));
-      p.position.set(-L / 2 + 5.4, 2.55, z * (hoodW / 2 + 0.02));
-      if (z < 0) p.rotation.y = Math.PI;
+    const stackX = Math.max(-L / 2 + 3.8, Math.min(cabBack - 1, sx));
+    b.box(1.4, 0.35, 0.8, mat(stackX, longTop + 0.2, 0), '#3d4246', 'metal');
+    b.cyl(0.17, 0.2, 0.45, 12, mat(stackX, longTop + 0.6, 0), '#26292c', 'metal');
+    // rear end of the long hood: an unlit twin headlight
+    b.box(0.3, 0.32, 0.85, mat(-L / 2 + 0.3, longTop - 0.3, 0), body);
+    for (const z of [-0.22, 0.22]) b.cyl(0.14, 0.14, 0.05, 16, mat(-L / 2 + 0.14, longTop - 0.3, z, 0, 0, Math.PI / 2), '#2a2a2a', 'metal');
+
+    // painted numbers in yellow (short hood front, cab sides, rear) and our round logo on the long hood
+    const yellow = lv.numbers ?? '#f2c418';
+    const num = `${this.data.number} ${this.data.name.replace(/[^A-Z0-9]/gi, '')}`;
+    const paint = (key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) =>
+      new THREE.MeshStandardMaterial({ map: canvasTexture(key, w, h, draw, { repeat: false }), transparent: true, alphaTest: 0.35, roughness: 0.5 });
+    const text = (g: CanvasRenderingContext2D, w: number, h: number, t: string, px: number) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = yellow; g.font = `bold ${px}px Arial`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, w / 2, h / 2 + 2);
+    };
+    const numMat = paint(`dnum-${num}-${yellow}`, 512, 96, (g, w, h) => text(g, w, h, num, 70));
+    const endNum = paint(`dnum-end-${this.data.number}-${yellow}`, 256, 96, (g, w, h) => text(g, w, h, this.data.number, 72));
+    const logoMat = paint(`dlogo-${lv.logoText}-${yellow}-${body}`, 128, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = yellow; g.beginPath(); g.arc(w / 2, h / 2, 60, 0, Math.PI * 2); g.fill();
+      g.fillStyle = body; g.beginPath(); g.arc(w / 2, h / 2, 50, 0, Math.PI * 2); g.fill();
+      g.fillStyle = yellow; g.font = 'bold 34px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(lv.logoText, w / 2, h / 2 + 2);
+    });
+    const decal = (mm: THREE.Material, w: number, h: number, x: number, y: number, z: number, ry: number) => {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mm);
+      p.position.set(x, y, z); p.rotation.y = ry;
       full.add(p);
+    };
+    for (const z of [-1, 1]) {
+      decal(numMat, 2.3, 0.43, cabFront - 1.35, 2.2, z * ((WIDTH - 0.15) / 2 + 0.012), z > 0 ? 0 : Math.PI);
+      decal(logoMat, 0.75, 0.75, -1.2, 2.05, z * (hoodW / 2 + 0.02), z > 0 ? 0 : Math.PI);
     }
+    decal(endNum, 1.0, 0.38, L / 2 - 0.41, 2.15, 0, Math.PI / 2);
+    decal(endNum, 1.0, 0.38, -L / 2 + 0.41, 2.15, 0, -Math.PI / 2);
+
     const mats = M as unknown as Record<string, THREE.Material>;
     full.add(b.build(mats));
     mid.add(m.build(mats, false));
-    return { headX: L / 2 - 0.55, headY: 3.12, stackTop: 4.48 };
+    return { headX: L / 2 - 0.36, headY: shortTop + 0.18, stackTop: longTop + 0.83, lampZ: [-0.22, 0.22] };
   }
 
   private buildPanto(x: number, dir: number) {
@@ -443,6 +511,8 @@ export class LocoModel {
     this.body.traverse(o => { if (o.name === 'glass') o.visible = !inCab; });
     for (const b of this.bogies) b.visible = !inCab;
     for (const pt of this.pantos) pt.base.visible = !inCab;
+    // lamp housings sit on the outside of the nose: from inside a model cab they would show through the glass
+    for (const l of this.lamps) l.mesh.visible = !(inCab && this.usesModelCab);
     const ownCab = this.usesModelCab;
     // a model without its own cab (data.model.cab) is not drawn from the driver's seat: our cab
     // interior is shown alone, so the model's body (often double-sided, with painted windows) never

@@ -21,7 +21,7 @@
   "adhesion": { "dry": 0.32, "wet": 0.21, "damp": 0.26, "sanderBonus": 0.07 },
   "electrical": { "lineVoltageKV": 0.75, "motorCount": 6, "ampsPerKN": 4.2 },
   "diesel": { "engineKW": 2460, "idleRpm": 400, "maxRpm": 1050, "cylinders": 16, "crankS": 4.5, "turboLagS": 3.2, "fuelLitres": 5000, "stackX": 1.6 },
-  "livery": { "body": "#c4462b", "band": "#f3e2b5", "roof": "#44494d", "underframe": "#26282a", "logoText": "BRN" },
+  "livery": { "body": "#2453a0", "band": "#f2f2ee", "roof": "#5b6167", "underframe": "#2a2c2e", "logoText": "BRN", "bufferBeam": "#c4271d", "numbers": "#f2c418" },
   "cabLayout": "wdm3-hood-left",
   "soundProfile": { "motorBaseHz": 26, "motorHzPerKmph": 3.2, "hornLowHz": [233, 294], "hornHighHz": [349, 440], "blowerHz": 80 }
 }

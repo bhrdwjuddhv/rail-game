@@ -1,0 +1,23 @@
+{
+  "id": "kutch-coast",
+  "name": "Salt Coast",
+  "biome": "coast",
+  "ground": ["#a8996f", "#b6a57b", "#8e8a5c"],
+  "crops": [
+    { "name": "salt pan", "color": "#e9e5da" },
+    { "name": "salt pan", "color": "#dcd6c6" },
+    { "name": "cotton", "color": "#7e9246" },
+    { "name": "fallow", "color": "#9c8661" }
+  ],
+  "hillAmpNear": 0.4,
+  "hillAmpFar": 3,
+  "hillFreq": 0.0015,
+  "sideSlope": 0,
+  "treeTypes": ["palm", "palm", "neem"],
+  "treeDensity": 0.16,
+  "pondsPerKm2": 1.4,
+  "kilnsPerKm2": 0.02,
+  "villagesPerKm2": 0.4,
+  "stationStyle": "brick",
+  "regionalScript": "gujarati"
+}

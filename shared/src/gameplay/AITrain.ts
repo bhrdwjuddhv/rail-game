@@ -18,6 +18,8 @@ export interface AITrainDef {
   /** vehicle length incl. coupling gap (default: a goods wagon) */
   carLengthM?: number;
   kind?: 'goods' | 'passenger';
+  /** wagon type (data/coaches id) of the rake: container stock gets a mix of loads */
+  stock?: string;
 }
 
 export const AI_LOCO_LEN = 20.56;
@@ -46,7 +48,8 @@ export class AITrain implements WorkedTrain {
     const off = st?.lineInfo.find(l => l.id === def.line)?.offset ?? route.running.offset;
     this.path = new TrackPath(route.graph, this.headKm, this.tailKm, off);
     for (const s of def.stops) this.plan.set(s.station, { station: s.station, line: s.line, stop: true, dwellS: s.dwellS });
-    this.speed = def.maxKmph * KMPH * 0.6;
+    // already moving, unless it starts standing at one of its stops
+    this.speed = st && this.plan.has(st.code) ? 0 : def.maxKmph * KMPH * 0.6;
   }
 
   get tailKm() { return this.headKm - this.length / 1000; }

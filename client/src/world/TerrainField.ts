@@ -1,6 +1,6 @@
 import { clamp, fbm, hash2, lerp, ridged, smoothstep } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
-import type { RegionData, RiverDef, RoadDef, Route } from '@rail/shared/track/Route';
+import { biomeOf, RegionData, RiverDef, RoadDef, Route } from '@rail/shared/track/Route';
 
 /**
  * The ground height function, shared by the terrain worker and the main
@@ -27,7 +27,7 @@ export class TerrainField {
   private sideSign: Float32Array;
   private bx0 = 0; private bz0 = 0; private bnx = 0; private bnz = 0;
   private base!: Float32Array; private baseKm!: Float32Array;
-  private plains: RegionData; private ghats: RegionData;
+  private ghats: RegionData;
   private pondCache = new Map<number, Pond | null>();
   readonly grounds: { x: number; z: number; r: number; heading: number }[] = [];
   private nt: NearestTrack = { km: 0, d: 0, dist: 0, heading: 0 };
@@ -54,7 +54,6 @@ export class TerrainField {
       this.sideSign[i] = Math.tanh((k / (2 * W + 1)) * 1500);
     }
     const regs = Object.values(route.regions);
-    this.plains = regs.find(r => r.sideSlope === 0) ?? regs[0];
     this.ghats = regs.find(r => r.sideSlope > 0) ?? regs[0];
     for (const z of route.data.scenery) {
       if (z.zone !== 'colony') continue;
@@ -191,18 +190,33 @@ export class TerrainField {
 
   ghatAt(km: number) { return this.route.ghatFactor(km); }
 
+  /** Region parameters at km, blended across region borders. */
+  private params(km: number) {
+    let near = 0, far = 0, freq = 0, ridges = 0, dunes = 0;
+    for (const { r, w } of this.route.regionWeights(km)) {
+      near += r.hillAmpNear * w; far += r.hillAmpFar * w; freq += r.hillFreq * w;
+      ridges += (r.ridges ?? (biomeOf(r) === 'ghats' ? 0.9 : 0)) * w;
+      dunes += (r.dunes ?? 0) * w;
+    }
+    return { near, far, freq, ridges, dunes };
+  }
+
   /** Natural ground before the railway and roads touch it. */
   natural(x: number, z: number, nt: NearestTrack | null) {
     const km = nt ? nt.km : this.kmAt(x, z);
-    const g = this.ghatAt(km);
-    const near = lerp(this.plains.hillAmpNear, this.ghats.hillAmpNear, g);
-    const far = lerp(this.plains.hillAmpFar, this.ghats.hillAmpFar, g);
-    const freq = lerp(this.plains.hillFreq, this.ghats.hillFreq, g);
+    const p = this.params(km);
     const dist = nt ? nt.dist : NEAR_MAX;
-    const amp = near + (far - near) * smoothstep(30, 240, dist);
+    const amp = p.near + (p.far - p.near) * smoothstep(30, 240, dist);
     let h = this.bilinear(this.base, x, z);
-    h += fbm(x * freq, z * freq, 5, 3) * amp;
-    if (g > 0) h += g * ridged(x * freq * 0.6, z * freq * 0.6, 4, 5) * amp * 0.9 * smoothstep(60, 240, dist);
+    h += fbm(x * p.freq, z * p.freq, 5, 3) * amp;
+    if (p.ridges > 0) h += p.ridges * ridged(x * p.freq * 0.6, z * p.freq * 0.6, 4, 5) * amp * smoothstep(60, 240, dist);
+    if (p.dunes > 0) {
+      // barchan-like dune ridges across the prevailing wind, ripples on top; flat sand near the line
+      const u = x * 0.8 + z * 0.6, v = -x * 0.6 + z * 0.8;
+      const crest = ridged(u * 0.0045, v * 0.0016, 3, 21);
+      const ripple = fbm(u * 0.08, v * 0.02, 2, 23) * 0.25;
+      h += (crest * crest * 1.6 - 0.25 + ripple) * p.dunes * smoothstep(40, 260, dist);
+    }
     h += fbm(x * 0.035, z * 0.035, 2, 9) * 0.5;
     return h;
   }
@@ -288,6 +302,14 @@ export class TerrainField {
     for (const g of this.grounds) {
       const dg = Math.hypot(x - g.x, z - g.z);
       if (dg < g.r + 25) h = lerp(this.natural(g.x, g.z, null), h, smoothstep(g.r, g.r + 25, dg));
+    }
+
+    // freight yards: levelled at rail height out to the yard's edge (the quay at a port)
+    if (nt) for (const y of this.route.yards) {
+      const lat = nt.d * y.side;
+      if (nt.km < y.fromKm - 0.06 || nt.km > y.toKm + 0.06 || lat < 0 || lat > y.widthM + 40) continue;
+      const k = smoothstep(y.fromKm - 0.06, y.fromKm, nt.km) * (1 - smoothstep(y.toKm, y.toKm + 0.06, nt.km)) * (1 - smoothstep(y.widthM, y.widthM + 40, lat));
+      h = lerp(h, this.route.alignment.elevationAt(nt.km) - 0.15, k);
     }
 
     if (nt) h = this.carve(nt, h, out);

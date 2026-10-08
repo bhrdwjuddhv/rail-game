@@ -1,0 +1,24 @@
+{
+  "id": "brakevan",
+  "name": "Brake Van",
+  "kind": "brakevan",
+  "massEmptyT": 22,
+  "massLoadedT": 22,
+  "lengthM": 9.6,
+  "bogieCentresM": 5.6,
+  "axleSpacingM": 1.8,
+  "maxBrakeForceKN": 40,
+  "resistance": {
+    "aN": 450,
+    "bNperMs": 6,
+    "cNperMs2": 1.8
+  },
+  "livery": {
+    "body": "#5b3424",
+    "band": "#e8e2d0",
+    "roof": "#4a4642",
+    "window": "#1b2228"
+  },
+  "windows": "none",
+  "interiorLight": "#000000"
+}

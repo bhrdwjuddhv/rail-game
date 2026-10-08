@@ -1,0 +1,35 @@
+{
+  "id": "container-empty",
+  "name": "Container Wagon (empty)",
+  "kind": "container",
+  "containers": "empty",
+  "massEmptyT": 22,
+  "massLoadedT": 22,
+  "lengthM": 18.6,
+  "bogieCentresM": 13.4,
+  "axleSpacingM": 2,
+  "maxBrakeForceKN": 75,
+  "resistance": {
+    "aN": 1200,
+    "bNperMs": 13,
+    "cNperMs2": 1.5
+  },
+  "livery": {
+    "body": "#2c3034",
+    "band": "#2c3034",
+    "roof": "#2c3034",
+    "window": "#2c3034"
+  },
+  "windows": "none",
+  "interiorLight": "#000000",
+  "tints": [
+    "#2f6db5",
+    "#b8352e",
+    "#2f8a4a",
+    "#8e979c",
+    "#e27a2a",
+    "#e9e9e4",
+    "#3a4f8a",
+    "#9a2f2f"
+  ]
+}

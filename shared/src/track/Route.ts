@@ -13,9 +13,16 @@ export interface StationData {
   lines: { id: string; offset: number }[];
   platforms: { num: string; from: number; to: number; lines: string[] }[];
   crossovers?: CrossoverData[];
+  /**
+   * Freight crossing station: platformLengthM is then the standing length of
+   * its loops (a 1.5 km train fits), and only a short, low service platform of
+   * this length is built by the station building.
+   */
+  servicePlatformM?: number;
 }
 export interface StructureData {
-  type: 'bridge' | 'tunnel'; style?: 'girder' | 'steel-truss' | 'arch-viaduct';
+  /** rob: a road over-bridge crossing the line (fromKm..toKm = its width) */
+  type: 'bridge' | 'tunnel' | 'rob'; style?: 'girder' | 'steel-truss' | 'arch-viaduct';
   fromKm: number; toKm: number; name: string;
   river?: { width: number; depth: number; straight?: boolean };
 }
@@ -43,13 +50,33 @@ export interface RouteData {
   features: { type: string; km: number }[];
   /** crossovers between running lines away from stations */
   crossovers?: CrossoverData[];
+  /** contact wire height above rail (m): 5.55 standard, about 7.4 high-rise for double-stack containers */
+  oheContactHeightM?: number;
+  /** a dedicated freight corridor: only goods trains (traffic, menus) */
+  freight?: boolean;
+  /** the sea beside the line from fromKm past the route end: shore shoreM out on `side` (1 = Up side) */
+  sea?: { fromKm: number; side: 1 | -1; shoreM: number };
 }
 export interface RegionData {
   id: string; name: string; ground: string[]; crops: { name: string; color: string }[];
   hillAmpNear: number; hillAmpFar: number; hillFreq: number; sideSlope: number;
   treeTypes: string[]; treeDensity: number; pondsPerKm2: number; kilnsPerKm2: number; villagesPerKm2: number;
   stationStyle: 'brick' | 'stone'; regionalScript: string;
+  /**
+   * Landscape type (default: ghats when sideSlope > 0, else plains). desert:
+   * sand dunes away from the line, scrub; hills: rocky ridges and scrub;
+   * coast: flat salt pans and sand by the sea.
+   */
+  biome?: 'plains' | 'ghats' | 'desert' | 'hills' | 'coast';
+  /** height (m) of sand dunes away from the line */
+  dunes?: number;
+  /** share of ridged mountain crests in the distant hills (ghats default 0.9) */
+  ridges?: number;
+  /** wind turbines on high ground, per km2 */
+  windTurbinesPerKm2?: number;
 }
+
+export const biomeOf = (r: RegionData) => r.biome ?? (r.sideSlope > 0 ? 'ghats' : 'plains');
 
 // ---------- compiled shapes ----------
 export type SignalKind = 'automatic' | 'distant' | 'home' | 'starter' | 'advanced-starter';
@@ -99,6 +126,9 @@ export function runningLinesOf(data: RouteData): RunningLine[] {
 /** Length (km) at each tunnel end where the hill is cut back to the portal face. */
 export const TUNNEL_PORTAL_KM = 0.012;
 
+/** A freight yard beside the line (container depot or port): level ground from the line out to widthM on `side`. */
+export interface YardDef { type: 'depot' | 'port'; km: number; fromKm: number; toKm: number; side: 1 | -1; widthM: number }
+
 export class Route {
   readonly alignment: Alignment;
   readonly graph: TrackGraph;
@@ -110,6 +140,8 @@ export class Route {
   readonly roads: RoadDef[] = [];
   readonly tunnels: StructureData[];
   readonly bridges: StructureData[];
+  /** container depot / port yards, from the route's features (surveyed km) */
+  readonly yards: YardDef[];
   readonly mirrored: boolean;
   /** all running lines, in this view's coordinates */
   readonly runningLines: RunningLine[];
@@ -132,6 +164,11 @@ export class Route {
     this.graph = new TrackGraph(this.lengthKm, this.runningLines);
     this.tunnels = data.structures.filter(s => s.type === 'tunnel');
     this.bridges = data.structures.filter(s => s.type === 'bridge');
+    this.yards = data.features.filter(f => f.type === 'depot' || f.type === 'port').map(f => {
+      const port = f.type === 'port';
+      const fromKm = Math.max(0.05, f.km - 1.3), toKm = Math.min(this.lengthKm - 0.1, f.km + 1.6);
+      return { type: f.type as 'depot' | 'port', km: f.km, fromKm, toKm, side: port ? (data.sea?.side ?? 1) : 1, widthM: port ? (data.sea?.shoreM ?? 150) : 120 };
+    });
     for (const s of data.stations) this.compileStation(s);
     (data.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `XO${i}`, undefined, []));
     this.compileSignals();
@@ -189,8 +226,13 @@ export class Route {
 
   station(code: string) { return this.stations.find(s => s.code === code); }
 
-  /** Head km at which a train of `lengthM` should stop: at the stop marker for its length class. */
+  /**
+   * Head km at which a train of `lengthM` should stop: at the stop marker for
+   * its length class; a train longer than the longest marker (a goods train)
+   * draws up to the far end, short of the starter signal.
+   */
   stopKm(st: StationInfo, trainLengthM: number) {
+    if (trainLengthM > LOCO_LENGTH_DEFAULT + 24 * 23.54 + 1) return st.platformToKm - 0.025;
     const coaches = Math.max(0, (trainLengthM - LOCO_LENGTH_DEFAULT) / 23.54);
     const cls = STOP_MARKER_COACHES.find(c => c >= coaches - 0.01) ?? 24;
     return this.markerKm(st, cls);
@@ -312,6 +354,21 @@ export class Route {
       for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
       this.rivers.push({ id: b.name, points: pts, width: b.river.width, floor, water: floor + (big ? 3 : 1.2), bridgeKm: mid, minX, maxX, minZ, maxZ });
     }
+    const sea = this.data.sea;
+    if (sea) {
+      // a 3 km wide straight "river" whose near bank is the shore, running on 3 km past the end of the line
+      const W = 3000, lat = sea.side * (sea.shoreM + W / 2), end = this.alignment.length;
+      const pts: { x: number; z: number }[] = [];
+      for (let s = sea.fromKm * 1000; s <= end + 3000; s += 25) {
+        this.alignment.sampleOffset(Math.min(s, end), lat, f);
+        const over = Math.max(0, s - end);
+        pts.push({ x: f.x + Math.cos(f.heading) * over, z: f.z + Math.sin(f.heading) * over });
+      }
+      const floor = this.alignment.elevationAt(Math.min(sea.fromKm * 1000, end) / 1000) - 9;
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+      this.rivers.push({ id: 'Sea', points: pts, width: W, floor, water: floor + 6, bridgeKm: -1, minX, maxX, minZ, maxZ });
+    }
   }
 
   private compileRoads() {
@@ -339,6 +396,27 @@ export class Route {
     return this.data.regions[this.data.regions.length - 1].region;
   }
   regionAt(km: number) { return this.regions[this.regionIdAt(km)]; }
+  /**
+   * Regions around km with weights summing to 1, blended over 1.5 km at
+   * their borders (terrain shape, ground colour and vegetation follow it).
+   */
+  regionWeights(km: number): { r: RegionData; w: number }[] {
+    const out: { r: RegionData; w: number }[] = [];
+    let sum = 0;
+    for (const e of this.data.regions) {
+      const r = this.regions[e.region];
+      if (!r) continue;
+      const d = km < e.fromKm ? e.fromKm - km : km > e.toKm ? km - e.toKm : 0;
+      const w = Math.max(0, 1 - d / 1.5);
+      if (w <= 0) continue;
+      const same = out.find(o => o.r === r);
+      if (same) same.w = Math.max(same.w, w); else out.push({ r, w });
+    }
+    for (const o of out) sum += o.w;
+    if (!sum) return [{ r: this.regionAt(km), w: 1 }];
+    for (const o of out) o.w /= sum;
+    return out;
+  }
   /** 0 = plains-like, 1 = ghats-like, blended over 1.5 km at region borders. */
   ghatFactor(km: number) {
     let best = 0;
@@ -367,7 +445,8 @@ export class Route {
     if (!st) return base;
     let w = base;
     for (const l of st.lines) w = Math.max(w, Math.abs(l.offset) + 4);
-    if (km >= st.platformFromKm - 0.06 && km <= st.platformToKm + 0.06) {
+    const half = (st.servicePlatformM ?? st.platformLengthM) / 2000;
+    if (km >= st.km - half - 0.06 && km <= st.km + half + 0.06) {
       for (const p of st.platforms) w = Math.max(w, Math.abs(p.from) + 1, Math.abs(p.to) + 1);
       w += 22; // station building / circulating area
     }

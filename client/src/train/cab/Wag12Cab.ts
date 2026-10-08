@@ -10,7 +10,7 @@ import { DriverDisplay, Gauge } from './Gauges';
  * WAG-12B driving cab (modern twin-section freight loco), built to sit inside
  * the 3D model's own cab shell (its walls, windows and roof stay). Loco body
  * frame: +x forward, +y up from rail top, +z right. Measured from the model:
- * floor y 1.21, windscreen bottom y 2.23 at x 9.12, top y 3.22 at x 8.63,
+ * windscreen glass y 2.23-3.33 (opening above a frame band from 2.66), raked to x 8.57-9.12,
  * glass z +-1.21, rear wall x 7.6, ceiling y 3.42.
  *
  * Layout after the real cab: a blue-grey desk; a raked instrument console
@@ -25,7 +25,8 @@ import { DriverDisplay, Gauge } from './Gauges';
  */
 
 const DESK = '#5b6c74', DESK_DARK = '#46555c', PANEL = '#56666e', INSET = '#2f3a40';
-const FLOOR_Y = 1.21, DESK_Y = 1.98, SILL_Y = 2.22, SILL_X = 8.92, DESK_X0 = 8.12, PANEL_X0 = 8.6;
+// the model's usable windscreen opening starts at y 2.66 (a black frame band below it): the console top covers that band
+const FLOOR_Y = 1.72, DESK_Y = 2.44, SILL_Y = 2.68, SILL_X = 8.9, DESK_X0 = 8.12, PANEL_X0 = 8.6;
 
 /** canvas sign (white text on dark blue) */
 function sign(atlas: Atlas, w: number, h: number, lines: string[]) {
@@ -72,7 +73,7 @@ export class Wag12Cab {
     shell.box(0.42, 0.04, 0.95, mat(DESK_X0 + 0.55, FLOOR_Y + 0.62, -0.32), DESK_DARK); // knee recess roof
     shell.box(0.06, 0.07, 2.8, mat(DESK_X0 + 0.02, DESK_Y - 0.035, 0), '#4f5f66');   // rounded front edge
     // console body behind the raked panel, and the sill under the windscreen
-    shell.box(SILL_X - PANEL_X0 + 0.22, SILL_Y - DESK_Y, 2.8, mat((PANEL_X0 + SILL_X + 0.22) / 2, (SILL_Y + DESK_Y) / 2, 0), DESK_DARK);
+    shell.box(0.22, SILL_Y - DESK_Y, 2.8, mat(SILL_X + 0.11, (SILL_Y + DESK_Y) / 2, 0), DESK_DARK); // behind the raked panel only
     shell.box(0.24, 0.04, 2.8, mat(SILL_X + 0.1, SILL_Y + 0.02, 0), DESK);
 
     // ---- raked instrument panel (local: x to the right, y up the panel, z toward the driver) ----
@@ -83,7 +84,7 @@ export class Wag12Cab {
     panel.rotation.set(-rake, -Math.PI / 2, 0, 'YXZ');
     this.group.add(panel);
     const pFaces = new GeoBatch(), pStatic = new GeoBatch();
-    pStatic.box(2.8, len + 0.02, 0.012, mat(0, 0, -0.006), PANEL);
+    pStatic.box(2.8, len + 0.02, 0.012, mat(0, 0, -0.008), PANEL); // front 2 mm behind the dial faces
     pStatic.box(1.0, len - 0.03, 0.006, mat(-0.12, 0, 0.002), INSET);   // centre screens inset
     pStatic.box(0.5, len - 0.05, 0.006, mat(0.66, 0, 0.002), '#45535a'); // right button panel
     const h = len / 2;
@@ -172,7 +173,7 @@ export class Wag12Cab {
       g.fillText('FORWARD', 120, 50); g.fillText('NEUTRAL', 120, 130); g.fillText('REVERSE', 120, 210);
       g.strokeStyle = '#e6e6e6'; g.lineWidth = 3; g.beginPath(); g.moveTo(60, 40); g.lineTo(60, 220); g.stroke();
     });
-    faces.add(uvToRect(new THREE.PlaneGeometry(0.24, 0.24), revLab), mat(rx, DESK_Y + 0.014, rz, Math.PI / 2, -Math.PI / 2), '#ffffff', 'faces');
+    faces.add(uvToRect(new THREE.PlaneGeometry(0.24, 0.24), revLab), mat(rx, DESK_Y + 0.014, rz, -Math.PI / 2, -Math.PI / 2), '#ffffff', 'faces'); // flat, reading from the seat
     this.rev = new THREE.Object3D();
     this.rev.position.set(rx, DESK_Y + 0.015, rz - 0.07);
     const rb = new GeoBatch();
@@ -189,12 +190,12 @@ export class Wag12Cab {
       for (let y = 44; y < 300; y += 11) { g.beginPath(); g.moveTo(14, y); g.lineTo(242, y); g.stroke(); }
       for (const x of [60, 120, 180]) { g.beginPath(); g.moveTo(x, 40); g.lineTo(x, 300); g.stroke(); }
     });
-    faces.add(uvToRect(new THREE.PlaneGeometry(0.21, 0.27), paper), mat(DESK_X0 + 0.24, DESK_Y + 0.004, -0.06, Math.PI / 2 + 0.06, -Math.PI / 2), '#ffffff', 'faces');
+    faces.add(uvToRect(new THREE.PlaneGeometry(0.21, 0.27), paper), mat(DESK_X0 + 0.24, DESK_Y + 0.004, -0.06, -Math.PI / 2 + 0.06, -Math.PI / 2), '#ffffff', 'faces');
     shell.box(0.2, 0.008, 0.06, mat(DESK_X0 + 0.37, DESK_Y + 0.006, -0.06), '#9aa0a3', 'metal');
 
     // ---- cab fan on the left pillar ---------------------------------------------------------
     const fanBase = new THREE.Object3D();
-    fanBase.position.set(8.55, 2.95, -1.18);
+    fanBase.position.set(8.5, 3.18, -1.16);
     fanBase.rotation.set(0, -Math.PI / 2 + 0.6, -0.15);
     const fb = new GeoBatch();
     fb.add(new THREE.TorusGeometry(0.16, 0.008, 6, 32), mat(0, 0, 0.02), '#1a1a1a', 'metal');
@@ -219,24 +220,26 @@ export class Wag12Cab {
     const s2 = sign(atlas, 512, 192, ['ALL DOORS AND WINDOWS', 'MUST BE KEPT CLOSED', 'DURING OPERATION']);
     faces.add(uvToRect(new THREE.PlaneGeometry(0.2, 0.075), s2), mat(8.466, SILL_Y + 0.92, 1.2, -Math.PI / 2), '#ffffff', 'faces');
     const s3 = sign(atlas, 512, 128, ['CLOSE THE MIRROR BEFORE MOVING', 'THE DEAD LOCOMOTIVE']);
-    faces.add(uvToRect(new THREE.PlaneGeometry(0.24, 0.06), s3), mat(8.3, 2.66, -1.39, 0), '#ffffff', 'faces');
+    faces.add(uvToRect(new THREE.PlaneGeometry(0.24, 0.06), s3), mat(8.3, 2.98, -1.39, 0), '#ffffff', 'faces');
 
     // ---- window guard: vertical bars outside the windscreen, slats along the top -----------
     const bars = new GeoBatch();
     const bx0 = 9.14, by0 = 2.23, bx1 = 8.65, by1 = 3.22;
     const barLen = Math.hypot(bx0 - bx1, by1 - by0), tilt = Math.atan2(bx0 - bx1, by1 - by0);
-    for (let z = -1.15; z <= 1.15 + 1e-6; z += 0.075) bars.box(0.008, barLen, 0.008, mat((bx0 + bx1) / 2 + 0.035, (by0 + by1) / 2, z, 0, 0, tilt), '#2b2f32', 'metal');
+    for (let z = -1.15; z <= 1.15 + 1e-6; z += 0.068) bars.box(0.005, barLen, 0.005, mat((bx0 + bx1) / 2 + 0.035, (by0 + by1) / 2, z, 0, 0, tilt), '#2b2f32', 'metal');
     for (const y of [by0 + 0.02, by1 - 0.03]) bars.box(0.012, 0.02, 2.36, mat(bx0 + 0.035 - (y - by0) * Math.tan(tilt), y, 0), '#2b2f32', 'metal');
-    for (let k = 0; k < 4; k++) { const y = by1 - 0.06 - k * 0.025; bars.box(0.006, 0.006, 2.3, mat(bx0 + 0.035 - (y - by0) * Math.tan(tilt), y, 0), '#3a3f42', 'metal'); }
+    for (let k = 0; k < 4; k++) { const y = by1 - 0.06 - k * 0.025; bars.box(0.004, 0.004, 2.3, mat(bx0 + 0.035 - (y - by0) * Math.tan(tilt), y, 0), '#3a3f42', 'metal'); }
 
     this.group.add(shell.build(M), faces.build(M, false), bars.build(M, false));
-    this.group.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = false; m.receiveShadow = true; } });
+    // no sun shadows inside: the shadow map is far too coarse for a desk (acne); the cab is lit by the windows and the cab lamp
+    this.group.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = false; m.receiveShadow = false; } });
   }
 
   update(dt: number, r: CabReadings, night: number) {
     const s = this.sys, b = this.brakes;
     this.t += dt;
-    this.faceMat.emissiveIntensity = 0.05 + night * 0.5;
+    // dial faces and labels are backlit a little (readable in the dim cab), more at night
+    this.faceMat.emissiveIntensity = 0.12 + night * 0.4;
     this.gauges.mr.set([r.mr], dt);
     this.gauges.bpbc.set([r.bp, r.bc], dt);
     this.gauges.er.set([r.er], dt);

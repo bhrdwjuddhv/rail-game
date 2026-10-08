@@ -1,0 +1,31 @@
+{
+  "id": "boxcar",
+  "name": "Covered Wagon (BCNX)",
+  "kind": "boxcar",
+  "massEmptyT": 27,
+  "massLoadedT": 85,
+  "lengthM": 14.4,
+  "bogieCentresM": 9.8,
+  "axleSpacingM": 2,
+  "maxBrakeForceKN": 70,
+  "resistance": {
+    "aN": 1150,
+    "bNperMs": 12,
+    "cNperMs2": 1.2
+  },
+  "livery": {
+    "body": "#6e3f2a",
+    "band": "#6e3f2a",
+    "roof": "#5a5550",
+    "window": "#6e3f2a"
+  },
+  "windows": "none",
+  "interiorLight": "#000000",
+  "tints": [
+    "#ffffff",
+    "#e8ddd6",
+    "#d9c9bd",
+    "#f2e4d8",
+    "#cdb9aa"
+  ]
+}

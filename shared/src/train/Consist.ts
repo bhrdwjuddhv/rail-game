@@ -9,7 +9,8 @@ export interface LocoData {
   resistance: { aN: number; bNperMs: number; cNperMs2: number };
   adhesion: { dry: number; wet: number; damp: number; sanderBonus: number };
   electrical: { lineVoltageKV: number; motorCount: number; ampsPerKN: number };
-  livery: { body: string; band: string; roof: string; underframe: string; logoText: string };
+  /** bufferBeam / numbers: buffer beam and painted number colours (default yellow beam, band-coloured numbers) */
+  livery: { body: string; band: string; roof: string; underframe: string; logoText: string; bufferBeam?: string; numbers?: string };
   cabLayout: string;
   soundProfile: { motorBaseHz: number; motorHzPerKmph: number; hornLowHz: number[]; hornHighHz: number[]; blowerHz: number };
   /** permanently coupled sections (WAG-12B: 2, each with a cab at its outer end); lengthM, massT and axles are for the whole loco */
@@ -87,6 +88,8 @@ export interface LocoModelFile {
   look?: { roughness: number; metalness: number };
   /** text repainted on the model's textures by the optimiser (texture index, pixel rect x y w h) */
   texturePatches?: { texture: number; rect: [number, number, number, number]; fill: string; text: string; color: string; size: number }[];
+  /** credit for a third-party model: shown in Controls & help and listed in CREDITS.md */
+  title?: string;
   author?: string;
   licence?: string;
   source?: string;
@@ -101,7 +104,16 @@ export interface CoachData {
   resistance: { aN: number; bNperMs: number; cNperMs2: number };
   livery: { body: string; band: string; roof: string; window: string };
   windows: 'open' | 'sealed' | 'none'; interiorLight: string;
+  /** body type (client model): passenger coach (default), covered boxcar, container wagon, brake van */
+  kind?: 'coach' | 'boxcar' | 'container' | 'brakevan';
+  /** container wagons: what they carry */
+  containers?: 'double' | 'double-20' | 'single' | 'empty';
+  /** colours the bodies are tinted with, one picked per vehicle (containers, weathering) */
+  tints?: string[];
 }
+
+/** Freight stock (boxcars, container wagons, brake vans). */
+export const isFreightStock = (c: CoachData | undefined) => !!c && (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan' || c.windows === 'none');
 
 export interface Vehicle {
   kind: 'loco' | 'coach';

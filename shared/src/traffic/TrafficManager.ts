@@ -10,6 +10,8 @@ export interface TrafficKind {
   cars: [number, number];
   carLengthM: number;
   maxKmph: number;
+  /** wagon type (data/coaches id) the rake is made of; default the generic goods wagon / express coaches */
+  stock?: string;
 }
 
 export interface TrafficConfig {
@@ -30,6 +32,15 @@ export const DEFAULT_TRAFFIC: TrafficConfig = {
   kinds: [
     { kind: 'passenger', weight: 1, cars: [16, 22], carLengthM: 24.14, maxKmph: 110 },
     { kind: 'goods', weight: 1, cars: [30, 45], carLengthM: 11.3, maxKmph: 65 },
+  ],
+};
+
+/** Dedicated freight corridors: goods trains only, double-stack container and covered wagon rakes. */
+export const FREIGHT_TRAFFIC: TrafficConfig = {
+  ...DEFAULT_TRAFFIC, headwayS: 360,
+  kinds: [
+    { kind: 'goods', weight: 2, cars: [42, 56], carLengthM: 19.2, maxKmph: 100, stock: 'container-ds' },
+    { kind: 'goods', weight: 1, cars: [55, 80], carLengthM: 15.0, maxKmph: 75, stock: 'boxcar' },
   ],
 };
 
@@ -88,7 +99,7 @@ export class TrafficManager {
     const def: AITrainDef = {
       id: `${this.route.running.id}-T${++this.seq}`, name: `${kind.kind === 'goods' ? 'Goods' : 'Express'} ${100 + this.seq}`,
       startKm: km, line: this.route.running.id, maxKmph: kind.maxKmph, wagons: cars, stops: [],
-      despawnKm: this.route.lengthKm - 0.4, track: this.route.running.id, carLengthM: kind.carLengthM, kind: kind.kind,
+      despawnKm: this.route.lengthKm - 0.4, track: this.route.running.id, carLengthM: kind.carLengthM, kind: kind.kind, stock: kind.stock,
     };
     const t = new AITrain(def, this.route, this.line.block);
     this.trains.push(t);

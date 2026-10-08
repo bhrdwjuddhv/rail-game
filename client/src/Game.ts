@@ -12,6 +12,7 @@ import { FrontCamera } from './camera/modes/FrontCamera';
 import { RearCamera } from './camera/modes/RearCamera';
 import { SideCamera } from './camera/modes/SideCamera';
 import { Benchmark, BenchConfig } from './core/Benchmark';
+import { AdaptiveResolution } from './core/AdaptiveResolution';
 import { Engine } from './core/Engine';
 import { textures } from './core/TextureLibrary';
 import { prof } from './core/Profiler';
@@ -34,6 +35,7 @@ import { godModePanel } from './ui/GodModePanel';
 import { TextureTest } from './ui/TextureTest';
 import { RoofCover, underRoof } from './infrastructure/Station';
 import { VigilancePopup } from './ui/VigilancePopup';
+import { PantoIndicator } from './ui/PantoIndicator';
 import { Wag12Cab } from './train/cab/Wag12Cab';
 import { RouteChoice, RoutePicker } from './ui/RoutePicker';
 import { DieselSmoke } from './train/Smoke';
@@ -49,6 +51,8 @@ import { buildLcRoad, buildParallelRoad, LevelCrossingView } from './infrastruct
 import { StationView } from './infrastructure/Station';
 import { buildLinesideChunk } from './infrastructure/TracksideProps';
 import { buildTunnel } from './infrastructure/Tunnel';
+import { buildFort, buildRob, buildYard } from './infrastructure/FreightCorridor';
+import { setContactHeight } from './infrastructure/OHE';
 import { Gamepad } from './input/Gamepad';
 import { enterGameScreen, iosFullscreenTip, isFullscreen, isTouch } from './input/Device';
 import { ResumeScreen } from './ui/ResumeScreen';
@@ -58,7 +62,7 @@ import { Mouse } from './input/Mouse';
 import { LineControl, RailControl } from '@rail/shared/signalling/Control';
 import { SignalView } from './signalling/SignalMeshBuilder';
 import { Railway } from '@rail/shared/track/Railway';
-import { DEFAULT_TRAFFIC, TrafficManager } from '@rail/shared/traffic/TrafficManager';
+import { DEFAULT_TRAFFIC, FREIGHT_TRAFFIC, TrafficManager } from '@rail/shared/traffic/TrafficManager';
 import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import { formatGradient } from '@rail/shared/track/Gradient';
 import { Route } from '@rail/shared/track/Route';
@@ -220,6 +224,7 @@ export class Game {
   constructor(private rs: RenderSystem, private menus: Menus, private ui: HTMLElement, private audio: AudioEngine | null, scenario: ScenarioData, overrides: ScenarioOverrides, readonly scenarioId: string, benchCfg?: BenchConfig) {
     this.bench = benchCfg ? new Benchmark(benchCfg, rs) : null;
     const routeData = ROUTES[scenario.route];
+    setContactHeight(routeData.oheContactHeightM ?? 5.55);
     this.railway = new Railway(routeData, REGIONS);
     this.route = this.railway.main;
     this.scenario = applyOverrides(scenario, overrides, this.route);
@@ -337,6 +342,8 @@ export class Game {
     this.perf = new PerfOverlay(ui, rs);
     // vigilance ACKNOWLEDGE pop-up (desktop shows the key too)
     this.routePicker = new RoutePicker(ui);
+    // desktop: an animated pantograph card while P raises / lowers it (touch has its button LED)
+    if (!isTouch && loco.type !== 'diesel') this.pantoInd = new PantoIndicator(ui);
     if (loco.type === 'diesel') { this.smoke = new DieselSmoke(); this.world.add(this.smoke.group); }
     this.vigPopup = new VigilancePopup(ui, () => (isTouch ? null : settings.get().keys.vigilance.replace(/^Key/, '')), () => this.sys.acknowledgeVigilance(this.dyn.speed));
     if (isTouch) {
@@ -419,12 +426,12 @@ export class Game {
     const vehicles: Vehicle[] = [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
     for (let i = 0; i < def.wagons; i++) {
       // express make-up: general coaches at both ends, sleepers with an AC coach every few
-      const type = goods ? 'goods' : pax[i < 2 || i >= def.wagons - 2 ? 0 : i % 5 === 0 ? Math.min(2, pax.length - 1) : Math.min(1, pax.length - 1)];
+      const type = def.stock ? freightStock(def.stock, i, def.wagons) : goods ? 'goods' : pax[i < 2 || i >= def.wagons - 2 ? 0 : i % 5 === 0 ? Math.min(2, pax.length - 1) : Math.min(1, pax.length - 1)];
       const c = COACHES[type];
       vehicles.push({ kind: 'coach', typeId: type, massKg: 0, length: c.lengthM, frontOffset: AI_LOCO_LEN + 0.6 + i * carM, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
     }
     const view = new TrainView(vehicles, loco, COACHES, goods ? 'freight' : 'passenger');
-    this.world.add(view.group);
+    this.addCompiled(view.group, () => this.ai.some(a => a.view === view), false);
     this.ctl.of(route).add(t);
     this.ai.push({ train: t, view, route, carM });
   }
@@ -446,8 +453,9 @@ export class Game {
     const other = this.ctl.lines.find(l => l !== this.lc);
     if (!other) return;
     let seed = 7;
+    const cfg = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
     for (const ch of this.scenarioId + other.route.running.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
-    const tm = new TrafficManager(other, { ...DEFAULT_TRAFFIC, seed });
+    const tm = new TrafficManager(other, { ...cfg, seed });
     tm.onSpawn = t => this.addAI(t, other.route);
     tm.onDespawn = t => this.removeAI(t);
     this.oncoming = tm;
@@ -481,6 +489,10 @@ export class Game {
     };
     for (const b of this.route.bridges) add(b.fromKm, b.toKm, () => buildBridge(this.route, this.field, b));
     for (const t of this.route.tunnels) add(t.fromKm, t.toKm, () => buildTunnel(this.route, t), undefined, ['tunnel']);
+    // freight corridor: road over-bridges, container depot / port, hill forts
+    for (const r of this.route.data.structures) if (r.type === 'rob') add(r.fromKm, r.toKm + 0.4, () => buildRob(this.route, this.field, r));
+    for (const y of this.route.yards) add(y.fromKm, y.toKm, () => buildYard(this.route, y), undefined, ['wall']);
+    for (const ft of this.route.data.features) if (ft.type === 'fort') add(ft.km - 0.9, ft.km + 0.9, () => buildFort(this.route, this.field, ft.km), undefined, ['wall']);
     for (const st of this.route.stations) {
       add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st); this.stations.set(st.code, v); return v.group; },
         () => { this.stations.get(st.code)?.dispose(); this.stations.delete(st.code); }, StationView.MATERIALS);
@@ -735,6 +747,9 @@ export class Game {
     return c ? new THREE.Vector3(...c.eye) : cabLayout(this.consist.loco).eye;
   }
   private vigPopup!: VigilancePopup;
+  private pantoInd: PantoIndicator | null = null;
+  private adaptiveRes = new AdaptiveResolution(isTouch ? 0.5 : 0.6);
+  private appliedScale = 1;
   private routePicker!: RoutePicker;
   /** diesel exhaust (null for electric locos) */
   private smoke: DieselSmoke | null = null;
@@ -811,9 +826,9 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ tutorial
-  /** Start (or restart) the "how to start the train" tutorial in the cab at a station. */
+  /** Start (or restart) the "how to start the train" tutorial (the diesel one on a diesel) in the cab at a station. */
   async startTutorial() {
-    const data = TUTORIALS['start-train'];
+    const data = TUTORIALS[this.sys.isDiesel ? 'start-diesel' : 'start-train'];
     if (!data) return;
     this.stopTutorial(false);
     const head = this.dyn.headKm;
@@ -827,6 +842,9 @@ export class Game {
     const s = this.sys, b = this.dyn.brakes;
     s.setThrottle(0); s.regen = 0;
     if (s.pantoUp) s.togglePanto();
+    // a diesel starts dead: engine stopped, fuel pump off
+    if (s.isDiesel && s.engine !== 'stopped') s.toggleEngine();
+    if (s.isDiesel && s.fuelPump) s.toggleFuelPump();
     s.headlight = 0;
     s.setReverser(0);
     s.setTrainBrake(BRAKE_POSITIONS.indexOf('Full Service'));
@@ -909,6 +927,7 @@ export class Game {
       bp: d.brakes.locoBP, trainBrake: d.brakes.handle, locoBrake: d.brakes.independent, hornSounded: this.tut.horn,
       notch: s.notch, speedKmph: Math.abs(d.speedKmph), underLimitSeconds: this.tut.underLimit,
       stoppedAfterMoving: this.tut.moved && Math.abs(d.speed) < 0.1,
+      fuelPump: s.fuelPump, engineRunning: s.engine === 'running',
     };
   }
 
@@ -938,6 +957,8 @@ export class Game {
     wind.setGrassFade(p.grassRadius);
     this.rs.setMaxPixelRatio(s.maxPixelRatio);
     this.rs.setRenderScale(s.renderScale);
+    this.appliedScale = s.renderScale;
+    this.adaptiveRes.scale = s.renderScale;
     this.cameras.camera.far = p.drawDistance + 400;
     this.audio?.setVolumes(s.volumes);
     if (!this.scenario.rules) this.time.scale = this.bench ? 0 : s.dayNightSpeed;
@@ -1278,7 +1299,10 @@ export class Game {
     for (const st of this.stations.values()) lampSpots.push(...st.lampSpots);
     this.lighting.update(inCab ? cam.position : this.trainView.group.position, this.time, this.weather, this.sky, settings.get().fogMultiplier, lampSpots, cam.position);
     this.lighting.fog.density = Math.max(this.lighting.fog.density, 1.35 / effective().drawDistance);
-    this.rs.setBloom(settings.get().bloom, 0.25 + night * 0.35 + Math.min(0.4, this.weather.p.fog * 20));
+    // bloom only where it shows (lamps at night, glow in fog, tunnel mouths): in daylight it costs a full-screen
+    // blur chain for almost nothing
+    const glow = night > 0.12 || this.weather.p.fog > 0.004 || this.lighting.tunnel > 0.05;
+    this.rs.setBloom(settings.get().bloom && glow, 0.25 + night * 0.35 + Math.min(0.4, this.weather.p.fog * 20));
     this.rs.renderer.toneMappingExposure = 1.0 + night * 0.35;
     const headlightOn = s.headlight > 0;
     lm.setBeam(headlightOn ? Math.min(0.12, (night * 0.06 + this.weather.p.fog * 3)) * (s.headlight === 2 ? 1 : 0.5) : 0);
@@ -1351,6 +1375,7 @@ export class Game {
     }
     this.highlight.update(this.t);
     this.uiAcc += dt; this.profAcc += dt; this.mapAcc += dt;
+    this.pantoInd?.update(this.sys.pantoPos, this.sys.pantoUp, performance.now()); // every frame: smooth travel
     if (this.uiAcc > 0.1) { this.uiAcc = 0; this.updateHud(); }
     if (this.profAcc > 0.2 && this.hud.visible) { this.profAcc = 0; this.profile.draw(this.line, this.block, d.headKm, this.limitAt, this.pathOffset, this.oncomingKms()); }
     if (this.mapAcc > 0.5) {
@@ -1368,6 +1393,12 @@ export class Game {
     const c = prof.counters;
     c.km = this.line.canonicalKm(d.headKm); c.tiles = this.chunks.tileCount; c.trackChunks = this.trackChunks.size; c.grass = this.chunks.grassCount; c.props = this.chunks.propCount;
     prof.frame(this.engine.rawMs);
+    // dynamic resolution (not in benchmarks: they measure a fixed setup)
+    const st = settings.get();
+    if (st.adaptiveQuality && !this.bench) {
+      const sc = this.adaptiveRes.update(this.engine.rawMs, this.rs.gpuMs, st.renderScale, dt);
+      if (Math.abs(sc - this.appliedScale) > 1e-3) { this.appliedScale = sc; this.rs.setRenderScale(sc); }
+    } else if (Math.abs(st.renderScale - this.appliedScale) > 1e-3) { this.appliedScale = st.renderScale; this.rs.setRenderScale(st.renderScale); }
     this.bench?.frame(this.engine.rawMs);
     this.perf.frame(dt);
   }
@@ -1473,6 +1504,20 @@ export class Game {
     return this.block.nextSignal(this.dyn.headKm, this.path.offsetAt(this.dyn.headKm), false, this.pathOffset);
   }
 
+  /**
+   * Add a newly built object to the world once its shaders are compiled. A
+   * shader compiled on first draw stalls the frame (about a second per program
+   * on ANGLE / Direct3D); compileAsync lets the driver compile in parallel
+   * (KHR_parallel_shader_compile) while we keep rendering. Objects are built a
+   * ring ahead of the draw distance, so the short wait is never seen.
+   * `now`: add at once (initial load, teleport: the loading screen covers it).
+   */
+  private addCompiled(o: THREE.Object3D, stillWanted: () => boolean, now: boolean) {
+    if (now) { this.world.add(o); return; }
+    const add = () => { if (stillWanted() && !o.parent) this.world.add(o); };
+    this.rs.renderer.compileAsync(o, this.rcam, this.scene).then(add, add);
+  }
+
   private updateStreaming(all: boolean) {
     const cam = this.cameras.camera.position;
     const p = effective();
@@ -1493,7 +1538,7 @@ export class Game {
         ls.position.copy(tc.position);
         g.add(tc, ls);
         this.trackChunks.set(i, g);
-        this.world.add(g);
+        this.addCompiled(g, () => this.trackChunks.get(i) === g, all);
       } else if (dd > want + 400 && have) {
         disposeObject(have);
         this.trackChunks.delete(i);
@@ -1504,7 +1549,7 @@ export class Game {
       // textures by area: acquire ahead of the build ring, release well after it
       if (!it.texHeld && dd < p.drawDistance + TEX_PREFETCH_M) { it.texHeld = true; for (const m of it.materials) textures.acquire(m); }
       else if (it.texHeld && dd > p.drawDistance + TEX_RELEASE_M) { it.texHeld = false; for (const m of it.materials) textures.release(m); }
-      if (dd < p.drawDistance && !it.obj && (all || built < 4)) { built++; it.obj = it.build(); this.world.add(it.obj); }
+      if (dd < p.drawDistance && !it.obj && (all || built < 4)) { built++; const o = (it.obj = it.build()); this.addCompiled(o, () => it.obj === o, all); }
       else if (dd > p.drawDistance + 600 && it.obj) it.dispose!();
     }
   }
@@ -1674,6 +1719,14 @@ export class Game {
     });
     return out;
   }
+}
+
+/** Wagon type of wagon i of n in an AI rake of `stock`: container trains carry a mix of loads; a brake van at the rear. */
+function freightStock(stock: string, i: number, n: number) {
+  if (i === n - 1 && COACHES.brakevan) return 'brakevan';
+  if (stock !== 'container-ds') return COACHES[stock] ? stock : 'goods';
+  const h = Math.abs(Math.sin(i * 91.7) * 4375.85) % 1;
+  return h < 0.6 ? 'container-ds' : h < 0.8 ? 'container-ds20' : h < 0.92 ? 'container-single' : 'container-empty';
 }
 
 function disposeObject(o: THREE.Object3D) {

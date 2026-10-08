@@ -1,0 +1,24 @@
+{
+  "id": "thar-desert",
+  "name": "Desert Plains",
+  "biome": "desert",
+  "ground": ["#d6b47c", "#cfa66a", "#ddbf8b"],
+  "crops": [
+    { "name": "bajra", "color": "#b5a05a" },
+    { "name": "guar", "color": "#8f9a4a" },
+    { "name": "fallow", "color": "#c49a62" }
+  ],
+  "hillAmpNear": 0.6,
+  "hillAmpFar": 7,
+  "hillFreq": 0.0012,
+  "sideSlope": 0,
+  "dunes": 11,
+  "windTurbinesPerKm2": 0.7,
+  "treeTypes": ["neem", "neem", "palm"],
+  "treeDensity": 0.1,
+  "pondsPerKm2": 0.05,
+  "kilnsPerKm2": 0.04,
+  "villagesPerKm2": 0.3,
+  "stationStyle": "stone",
+  "regionalScript": "gujarati"
+}

@@ -148,6 +148,8 @@ export class Menus {
       <div class="buttons vertical">
         <button data-a="scenarios">Scenarios</button><button data-a="free">Free roam</button>
         <button data-a="tutorial">Tutorial: how to start the train</button>
+        <button data-a="tutorial-diesel">Tutorial: start a diesel loco</button>
+        <button data-a="online" class="soon" aria-disabled="true" title="Multiplayer is on its way">Play Online <small>Coming soon</small></button>
         <button data-a="settings">Settings</button><button data-a="help">Controls &amp; help</button>
       </div>
       <p class="note">Fictional operator, stations and liveries. Everything is generated in the browser.</p></div>`);
@@ -158,6 +160,12 @@ export class Menus {
       if (a === 'tutorial') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear' }, { tutorial: true });
       if (a === 'settings') this.show(settingsPanel(() => this.main(), this.cb.captureKey), () => this.main());
       if (a === 'help') this.help(() => this.main());
+      if (a === 'tutorial-diesel') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear', loco: 'wdm-3d' }, { tutorial: true });
+      if (a === 'online') {
+        const b = el.querySelector<HTMLElement>('[data-a="online"] small')!;
+        b.textContent = 'Coming soon - drive with friends on the same line';
+        setTimeout(() => { b.textContent = 'Coming soon'; }, 2600);
+      }
     });
     this.show(el);
   }
@@ -166,7 +174,7 @@ export class Menus {
     const best = loadSave().best;
     const list = Object.values(SCENARIOS).filter(s => s.id !== 'free-roam');
     const el = html(`<div class="menu scen"><h2>Scenarios</h2>
-      <label class="loco-pick">Locomotive <select data-f="loco"><option value="">As in scenario</option>${Object.values(LOCOS).map(l => `<option value="${l.id}">${esc(l.name)} (${l.maxPowerKW} kW, ${l.maxSpeedKmph} km/h)</option>`).join('')}</select></label>
+      <h3>Locomotive</h3>${locoPicker('', true)}
       <div class="cards">${list.map(s => `
       <div class="card"><h3>${esc(s.name)} <small>${esc(s.difficulty)}</small></h3><p>${esc(s.description)}</p>
       <p class="meta">${esc(ROUTES[s.route]?.name ?? s.route)} &middot; ${s.time} &middot; ${WEATHER[s.weather].name} &middot; ${s.consist.coaches.reduce((a, c) => a + c.count, 0)} coaches
@@ -176,9 +184,10 @@ export class Menus {
     el.addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('button');
       if (!b) return;
+      if (pickLoco(el, b)) return;
       if (b.dataset.a === 'back') this.main();
       if (b.dataset.id) {
-        const loco = (el.querySelector('[data-f="loco"]') as HTMLSelectElement).value;
+        const loco = (el.querySelector('[data-f="loco"]') as HTMLInputElement).value;
         this.cb.start(b.dataset.id, loco ? { loco } : {});
       }
     });
@@ -196,7 +205,7 @@ export class Menus {
         ${route.lines && route.lines.length > 1 ? `<label>Line <select data-f="track"><option value="DOWN">Down line (towards ${esc(route.stations[route.stations.length - 1].name)})</option><option value="UP">Up line (towards ${esc(route.stations[0].name)})</option></select></label>` : ''}
         <label>Time <input type="time" value="${fr.time}" data-f="time"></label>
         <label>Weather <select data-f="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}">${WEATHER[w].name}</option>`).join('')}</select></label>
-        <label>Locomotive <select data-f="loco">${Object.values(LOCOS).map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></label>
+      </section><section class="wide"><h3>Locomotive</h3>${locoPicker(fr.consist.loco, false)}
       </section><section><h3>Consist builder</h3>
         ${Object.keys(counts).map(id => `<label>${esc(COACHES[id].name)} <input type="number" min="0" max="24" value="${counts[id]}" data-c="${id}"></label>`).join('')}
         <label>Loaded <input type="checkbox" checked data-f="loaded"></label>
@@ -208,14 +217,16 @@ export class Menus {
       const coaches = Object.keys(counts).map(id => ({ type: id, count: Math.max(0, Math.min(24, Number(el.querySelector<HTMLInputElement>(`[data-c="${id}"]`)!.value) || 0)) })).filter(c => c.count > 0);
       const n = coaches.reduce((a, c) => a + c.count, 0);
       const loaded = el.querySelector<HTMLInputElement>('[data-f="loaded"]')!.checked;
-      const mass = LOCOS[(el.querySelector('[data-f="loco"]') as HTMLSelectElement).value].massT + coaches.reduce((a, c) => a + c.count * (loaded ? COACHES[c.type].massLoadedT : COACHES[c.type].massEmptyT), 0);
+      const mass = (LOCOS[(el.querySelector('[data-f="loco"]') as HTMLInputElement).value]?.massT ?? 0) + coaches.reduce((a, c) => a + c.count * (loaded ? COACHES[c.type].massLoadedT : COACHES[c.type].massEmptyT), 0);
       summary.textContent = `${n} coaches, ${Math.round(mass)} t, ${Math.round(20.56 + n * 24.1)} m long${n > 24 ? ' - too long for platforms (max 24)' : ''}`;
       return { coaches, loaded, n };
     };
     read();
     el.addEventListener('input', read);
     el.addEventListener('click', e => {
-      const a = (e.target as HTMLElement).closest('button')?.dataset.a;
+      const btn = (e.target as HTMLElement).closest('button');
+      if (btn && pickLoco(el, btn)) { read(); return; }
+      const a = btn?.dataset.a;
       if (a === 'back') this.main();
       if (a === 'go') {
         const { coaches, loaded, n } = read();
@@ -229,7 +240,7 @@ export class Menus {
   }
 
   help(back: () => void) {
-    const el = html(`<div class="menu helpmenu">${isTouch ? TOUCH_HELP_HTML : HELP_HTML}<div class="buttons"><button data-a="back">Back</button></div></div>`);
+    const el = html(`<div class="menu helpmenu">${isTouch ? TOUCH_HELP_HTML : HELP_HTML}${creditsHtml()}<div class="buttons"><button data-a="back">Back</button></div></div>`);
     el.addEventListener('click', e => { if ((e.target as HTMLElement).closest('button')?.dataset.a === 'back') back(); });
     this.show(el, back);
   }
@@ -340,4 +351,35 @@ export class Menus {
     });
     this.show(el);
   }
+}
+
+/**
+ * Locomotive picker: a card per loco with its picture (assets/thumbs/<id>.jpg,
+ * captured from the game; a livery-coloured silhouette if a loco has none),
+ * name and performance. The choice is kept in a hidden [data-f="loco"] input.
+ */
+function locoPicker(selected: string, allowDefault: boolean) {
+  const card = (id: string, name: string, sub: string, colour: string, img: boolean) => `
+    <button type="button" class="loco-card${id === selected ? ' on' : ''}" data-loco="${id}" style="--liv:${colour}">
+      ${img ? `<img src="assets/thumbs/${id}.jpg" alt="" loading="lazy" onerror="this.remove()">` : ''}<span class="lc-name">${esc(name)}</span><small>${esc(sub)}</small></button>`;
+  return `<input type="hidden" data-f="loco" value="${selected}"><div class="loco-grid">
+    ${allowDefault ? card('', 'As in scenario', 'the scenario\'s own loco', '#3a4450', false) : ''}
+    ${Object.values(LOCOS).map(l => card(l.id, l.name, `${l.type === 'diesel' ? 'Diesel' : 'Electric'} · ${Math.round(l.maxPowerKW)} kW · ${l.maxSpeedKmph} km/h`, l.livery.body, true)).join('')}</div>`;
+}
+
+/** Handle a click on a loco card (true if it was one). */
+function pickLoco(root: HTMLElement, b: HTMLElement) {
+  if (b.dataset.loco === undefined) return false;
+  root.querySelector<HTMLInputElement>('[data-f="loco"]')!.value = b.dataset.loco;
+  root.querySelectorAll('.loco-card').forEach(c => c.classList.toggle('on', c === b));
+  return true;
+}
+
+/** Credits for third-party 3D models (attribution licences such as CC BY), from each loco's model data. */
+function creditsHtml() {
+  const rows = Object.values(LOCOS).filter(l => l.model?.author && !/FILL IN/.test(l.model.author)).map(l => {
+    const m = l.model!, src = /^https:///.test(m.source ?? '') ? `<a href="${esc(m.source!)}" target="_blank" rel="noopener">source</a>` : '';
+    return `<li>${esc(l.name)}: "${esc(m.title ?? l.name)}" by ${esc(m.author!)}, ${esc(m.licence ?? '')} ${src} (modified for the game)</li>`;
+  });
+  return `<h3>Credits</h3><ul class="credits">${rows.join('')}<li>Everything else: original work generated in code. Fictional operator, stations and liveries.</li></ul>`;
 }

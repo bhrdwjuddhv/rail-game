@@ -32,7 +32,8 @@ export class Lighting {
   }
 
   applyQuality(p: QualityPreset) {
-    const size = p.shadows === 'high' ? 4096 : p.shadows === 'low' ? 2048 : 0;
+    // 2048 over 220 m is about 11 cm a texel: as sharp as 4096 looked at driving distances, at a quarter of the fill
+    const size = p.shadows === 'high' ? 2048 : p.shadows === 'low' ? 1024 : 0;
     this.sun.castShadow = size > 0;
     if (size && size !== this.shadowSize) {
       this.sun.shadow.mapSize.set(size, size);

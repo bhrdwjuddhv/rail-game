@@ -1,0 +1,24 @@
+{
+  "id": "aravalli-hills",
+  "name": "Rocky Hills",
+  "biome": "hills",
+  "ground": ["#8d7b58", "#7f704f", "#988560"],
+  "crops": [
+    { "name": "wheat", "color": "#c2a95a" },
+    { "name": "mustard", "color": "#d6bf22" },
+    { "name": "green", "color": "#6c8f3a" }
+  ],
+  "hillAmpNear": 2.5,
+  "hillAmpFar": 95,
+  "hillFreq": 0.0021,
+  "sideSlope": 0,
+  "ridges": 1.15,
+  "windTurbinesPerKm2": 0.25,
+  "treeTypes": ["neem", "forest", "mango", "neem"],
+  "treeDensity": 0.32,
+  "pondsPerKm2": 0.6,
+  "kilnsPerKm2": 0.05,
+  "villagesPerKm2": 0.35,
+  "stationStyle": "stone",
+  "regionalScript": "gujarati"
+}

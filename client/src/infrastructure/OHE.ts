@@ -4,7 +4,9 @@ import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
 import type { Railway } from '@rail/shared/track/Railway';
 
-export const CONTACT_H = 5.55; // contact wire above rail top
+/** contact wire height above rail top (m): set per route (high-rise OHE on freight corridors) */
+export let CONTACT_H = 5.55;
+export function setContactHeight(h: number) { CONTACT_H = h; }
 const SYSTEM_H = 1.4;
 
 const mastCache = new WeakMap<Route, number[]>();
@@ -50,10 +52,12 @@ function iMast() {
   return (mastGeo = b.geometry('std')!);
 }
 
-let latticeGeo: THREE.BufferGeometry | null = null;
-/** Lattice upright for portals: four corner angles with zig-zag bracing on each face. */
+const latticeGeo = new Map<number, THREE.BufferGeometry>();
+/** Lattice upright for portals: four corner angles with zig-zag bracing on each face (cached per 0.5 m of height). */
 function latticeMast(h: number) {
-  if (latticeGeo) return latticeGeo;
+  h = Math.round(h * 2) / 2;
+  const hit = latticeGeo.get(h);
+  if (hit) return hit;
   const b = new GeoBatch(), w = 0.36, bay = 0.9;
   for (const [x, z] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) b.box(0.05, h, 0.05, mat(x * w / 2, h / 2, z * w / 2), GALV);
   const diag = Math.hypot(w, bay), ang = Math.atan2(bay, w);
@@ -63,7 +67,9 @@ function latticeMast(h: number) {
     for (const x of [-w / 2, w / 2]) b.box(0.02, 0.03, diag, mat(x, y + bay / 2, 0, 0, sgn * -ang), GALV);
   }
   b.box(0.6, 0.03, 0.6, mat(0, 0.015, 0), GALV);
-  return (latticeGeo = b.geometry('std')!);
+  const g = b.geometry('std')!;
+  latticeGeo.set(h, g);
+  return g;
 }
 
 /** OHE for chunk [s0,s1): masts, cantilevers/portals into `batch`, wires into `lines`. */
@@ -96,11 +102,11 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
         for (const lat of [lo, hi]) {
           const p = at(lat, rail);
           batch.box(0.9, 0.9, 0.9, mat(p.x, foot - 0.45, p.z, ry), '#a9a59c', 'concrete');
-          batch.add(latticeMast(rail + 8.0 - foot), mat(p.x, foot, p.z, ry), '#ffffff');
+          batch.add(latticeMast(rail + CONTACT_H + 2.45 - foot), mat(p.x, foot, p.z, ry), '#ffffff');
         }
         const c = at((lo + hi) / 2, rail);
-        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + 7.75, c.z, ry), GALV);
-        for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + 7.2, p.z, ry), GALV); }
+        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + CONTACT_H + 2.2, c.z, ry), GALV);
+        for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + CONTACT_H + 1.65, p.z, ry), GALV); }
       } else {
         // a mast outside each outer track, its cantilever reaching over that track
         // (single line: one mast on the left; double line: one each side)

@@ -243,6 +243,42 @@ function build(t: PropType): Template[] {
       return [{ geometry: grassTuft(), material: 'grass', shadow: false }];
     case 'treeImp': { const s = treeSize('mango'); return [{ geometry: crossedQuads(s.w, s.h), material: 'impostor', shadow: false }]; }
     case 'palmImp': { const s = treeSize('palm'); return [{ geometry: crossedQuads(s.w, s.h), material: 'impostorPalm', shadow: false }]; }
+    case 'camel': {
+      // long legs, humped body, curved neck (tinted per instance)
+      const c = '#c49a68';
+      b.add(new THREE.SphereGeometry(0.55, 10, 8), mat(0, 1.85, 0, 0, 0, 0, 1.55, 0.75, 0.75), c);
+      b.add(new THREE.SphereGeometry(0.38, 8, 6), mat(0.05, 2.3, 0, 0, 0, 0, 1, 0.9, 0.9), c);  // hump
+      for (const [x, z] of [[0.6, 0.22], [0.6, -0.22], [-0.6, 0.22], [-0.6, -0.22]]) b.cyl(0.07, 0.06, 1.45, 6, mat(x, 0.72, z), c);
+      b.cyl(0.12, 0.15, 0.95, 6, mat(1.05, 2.25, 0, 0, 0, -0.6), c);   // neck
+      b.box(0.5, 0.22, 0.22, mat(1.45, 2.62, 0), c);                  // head
+      b.cyl(0.03, 0.03, 0.6, 4, mat(-0.88, 1.6, 0, 0, 0, 0.35), '#6b5236');
+      return one('std');
+    }
+    case 'shed':
+      // steel goods shed: walls, pitched sheet roof, roller doors
+      b.box(18, 6, 12, mat(0, 3, 0), '#c9cdd0');
+      b.add(new THREE.CylinderGeometry(0, 9.5, 2, 4, 1), mat(0, 7, 0, Math.PI / 4, 0, 0, 1.36, 1, 0.92), '#7d8a93', 'std');
+      for (const x of [-5, 0, 5]) b.box(3.5, 4.2, 0.1, mat(x, 2.1, 6.02), '#5a646b');
+      return one('std');
+    case 'warehouse':
+      // big logistics warehouse: long low box, blue cladding band, loading bays
+      b.box(48, 10, 24, mat(0, 5, 0), '#d9dcde');
+      b.box(48.2, 1.6, 24.2, mat(0, 8.2, 0), '#2f5f8f');
+      b.box(48.6, 0.4, 24.6, mat(0, 10.2, 0), '#a7adb1');
+      for (let x = -20; x <= 20; x += 5) b.box(3.2, 4, 0.12, mat(x, 2.4, 12.03), '#4c555b');
+      b.box(48, 1.2, 4, mat(0, 0.6, 14), '#8f8a80');   // loading dock
+      return one('std');
+    case 'turbine': {
+      // 3-blade wind turbine, ~80 m hub height (rotation = yaw into the wind)
+      b.cyl(1.2, 2.2, 80, 12, mat(0, 40, 0), '#eceeee');
+      b.box(9, 3.6, 3.4, mat(1.5, 81.5, 0), '#e4e6e6');
+      b.add(new THREE.SphereGeometry(1.4, 10, 8), mat(-3.2, 81.5, 0), '#e4e6e6');
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2 + 0.3;
+        b.box(0.5, 38, 2.2, mat(-3.6, 81.5, 0).multiply(new THREE.Matrix4().makeRotationX(a)).multiply(mat(0, 19.5, 0)), '#f2f3f3');
+      }
+      return one('std');
+    }
   }
 }
 

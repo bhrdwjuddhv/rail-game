@@ -1,0 +1,19 @@
+{
+  "id": "double-stack-express",
+  "name": "Double Stack Express",
+  "difficulty": "Medium",
+  "description": "60 double-stack container wagons from Sagarpattan Port to the inland depot at Marudhar, under the high-rise wires at up to 100 km/h. Salt pans, the hills and the desert at sunset. Watch your braking distance: 4,000 tonnes behind you take a long time to stop.",
+  "route": "freight-corridor",
+  "start": { "km": 70.4, "track": "UP", "atPlatform": "SGPT", "line": "UL" },
+  "consist": { "loco": "wag-12b", "coaches": [ { "type": "container-ds", "count": 38 }, { "type": "container-ds20", "count": 14 }, { "type": "container-single", "count": 5 }, { "type": "container-empty", "count": 3 }, { "type": "brakevan", "count": 1 } ], "loaded": true },
+  "time": "16:40",
+  "timeScale": 1,
+  "weather": "clear",
+  "timetable": [
+    { "station": "SGPT", "dep": "16:43", "line": "UL" },
+    { "station": "MRDI", "arr": "17:50", "line": "UL" }
+  ],
+  "aiTrains": [],
+  "endStation": "MRDI",
+  "rules": true
+}

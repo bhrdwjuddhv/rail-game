@@ -41,4 +41,17 @@ export const BUG_CAMERAS: Record<string, BugCamera[]> = {
     { id: 'tunnel-inside', label: '1.9 Inside Tunnel No. 2, rain (cab)', trainKm: 37.9, cab: true, weather: 'rain' },
     { id: 'night-station', label: '1.10 Station at night', eye: { km: 0.95, offset: -14, h: 3 }, look: { km: 1.03, offset: -5, h: 1 }, hours: 21 },
   ],
+  'freight-corridor': [
+    { id: 'fc-depot', label: 'Container depot, Marudhar', eye: { km: 0.75, offset: 70, h: 32 }, look: { km: 1.5, offset: 60, h: 0 }, trainKm: 2.1, hours: 8 },
+    { id: 'fc-rob', label: 'Road over-bridge under high-rise wires', eye: { km: 5.42, offset: -6, h: 3 }, look: { km: 5.6, offset: 0, h: 8 }, hours: 9 },
+    { id: 'fc-dunes', label: 'Desert dunes at sunset', eye: { km: 12, offset: -25, h: 5 }, look: { km: 12.5, offset: 260, h: 8 }, hours: 18.1 },
+    { id: 'fc-wind', label: 'Wind farm on the dunes', eye: { km: 19.6, offset: 12, h: 4 }, look: { km: 20.4, offset: 700, h: 50 }, hours: 10 },
+    { id: 'fc-hills', label: 'Rocky hills', eye: { km: 33.4, offset: 25, h: 9 }, look: { km: 34.3, offset: -10, h: 25 }, hours: 8.5 },
+    { id: 'fc-bridge', label: 'Reti Nadi bridge', eye: { km: 37.85, offset: 140, h: 12 }, look: { km: 38.2, offset: 0, h: 6 }, hours: 16 },
+    { id: 'fc-fort-r', label: 'Hill fort (right)', eye: { km: 40.9, offset: 8, h: 4 }, look: { km: 41.2, offset: 600, h: 60 }, hours: 17 },
+    { id: 'fc-fort-l', label: 'Hill fort (left)', eye: { km: 40.9, offset: -8, h: 4 }, look: { km: 41.2, offset: -600, h: 60 }, hours: 17 },
+    { id: 'fc-salt', label: 'Salt pans on the coast', eye: { km: 62, offset: -20, h: 6 }, look: { km: 62.5, offset: -250, h: 0 }, hours: 11 },
+    { id: 'fc-port', label: 'Port terminal', eye: { km: 69.4, offset: -40, h: 45 }, look: { km: 70.3, offset: 170, h: 10 }, hours: 15 },
+    { id: 'fc-cranes', label: 'Quay cranes and ship', eye: { km: 70.05, offset: 135, h: 5 }, look: { km: 70.4, offset: 200, h: 30 }, hours: 15 },
+  ],
 };

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { hash2, lerp } from '@rail/shared/util';
-import { Route, RegionData, RouteData } from '@rail/shared/track/Route';
+import { biomeOf, Route, RegionData, RouteData } from '@rail/shared/track/Route';
 import { GroundSample, TerrainField } from './TerrainField';
 import { placeScenery, TileInfo } from './scenery/Placement';
 import { LAYER, LAYER_COUNT } from './terrainLayers';
@@ -18,16 +18,12 @@ const hex = (s: string): [number, number, number] => {
   const n = parseInt(s.slice(1), 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 };
-let plains: RegionData, ghats: RegionData;
 
 self.onmessage = (e: MessageEvent) => {
   const m = e.data;
   if (m.type === 'init') {
     route = new Route(m.route as RouteData, m.regions as Record<string, RegionData>);
     field = new TerrainField(route);
-    const regs = Object.values(route.regions);
-    plains = regs.find(r => r.sideSlope === 0) ?? regs[0];
-    ghats = regs.find(r => r.sideSlope > 0) ?? regs[0];
     (self as any).postMessage({ type: 'ready' });
     return;
   }
@@ -180,20 +176,34 @@ const CROP_LAYER: Record<string, number> = { wheat: LAYER.wheat, mustard: LAYER.
  * Each decision mixes both the same way, so the textured ground follows the
  * same fields, roads, cuttings and river banks.
  */
+/** Base ground layers of each landscape type (weights, before fields, roads and the railway). */
+function baseLayers(b: string, dry: number, w: Float32Array, k: number) {
+  switch (b) {
+    case 'ghats': w[LAYER.grass] += 0.45 * k; w[LAYER.forest] += 0.55 * k; break;
+    case 'desert': w[LAYER.sand] += (0.8 - dry * 0.2) * k; w[LAYER.soil] += (0.2 + dry * 0.2) * k; break;
+    case 'hills': w[LAYER.soil] += 0.45 * k; w[LAYER.rock] += 0.18 * k; w[LAYER.laterite] += 0.17 * k; w[LAYER.grass] += 0.2 * k; break;
+    case 'coast': w[LAYER.sand] += 0.45 * k; w[LAYER.grass] += 0.35 * k; w[LAYER.mud] += 0.2 * k; break;
+    default: w[LAYER.grass] += (1 - dry * 0.7) * k; w[LAYER.soil] += dry * 0.7 * k;
+  }
+}
+
 function colourAt(x: number, z: number, info: TileInfo, k: number, natural: number, river: number, pond: number, ny: number, w: Float32Array): [number, number, number] {
   const km = info.km[k], dist = info.dist[k];
-  const g = field.ghatAt(km);
   const n = hash2(Math.floor(x / 23), Math.floor(z / 23), 5);
-  const pg = hex(plains.ground[Math.floor(n * plains.ground.length)]);
-  const gg = hex(ghats.ground[Math.floor(n * ghats.ground.length)]);
-  let c: [number, number, number] = [lerp(pg[0], gg[0], g), lerp(pg[1], gg[1], g), lerp(pg[2], gg[2], g)];
-  // base layers: plains grass with patches of dry soil; ghats forest floor and grass
-  w.fill(0);
   const dry = hash2(Math.floor(x / 61), Math.floor(z / 61), 11) < 0.28 ? 1 : 0;
-  w[LAYER.grass] = (1 - g) * (1 - dry * 0.7) + g * 0.45;
-  w[LAYER.soil] = (1 - g) * dry * 0.7;
-  w[LAYER.forest] = g * 0.55;
-  const zone = dist < 1800 ? route.zoneAt(km).zone : g > 0.5 ? 'ghats' : 'fields';
+  // regions blended at their borders: ground colour and base layers by landscape type
+  let c: [number, number, number] = [0, 0, 0];
+  w.fill(0);
+  let dom: RegionData = route.regionAt(km), domW = 0;
+  for (const { r, w: rw } of route.regionWeights(km)) {
+    const gc = hex(r.ground[Math.floor(n * r.ground.length)]);
+    c = [c[0] + gc[0] * rw, c[1] + gc[1] * rw, c[2] + gc[2] * rw];
+    baseLayers(biomeOf(r), dry, w, rw);
+    if (rw > domW) { domW = rw; dom = r; }
+  }
+  const biome = biomeOf(dom);
+  const g = biome === 'ghats' || biome === 'hills' ? 1 : 0;
+  const zone = dist < 1800 ? route.zoneAt(km).zone : biome === 'ghats' ? 'ghats' : biome === 'desert' ? 'desert' : biome === 'hills' ? 'hills' : 'fields';
   /** mix the colour toward o, and (when given) the layer weights toward layer, by t */
   const mix = (o: [number, number, number], t: number, layer = -1) => {
     c = [lerp(c[0], o[0], t), lerp(c[1], o[1], t), lerp(c[2], o[2], t)];
@@ -208,13 +218,14 @@ function colourAt(x: number, z: number, info: TileInfo, k: number, natural: numb
     const ca = Math.cos(a), sa = Math.sin(a);
     const u = x * ca + z * sa, v = -x * sa + z * ca;
     const fu = Math.floor(u / 64), fw = Math.floor(v / 42);
-    const crops = (g > 0.5 ? ghats : plains).crops;
+    const crops = dom.crops;
     const cropDef = crops[Math.floor(hash2(fu, fw, 9) * crops.length)];
     const bu = Math.abs(u / 64 - fu - 0.5) > 0.47 || Math.abs(v / 42 - fw - 0.5) > 0.46;
     mix(hex(cropDef.color), bu ? 0.2 : 0.85, CROP_LAYER[cropDef.name] ?? LAYER.grass);
   }
   if (zone === 'town' || zone === 'colony') mix(DUST, 0.5, LAYER.soil);
   if (zone === 'ghats' && dist < 120) mix(LATERITE, 0.18, LAYER.laterite);
+  if (zone === 'industrial' || zone === 'terminal') mix(DUST, 0.65, LAYER.soil);
   for (const gr of field.grounds) {
     const dg = Math.hypot(x - gr.x, z - gr.z);
     if (dg < gr.r) {
@@ -228,7 +239,11 @@ function colourAt(x: number, z: number, info: TileInfo, k: number, natural: numb
   const W = dist < 300 ? route.formationHalfWidth(km) : 0;
   if (!route.overTunnel(km)) {
     if (dist < W + 1.5) mix(GRAVEL, 0.92, LAYER.formation);
-    else if (dist < W + 60 && Math.abs(info.h[k] - natural) > 0.4) mix(g > 0.5 ? LATERITE : MUD, 0.55, g > 0.5 ? LAYER.laterite : LAYER.mud);
+    else if (dist < W + 60 && Math.abs(info.h[k] - natural) > 0.4) {
+      // cutting and bank earth: sand in the desert, laterite in the hills, mud elsewhere
+      if (biome === 'desert') mix(SAND, 0.55, LAYER.sand);
+      else mix(g > 0.5 ? LATERITE : MUD, 0.55, g > 0.5 ? LAYER.laterite : LAYER.mud);
+    }
   }
   // steep ground: the vertex colour greys toward rock; the texture shader adds triplanar rock by slope
   if (ny < 0.72) mix(ROCK, Math.min(1, (0.72 - ny) * 4));

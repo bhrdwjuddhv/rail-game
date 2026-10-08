@@ -68,6 +68,7 @@ export interface SettingsData {
   autoDetected: boolean;
   renderer: 'webgl' | 'webgpu' | 'webgpu-gl';
   maxPixelRatio: number;
+  /** dynamic resolution: drop the render scale when frames run slow (AdaptiveResolution) */
   adaptiveQuality: boolean;
   /** touch devices: fade the on-screen controls after a few seconds without a touch */
   touchAutoHide: boolean;

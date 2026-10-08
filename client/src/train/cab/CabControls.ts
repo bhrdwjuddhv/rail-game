@@ -39,7 +39,8 @@ export class CabControls {
   private ctl = new Map<string, Ctl>();
   private gauges: Record<string, Gauge> = {};
   private lamps: LampPanel;
-  private display: DriverDisplay;
+  /** the LCD driver display (modern cabs only) */
+  private display: DriverDisplay | null = null;
   private displayTimer = 0;
   private blink = 0;
   private faceMat: THREE.MeshStandardMaterial;
@@ -53,7 +54,7 @@ export class CabControls {
 
     // ---- instrument panel (gauges + lamps + display), faces the driver ----
     const panel = new THREE.Object3D();
-    panel.position.set(f - 0.43, L.deskTop + 0.2, -0.75);
+    panel.position.set(f - (L.vintage ? 0.48 : 0.43), L.panelY ?? L.deskTop + 0.2, -0.75);
     panel.lookAt(new THREE.Vector3().copy(L.eye).add(new THREE.Vector3(0, 0, -0.05)));
     panel.translateZ(0.045);
     this.group.add(panel);
@@ -61,18 +62,36 @@ export class CabControls {
     const addG = (id: string, x: number, y: number, label: string, min: number, max: number, unit: string, r: number, o: ConstructorParameters<typeof Gauge>[11] = {}) => {
       this.gauges[id] = new Gauge(atlas, pFaces, pStatic, panel, x, y, label, min, max, unit, r, o);
     };
-    addG('speed', 0, 0, 'km/h', 0, 160, 'SPEED', 0.1, { majors: 8, redFrom: 140 });
-    addG('bpbc', -0.29, 0.07, 'BP / BC', 0, 10, 'kg/cm²', 0.068, { majors: 5, needles: ['BP', 'BC'] });
-    addG('mr', -0.46, 0.07, 'MR', 0, 12, 'kg/cm²', 0.06, { majors: 6 });
-    // diesel: the OHE voltmeter is an engine tachometer
-    const diesel = sys.isDiesel;
-    if (diesel) addG('kv', 0.29, 0.07, 'ENGINE', 0, 1200, 'rpm', 0.06, { majors: 6, redFrom: 1100 });
-    else addG('kv', 0.29, 0.07, 'OHE', 0, 32, 'kV', 0.06, { majors: 8, redFrom: 29 });
-    addG('amps', 0.46, 0.07, 'TM', 0, 1200, 'A', 0.06, { majors: 6, redFrom: 1000 });
-    addG('te', -0.29, -0.1, 'TE', 0, 350, 'kN', 0.055, { majors: 7 });
-    this.display = new DriverDisplay(0.26, 0.16);
-    this.display.mesh.position.set(0.37, -0.1, 0.002);
-    panel.add(this.display.mesh);
+    const diesel = sys.isDiesel, old = !!L.vintage;
+    if (old) {
+      // older diesel: a row of big round gauges, no display; the speedometer has its own box on the desk
+      addG('mr', -0.48, 0.03, 'MR', 0, 12, 'kg/cm²', 0.072, { majors: 6 });
+      addG('bpbc', -0.25, 0.03, 'BP / BC', 0, 10, 'kg/cm²', 0.082, { majors: 5, needles: ['BP', 'BC'] });
+      addG('amps', 0.0, 0.03, 'LOAD', 0, 1200, 'A', 0.082, { majors: 6, redFrom: 1000 });
+      addG('kv', 0.25, 0.03, 'ENGINE', 0, 1200, 'rpm', 0.072, { majors: 6, redFrom: 1100 });
+      const box = new THREE.Object3D();
+      box.position.set(f - 0.7, L.deskTop + 0.36, -0.1);
+      box.lookAt(L.eye);
+      this.group.add(box);
+      const sFaces = new GeoBatch(), sStatic = new GeoBatch();
+      sStatic.box(0.27, 0.3, 0.18, mat(0, -0.01, -0.095), '#4b5a52', 'metal');
+      sStatic.box(0.06, 0.22, 0.06, mat(0, -0.2, -0.12), '#3c4842', 'metal');
+      this.gauges.speed = new Gauge(atlas, sFaces, sStatic, box, 0, 0.0, 'km/h', 0, 140, 'SPEED', 0.105, { majors: 7, redFrom: 120 });
+      const mats0 = { ...(M as unknown as Record<string, THREE.Material>), faces: this.faceMat };
+      box.add(sFaces.build(mats0, false), sStatic.build(mats0, false));
+    } else {
+      addG('speed', 0, 0, 'km/h', 0, 160, 'SPEED', 0.1, { majors: 8, redFrom: 140 });
+      addG('bpbc', -0.29, 0.07, 'BP / BC', 0, 10, 'kg/cm²', 0.068, { majors: 5, needles: ['BP', 'BC'] });
+      addG('mr', -0.46, 0.07, 'MR', 0, 12, 'kg/cm²', 0.06, { majors: 6 });
+      // diesel: the OHE voltmeter is an engine tachometer
+      if (diesel) addG('kv', 0.29, 0.07, 'ENGINE', 0, 1200, 'rpm', 0.06, { majors: 6, redFrom: 1100 });
+      else addG('kv', 0.29, 0.07, 'OHE', 0, 32, 'kV', 0.06, { majors: 8, redFrom: 29 });
+      addG('amps', 0.46, 0.07, 'TM', 0, 1200, 'A', 0.06, { majors: 6, redFrom: 1000 });
+      addG('te', -0.29, -0.1, 'TE', 0, 350, 'kN', 0.055, { majors: 7 });
+      this.display = new DriverDisplay(0.26, 0.16);
+      this.display.mesh.position.set(0.37, -0.1, 0.002);
+      panel.add(this.display.mesh);
+    }
     const lampDefs: [string, number][] = [['SLIP', 0xffb000], ['OVERSPEED', 0xff2a1a], ['VCD', 0xffd000], ['BRAKE', 0xff5a1a], diesel ? ['FUEL OFF', 0x3aa0ff] : ['PANTO DN', 0x3aa0ff], diesel ? ['ENG STOP', 0xff2a1a] : ['VCB OPEN', 0xff2a1a]];
     this.lamps = new LampPanel(atlas, pFaces, lampDefs.map(([label, color], i) => ({ label, color, x: -0.45 + i * 0.18, y: 0.18 })));
     panel.add(this.lamps.mesh);
@@ -171,7 +190,7 @@ export class CabControls {
 
   /** Object to highlight for a control id, "gauge:<id>" or "display" (null if unknown). */
   anchor(id: string): THREE.Object3D | null {
-    if (id === 'display') return this.display.mesh;
+    if (id === 'display') return this.display?.mesh ?? this.gauges.speed.anchor;
     if (id.startsWith('gauge:')) return this.gauges[id.slice(6)]?.anchor ?? null;
     return this.ctl.get(id)?.hit ?? null;
   }
@@ -235,13 +254,13 @@ export class CabControls {
     this.gauges.mr.set([r.mr], dt);
     this.gauges.kv.set([s.isDiesel ? s.engineRpm : r.kV], dt);
     this.gauges.amps.set([r.amps], dt);
-    this.gauges.te.set([r.teKN], dt);
+    this.gauges.te?.set([r.teKN], dt);
     const fl = Math.sin(this.blink * 8) > 0;
     const on = [r.slip, r.overspeed && fl, r.vigilance === 'penalty' || (r.vigilance === 'warning' && fl), r.brakeApplied,
       s.isDiesel ? !s.fuelPump : r.pantoDown, s.isDiesel ? s.engine !== 'running' && (s.engine === 'stopped' || fl) : r.vcbOpen];
     LAMPS.forEach((_, i) => this.lamps.set(i, on[i]));
     this.displayTimer -= dt;
-    if (this.displayTimer <= 0) {
+    if (this.display && this.displayTimer <= 0) {
       this.displayTimer = 0.2;
       this.display.draw({ speed: r.displaySpeed, limit: r.limit, km: r.km, notch: s.notch, regen: s.regen, reverser: s.reverser, nextSignal: r.nextSignal, signalDist: r.signalDist, aspect: r.aspect, te: r.teKN, clock: r.clock, units: r.units });
     }

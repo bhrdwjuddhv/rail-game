@@ -17,7 +17,9 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
         <label>Shadows <select data-s="shadows">${['off', 'low', 'high'].map(o => `<option ${o === s.shadows ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label>Draw distance <input type="range" min="1200" max="5000" step="100" value="${s.drawDistance}" data-s="drawDistance"><output>${s.drawDistance} m</output></label>
         <label>Fog density <input type="range" min="0.3" max="2" step="0.1" value="${s.fogMultiplier}" data-s="fogMultiplier"><output>${s.fogMultiplier}x</output></label>
-        <label>Bloom <input type="checkbox" ${s.bloom ? 'checked' : ''} data-s="bloom"></label>
+        <label>Bloom (night, fog, tunnels) <input type="checkbox" ${s.bloom ? 'checked' : ''} data-s="bloom"></label>
+        <label>Adaptive resolution <input type="checkbox" ${s.adaptiveQuality ? 'checked' : ''} data-s="adaptiveQuality"></label>
+        <p class="note">Adaptive resolution renders slightly sharper or softer to keep the frame rate smooth (render scale is the most it uses).</p>
         <p class="note">Antialiasing and quality preset changes to terrain detail apply fully after restarting the run.</p>
       </section>
       <section><h3>Audio</h3>

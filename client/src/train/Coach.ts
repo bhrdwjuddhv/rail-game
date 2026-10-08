@@ -7,6 +7,8 @@ import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
 import type { CoachData, LocoData, Vehicle } from '@rail/shared/train/Consist';
 import { LocoModel } from './Locomotive';
+import { wagonTemplate, wagonTint } from './Wagons';
+import { isFreightStock } from '@rail/shared/train/Consist';
 
 const FLOOR = 1.15, TOP = 4.0, CW = 3.2;
 
@@ -62,6 +64,11 @@ const bodyCache = new Map<string, { body: THREE.BufferGeometry; under: THREE.Buf
 function coachTemplate(c: CoachData) {
   let t = bodyCache.get(c.id);
   if (t) return t;
+  if (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan') {
+    t = wagonTemplate(c);
+    bodyCache.set(c.id, t);
+    return t;
+  }
   const goods = c.windows === 'none';
   const top = goods ? 3.6 : TOP, w = goods ? 3.0 : CW;
   const s = new THREE.Shape();
@@ -166,8 +173,11 @@ export class TrainView {
     vehicles.forEach((v, i) => { if (v.kind !== 'coach') return; const l = byType.get(v.typeId) ?? []; l.push(i); byType.set(v.typeId, l); });
     const M = materials();
     for (const [type, idx] of byType) {
-      const t = coachTemplate(coachTypes[type]);
+      const ct = coachTypes[type];
+      const t = coachTemplate(ct);
       const body = new THREE.InstancedMesh(t.body, t.mat, idx.length);
+      // per-vehicle colour (containers, weathering shades)
+      if (ct.tints?.length) idx.forEach((vi, k) => body.setColorAt(k, new THREE.Color(wagonTint(ct, vi)!)));
       const under = new THREE.InstancedMesh(t.under, M.metal, idx.length);
       body.castShadow = under.castShadow = true; body.receiveShadow = true;
       body.frustumCulled = under.frustumCulled = false;
@@ -182,7 +192,15 @@ export class TrainView {
     this.bogies.castShadow = true;
     this.group.add(this.bogies, this.wheels);
     for (let i = 0; i < vehicles.length; i++) this.vehicleMatrices.push(new THREE.Matrix4());
+    // goods trains: a flashing red end-of-train lamp on the last vehicle
+    const last = vehicles[vehicles.length - 1];
+    if (last.kind === 'coach' && isFreightStock(coachTypes[last.typeId])) {
+      this.tailLamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshBasicMaterial({ color: 0x330000 }));
+      this.group.add(this.tailLamp);
+    }
   }
+  private tailLamp: THREE.Mesh | null = null;
+  private lampT = 0;
 
   private railFrame(route: Route, km: number, offsetAt: (km: number) => number, out: TrackFrame) {
     route.alignment.sampleOffset(km * 1000, offsetAt(km), out);
@@ -251,6 +269,13 @@ export class TrainView {
       (set.body.material as THREE.MeshStandardMaterial).emissiveIntensity = nightLight;
     }
     for (const s of this.bodies.values()) { s.body.instanceMatrix.needsUpdate = true; s.under.instanceMatrix.needsUpdate = true; }
+    if (this.tailLamp) {
+      // on the rear headstock, left side, about 1.3 m up; 1 flash a second
+      const m = this.vehicleMatrices[vs.length - 1], last = vs[vs.length - 1];
+      this.tailLamp.position.set(-(last.length / 2) + 0.05, 1.35, -0.9).applyMatrix4(m).sub(this.group.position);
+      this.lampT = (performance.now() / 1000) % 1;
+      (this.tailLamp.material as THREE.MeshBasicMaterial).color.setRGB(this.lampT < 0.35 ? 4 : 0.25, 0, 0);
+    }
     this.bogies.instanceMatrix.needsUpdate = true;
     this.wheels.instanceMatrix.needsUpdate = true;
   }

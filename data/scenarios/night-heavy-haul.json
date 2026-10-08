@@ -1,0 +1,22 @@
+{
+  "id": "night-heavy-haul",
+  "name": "Night Heavy Haul",
+  "difficulty": "Hard",
+  "description": "Two WAG-12Bs in multiple with 90 loaded wagons, at night in fog. Take the loop at Saranpura Junction and stand clear while the container express behind you passes on the main line, then get your 8,000 tonnes moving again to Pahadgarh. Hard couplers: snatch the train and it will break in two.",
+  "route": "freight-corridor",
+  "start": { "km": 1.5, "track": "DOWN", "atPlatform": "MRDI", "line": "DL" },
+  "consist": { "loco": "wag-12b", "locos": 2, "coaches": [ { "type": "boxcar", "count": 90 }, { "type": "brakevan", "count": 1 } ], "loaded": true },
+  "time": "21:25",
+  "timeScale": 1,
+  "weather": "fog",
+  "timetable": [
+    { "station": "MRDI", "dep": "21:28", "line": "DL" },
+    { "station": "SRPJ", "arr": "22:06", "dep": "22:22", "line": "DL" },
+    { "station": "PHGH", "arr": "22:44", "line": "DL" }
+  ],
+  "aiTrains": [
+    { "id": "dsx-1", "name": "Container Express 402", "startKm": 2.2, "line": "DOWN", "track": "DOWN", "maxKmph": 100, "wagons": 45, "carLengthM": 19.2, "kind": "goods", "stock": "container-ds", "stops": [ { "station": "MRDI", "line": "DOWN", "dwellS": 1080 } ], "despawnKm": 71 }
+  ],
+  "endStation": "PHGH",
+  "rules": true
+}

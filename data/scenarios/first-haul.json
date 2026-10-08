@@ -1,0 +1,19 @@
+{
+  "id": "first-haul",
+  "name": "First Haul",
+  "difficulty": "Easy",
+  "description": "Your first heavy freight: a WAG-12B with 40 loaded covered wagons, from the Marudhar container depot across the desert to the crossing loop at Retiwala. Start gently to take up the coupler slack, keep it smooth, and stop with the train fully inside the loop.",
+  "route": "freight-corridor",
+  "start": { "km": 1.5, "track": "DOWN", "atPlatform": "MRDI", "line": "DL" },
+  "consist": { "loco": "wag-12b", "coaches": [ { "type": "boxcar", "count": 40 }, { "type": "brakevan", "count": 1 } ], "loaded": true },
+  "time": "06:05",
+  "timeScale": 1,
+  "weather": "clear",
+  "timetable": [
+    { "station": "MRDI", "dep": "06:08", "line": "DL" },
+    { "station": "RTWL", "arr": "06:32", "line": "DL" }
+  ],
+  "aiTrains": [],
+  "endStation": "RTWL",
+  "rules": true
+}

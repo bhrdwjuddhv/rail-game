@@ -1,0 +1,295 @@
+{
+  "id": "start-diesel",
+  "title": {
+    "en": "How to start a diesel locomotive"
+  },
+  "conditionsHelp": "complete: {manual} | {after: seconds} | {field, op, value} | {all: [...]} | {any: [...]}. Fields: fuelPump, engineRunning, pantoPos, vcb, headlight, reverser, signalAspect, bp, trainBrake, locoBrake, hornSounded, notch, speedKmph, underLimitSeconds, stoppedAfterMoving. Each step: text/key/highlight are for keyboard and mouse; touch.text/touch.highlight (an on-screen control: throttle, brake, horn, panto, headlight, wipers, cabLight, markers, reverser, signal, speedo, timetable, camera, pause, more, vcb, sander, flasher, locoBrake) are used on phones and tablets.",
+  "steps": [
+    {
+      "id": "welcome",
+      "text": {
+        "en": "You are in the cab of a WDM-3D diesel locomotive. The engine is cold and stopped, the brakes are on. A diesel makes its own power: first feed it fuel, then crank the engine. Drag with the mouse to look around."
+      },
+      "key": null,
+      "highlight": null,
+      "complete": {
+        "manual": true
+      },
+      "touch": {
+        "text": {
+          "en": "You are in the cab of a WDM-3D diesel locomotive. The engine is cold and stopped, the brakes are on. A diesel makes its own power: first feed it fuel, then crank the engine. Drag one finger to look around."
+        },
+        "highlight": null
+      }
+    },
+    {
+      "id": "fuel-pump",
+      "text": {
+        "en": "Switch on the fuel pump. The FUEL OFF lamp goes out: diesel now reaches the engine's injectors."
+      },
+      "key": "U",
+      "highlight": "fuelPump",
+      "complete": {
+        "field": "fuelPump",
+        "op": "==",
+        "value": true
+      },
+      "touch": {
+        "text": {
+          "en": "Switch on the fuel pump: tap the fuel pump button in the bottom bar. Its LED turns green when fuel is flowing."
+        },
+        "highlight": "fuelPump"
+      }
+    },
+    {
+      "id": "engine-start",
+      "text": {
+        "en": "Start the engine (throttle must be at idle). The starter cranks it for a few seconds, then it fires with a cloud of smoke. Watch the ENGINE rpm gauge."
+      },
+      "key": "E",
+      "highlight": "engine",
+      "showMe": "gauge:kv",
+      "complete": {
+        "field": "engineRunning",
+        "op": "==",
+        "value": true
+      },
+      "touch": {
+        "text": {
+          "en": "Start the engine: tap the engine button next to the fuel pump. The LED is amber while the starter cranks, then green once it fires. Keep the throttle at idle."
+        },
+        "highlight": "engine"
+      }
+    },
+    {
+      "id": "idle",
+      "text": {
+        "en": "Let it settle at idle for a moment: the rpm needle steadies at about 400 rpm and the main reservoir pressure (MR) builds up from the compressor."
+      },
+      "key": null,
+      "highlight": "gauge:kv",
+      "complete": {
+        "after": 6
+      },
+      "touch": {
+        "text": {
+          "en": "Let it settle at idle for a moment: the engine note steadies and the compressor builds up air pressure."
+        },
+        "highlight": null
+      }
+    },
+    {
+      "id": "headlights",
+      "text": {
+        "en": "Turn on the headlight. Press once for dim, twice for bright."
+      },
+      "key": "L",
+      "highlight": "headlight",
+      "complete": {
+        "field": "headlight",
+        "op": ">=",
+        "value": 1
+      },
+      "touch": {
+        "text": {
+          "en": "Turn on the headlight: tap the headlight button in the bottom bar. Tap once for dim, twice for bright."
+        },
+        "highlight": "headlight"
+      }
+    },
+    {
+      "id": "reverser",
+      "text": {
+        "en": "Set the reverser to Forward. It decides which way the traction motors drive the train."
+      },
+      "key": "W",
+      "highlight": "reverser",
+      "complete": {
+        "field": "reverser",
+        "op": "==",
+        "value": 1
+      },
+      "touch": {
+        "text": {
+          "en": "Set the reverser to Forward: tap F on the REVERSER switch (top right). It decides which way the traction motors drive the train."
+        },
+        "highlight": "reverser"
+      }
+    },
+    {
+      "id": "signal",
+      "text": {
+        "en": "Check the signal ahead. You may only start on a yellow, double yellow or green aspect. Red means stop: wait for it to clear."
+      },
+      "key": null,
+      "highlight": "signal",
+      "complete": {
+        "field": "signalAspect",
+        "op": "in",
+        "value": [
+          "Y",
+          "YY",
+          "G"
+        ]
+      },
+      "touch": {
+        "text": {
+          "en": "Check the next signal - the card at the top left shows its colour and distance. You may only start on a yellow, double yellow or green aspect. Red means stop: wait for it to clear."
+        },
+        "highlight": "signal"
+      }
+    },
+    {
+      "id": "train-brake",
+      "text": {
+        "en": "Release the automatic train brake: press ; until the handle reaches Running and the brake pipe (BP) needle climbs to about 5 kg/cm2."
+      },
+      "key": ";",
+      "highlight": "trainBrake",
+      "showMe": "gauge:bpbc",
+      "complete": {
+        "all": [
+          {
+            "field": "bp",
+            "op": ">=",
+            "value": 4.8
+          },
+          {
+            "field": "trainBrake",
+            "op": "<=",
+            "value": 1
+          }
+        ]
+      },
+      "touch": {
+        "text": {
+          "en": "Release the train brake: push the BRAKE lever (right side) all the way up to Rel, then let it settle at Run. The brake pipe pressure climbs to about 5 kg/cm2."
+        },
+        "highlight": "brake"
+      }
+    },
+    {
+      "id": "loco-brake",
+      "text": {
+        "en": "Release the independent loco brake with [ until the SA9 handle is fully off."
+      },
+      "key": "[",
+      "highlight": "locoBrake",
+      "complete": {
+        "field": "locoBrake",
+        "op": "==",
+        "value": 0
+      },
+      "touch": {
+        "text": {
+          "en": "Release the loco brake: tap ⋯, then Release next to Loco brake until it shows 0%."
+        },
+        "highlight": "locoBrake"
+      }
+    },
+    {
+      "id": "horn",
+      "text": {
+        "en": "Sound the horn before moving off to warn anyone on or near the track."
+      },
+      "key": "Space",
+      "highlight": "hornLow",
+      "complete": {
+        "field": "hornSounded",
+        "op": "==",
+        "value": true
+      },
+      "touch": {
+        "text": {
+          "en": "Sound the horn before moving off to warn anyone on or near the track: tap the blue horn button on the right, above the levers (hold it for a long blast)."
+        },
+        "highlight": "horn"
+      }
+    },
+    {
+      "id": "throttle",
+      "text": {
+        "en": "Open the throttle one notch at a time. A diesel answers slowly: the engine speeds up first, then the turbocharger, and only then does the pull build. Don't rush it - notch up again once the train is moving."
+      },
+      "key": "D",
+      "highlight": "throttle",
+      "showMe": "gauge:speed",
+      "complete": {
+        "all": [
+          {
+            "field": "notch",
+            "op": ">=",
+            "value": 1
+          },
+          {
+            "field": "speedKmph",
+            "op": ">=",
+            "value": 2
+          }
+        ]
+      },
+      "touch": {
+        "text": {
+          "en": "Apply power gently: push the THROTTLE lever (right side) up two or three notches. A long train takes a few seconds to start rolling - watch the speedometer."
+        },
+        "highlight": "throttle"
+      }
+    },
+    {
+      "id": "limit",
+      "text": {
+        "en": "Stay under the speed limit shown in the red circle on the HUD and on the driver display. Keep driving for a little while."
+      },
+      "key": null,
+      "highlight": "hud:limit",
+      "showMe": "display",
+      "complete": {
+        "field": "underLimitSeconds",
+        "op": ">=",
+        "value": 12
+      },
+      "touch": {
+        "text": {
+          "en": "Stay under the speed limit - the red-ringed sign on the speedometer. The arc turns red if you go over. Keep driving for a little while."
+        },
+        "highlight": "speedo"
+      }
+    },
+    {
+      "id": "stop",
+      "text": {
+        "en": "Now stop: notch down to 0 with A, then apply the train brake gently with ' (one or two service positions). Release the brake once you have stopped."
+      },
+      "key": "A then '",
+      "highlight": "trainBrake",
+      "complete": {
+        "field": "stoppedAfterMoving",
+        "op": "==",
+        "value": true
+      },
+      "touch": {
+        "text": {
+          "en": "Now stop: pull the THROTTLE lever down to 0, then pull the BRAKE lever down one or two steps. Push it back up to Run once you have stopped."
+        },
+        "highlight": "brake"
+      }
+    },
+    {
+      "id": "done",
+      "text": {
+        "en": "That's how to start and drive a diesel. To shut down at the end of a run: throttle idle, brakes on, engine stop (E), then fuel pump off (U). Press Esc for the menu."
+      },
+      "key": "Esc",
+      "highlight": null,
+      "complete": {
+        "manual": true
+      },
+      "touch": {
+        "text": {
+          "en": "That's how to start and drive a diesel. To shut down: throttle idle, brakes on, engine stop, then fuel pump off. Tap pause for the menu."
+        },
+        "highlight": null
+      }
+    }
+  ]
+}

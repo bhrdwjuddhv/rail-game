@@ -30,6 +30,18 @@ export class TrainDynamics {
   accel = 0;
   jerk = 0;
   slack = 0;      // coupler slack displacement felt in the cab (m)
+  /**
+   * In-train (coupler) forces, N: the largest pull (tension, >= 0) and push
+   * (compression, <= 0) at any coupling this step, and where (index of the
+   * vehicle behind that coupling). The train moves as one mass; the force at a
+   * coupling is what the vehicles behind it need to share that acceleration
+   * minus what acts on them directly - their own brakes (which apply from the
+   * front back, as the brake pipe reduction travels), gradients and
+   * resistance. Harsh power or braking on a long train shows up here.
+   */
+  couplerMaxN = 0;
+  couplerMinN = 0;
+  couplerAt = 0;
   private slackVel = 0;
   readonly traction: TractionModel;
   readonly brakes: BrakeSystem;
@@ -110,11 +122,34 @@ export class TrainDynamics {
     if (this.tailKm < env.minKm) { this.headKm = env.minKm + this.consist.length / 1000; this.hitBuffer = Math.abs(this.speed) > 0.3; this.speed = 0; }
 
     this.jerk = (this.accel - prevA) / dt;
+    this.couplerForces(env);
     // coupler slack as a damped spring driven by acceleration
     const k = 18, d = 5.5;
     this.slackVel += (-k * (this.slack + this.accel * 0.12) - d * this.slackVel) * dt;
     this.slack += this.slackVel * dt;
     this.guard(safe, c);
+  }
+
+  private couplerForces(env: TrackEnv) {
+    const vs = this.consist.vehicles, v = this.speed, b = this.brakes;
+    let mRear = 0, fRear = 0, maxT = 0, minT = 0, at = 0;
+    const dir = Math.sign(v) || Math.sign(this.accel) || 1;
+    // from the rear forward: tension at the coupling ahead of vehicle i
+    for (let i = vs.length - 1; i >= 1; i--) {
+      const veh = vs[i], m = veh.massKg * this.massScale;
+      const km = this.vehicleCentreKm(i);
+      const resist = veh.davis.a + veh.davis.b * Math.abs(v) + veh.davis.c * v * v + curveResistance(m, env.curvature(km));
+      let f = gradeForce(m, env.grade(km)) - dir * (b.vehicleForce(i) + (Math.abs(v) > 0.02 ? resist : 0));
+      if (veh.kind === 'loco') f += (this.traction.tractiveForce - dir * this.traction.regenForce) / this.consist.locoVehicles;
+      mRear += m * 1.06;
+      fRear += f;
+      const t = mRear * this.accel - fRear;
+      if (t > maxT) { maxT = t; if (t >= -minT) at = i; }
+      if (t < minT) { minT = t; if (-t > maxT) at = i; }
+    }
+    this.couplerMaxN = maxT;
+    this.couplerMinN = minT;
+    this.couplerAt = at;
   }
 
   /**

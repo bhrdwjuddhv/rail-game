@@ -60,9 +60,10 @@
   },
   "model": {
     "file": "assets/models/locos/wag-12b.glb",
-    "author": "TO FILL IN: model author",
-    "licence": "TO FILL IN: licence",
-    "source": "TO FILL IN: link (Sketchfab)",
+    "title": "WAG-12",
+    "author": "lakshya11x (Sketchfab: lakshyasharma11052002)",
+    "licence": "CC BY 4.0",
+    "source": "https://sketchfab.com/3d-models/wag-12-3330081494cd436db99345ea7094caac",
     "keep": {
       "axis": 2,
       "min": 0
@@ -127,7 +128,7 @@
       "Cube.011_55"
     ],
     "cab": {
-      "eye": [7.95, 2.62, -0.42],
+      "eye": [7.7, 3.0, -0.42],
       "interior": "wag12"
     }
   }

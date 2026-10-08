@@ -10,6 +10,10 @@ export interface CabLayout {
   floor: number;
   eye: THREE.Vector3; // seated driver eye position
   deskTop: number;
+  /** older diesel cab: upright front with small barred windows over the short hood, pale blue-green desk, round gauges only */
+  vintage?: boolean;
+  /** height of the instrument panel centre (default deskTop + 0.2) */
+  panelY?: number;
 }
 
 /**
@@ -19,6 +23,8 @@ export interface CabLayout {
  */
 export function cabLayout(loco: LocoData): CabLayout {
   const front = loco.lengthM / sectionsOf(loco) / 2 - (loco.bodyStyle === 'diesel-hood' ? 3.1 : 0);
+  // a WDM-3 type cab: the driver sits higher, looking out over the short hood
+  if (loco.cabLayout.startsWith('wdm3')) return { front, floor: 1.72, eye: new THREE.Vector3(front - 1.55, 3.2, -0.62), deskTop: 2.42, vintage: true, panelY: 2.7 };
   return { front, floor: 1.62, eye: new THREE.Vector3(front - 1.72, 2.92, -0.7), deskTop: 2.2 };
 }
 
@@ -47,33 +53,49 @@ export class CabModel {
     const f = L.front, fl = L.floor;
     const b = new GeoBatch();
     const back = f - 3.0;
-    const wall = '#c9cfc8', dark = '#3a4046', desk = '#5b636b';
+    const v = !!L.vintage;
+    const wall = v ? '#9cad9f' : '#c9cfc8', dark = v ? '#4f5d55' : '#3a4046', desk = v ? '#93c2b8' : '#5b636b', deskBody = v ? '#7ba59c' : '#4a5157';
+    // side window opening (and, on a vintage cab, the front windows' sill and head)
+    const winLo = v ? 2.95 : 2.45, winHi = v ? 3.7 : 3.45, winMid = (winLo + winHi) / 2, winH = winHi - winLo;
     b.box(3.1, 0.06, 2.9, mat(f - 1.5, fl, 0), '#3d3f42');                       // floor
-    b.box(3.1, 0.06, 2.9, mat(f - 1.5, 4.0, 0), '#d8dcd6');                       // ceiling
+    b.box(3.1, 0.06, 2.9, mat(f - 1.5, 4.0, 0), v ? '#c7d2ca' : '#d8dcd6');       // ceiling
     b.box(0.06, 2.4, 2.9, mat(back, fl + 1.2, 0), wall);                          // back wall
     b.box(0.07, 1.95, 0.8, mat(back + 0.04, fl + 0.98, 0.9), '#8d969e');          // door
     // side walls with window openings (x from f-2.45 to f-1.25, y 2.45..3.45)
     for (const s of [-1, 1]) {
       const z = s * 1.46;
-      b.box(3.0, 0.83, 0.06, mat(f - 1.5, fl + 0.41, z), wall);
-      b.box(3.0, 0.55, 0.06, mat(f - 1.5, 3.72, z), wall);
-      b.box(0.55, 1.0, 0.06, mat(back + 0.27, 2.95, z), wall);
-      b.box(1.25, 1.0, 0.06, mat(f - 0.62, 2.95, z), wall);
-      b.box(1.2, 0.04, 0.12, mat(f - 1.85, 2.45, s * 1.42), dark);
+      b.box(3.0, winLo - fl, 0.06, mat(f - 1.5, (winLo + fl) / 2, z), wall);
+      b.box(3.0, 4.0 - winHi, 0.06, mat(f - 1.5, (4.0 + winHi) / 2, z), wall);
+      b.box(0.55, winH, 0.06, mat(back + 0.27, winMid, z), wall);
+      b.box(1.25, winH, 0.06, mat(f - 0.62, winMid, z), wall);
+      b.box(1.2, 0.04, 0.12, mat(f - 1.85, winLo, s * 1.42), dark);
     }
-    // front: lower nose panel, windshield frame pillars, header
-    b.box(0.06, 0.95, 2.9, mat(f - 0.12, fl + 0.45, 0), wall);
-    for (const z of [-1.4, 0, 1.4]) {
-      b.add(new THREE.BoxGeometry(0.1, 1.28, z === 0 ? 0.14 : 0.1), mat(f - 0.25, 3.13, z, 0, 0, 0.33), dark);
+    if (v) {
+      // upright front wall: two small windows over the short hood (the guard bars are on the body outside)
+      b.box(0.08, winLo - fl, 2.9, mat(f - 0.04, (winLo + fl) / 2, 0), wall);
+      b.box(0.08, 4.0 - winHi, 2.9, mat(f - 0.04, (4.0 + winHi) / 2, 0), wall);
+      for (const [z, w] of [[0, 0.45], [-1.32, 0.27], [1.32, 0.27]]) b.box(0.08, winH, w, mat(f - 0.04, winMid, z), wall);
+      for (const s of [-1, 1]) {
+        b.box(0.05, 0.05, 0.98, mat(f - 0.07, winLo, s * 0.71), dark);           // rubber frame
+        b.box(0.05, 0.05, 0.98, mat(f - 0.07, winHi, s * 0.71), dark);
+      }
+      b.box(0.3, 0.05, 2.9, mat(f - 0.2, winLo - 0.02, 0), dark);                  // sill
+    } else {
+      // front: lower nose panel, windshield frame pillars, header
+      b.box(0.06, 0.95, 2.9, mat(f - 0.12, fl + 0.45, 0), wall);
+      for (const z of [-1.4, 0, 1.4]) {
+        b.add(new THREE.BoxGeometry(0.1, 1.28, z === 0 ? 0.14 : 0.1), mat(f - 0.25, 3.13, z, 0, 0, 0.33), dark);
+      }
+      b.box(0.5, 0.3, 2.9, mat(f - 0.55, 3.85, 0), wall);
+      b.box(0.42, 0.06, 2.9, mat(f - 0.12, 2.56, 0), dark);
     }
-    b.box(0.5, 0.3, 2.9, mat(f - 0.55, 3.85, 0), wall);
-    b.box(0.42, 0.06, 2.9, mat(f - 0.12, 2.56, 0), dark);
     // driver's desk (left) and assistant's desk (right)
     b.add(new THREE.BoxGeometry(0.8, 0.05, 1.35), mat(f - 0.78, L.deskTop, -0.75, 0, 0, 0.18), desk);
-    b.box(0.8, L.deskTop - fl, 1.35, mat(f - 0.78, (L.deskTop + fl) / 2, -0.75), '#4a5157');
-    b.add(new THREE.BoxGeometry(0.06, 0.42, 1.35), mat(f - 0.4, L.deskTop + 0.2, -0.75, 0, 0, -0.38), '#2f3439'); // instrument panel, leaning back to face the eye
+    b.box(0.8, L.deskTop - fl, 1.35, mat(f - 0.78, (L.deskTop + fl) / 2, -0.75), deskBody);
+    b.add(new THREE.BoxGeometry(0.06, 0.42, 1.35), mat(f - (v ? 0.45 : 0.4), L.panelY ?? L.deskTop + 0.2, -0.75, 0, 0, -0.38), v ? '#86afa6' : '#2f3439');
+    if (v) b.box(0.3, (L.panelY ?? 0) - 0.2 - L.deskTop, 1.35, mat(f - 0.38, (L.deskTop + (L.panelY ?? 0) - 0.2) / 2, -0.75), deskBody); // panel pedestal // instrument panel, leaning back to face the eye
     b.add(new THREE.BoxGeometry(0.75, 0.05, 1.3), mat(f - 0.7, L.deskTop - 0.05, 0.76, 0, 0, 0.12), desk);
-    b.box(0.75, L.deskTop - fl - 0.05, 1.3, mat(f - 0.7, (L.deskTop + fl) / 2 - 0.03, 0.76), '#4a5157');
+    b.box(0.75, L.deskTop - fl - 0.05, 1.3, mat(f - 0.7, (L.deskTop + fl) / 2 - 0.03, 0.76), deskBody);
     // seats
     for (const z of [-0.7, 0.75]) {
       b.box(0.5, 0.1, 0.5, mat(f - 1.85, fl + 0.6, z), '#2b2d30');
@@ -81,8 +103,9 @@ export class CabModel {
       b.cyl(0.05, 0.05, 0.55, 8, mat(f - 1.85, fl + 0.28, z), '#555');
     }
     // overhead panel, sun visors, fire extinguisher, cupboard
-    b.box(0.6, 0.12, 1.2, mat(f - 1.1, 3.9, -0.7), '#4a5157');
-    for (const z of [-0.7, 0.7]) b.box(0.4, 0.02, 0.7, mat(f - 0.52, 3.6, z, 0, 0, -0.5), '#222');
+    b.box(0.6, 0.12, 1.2, mat(f - 1.1, 3.9, -0.7), deskBody);
+    // sun visors (folded up under the roof over the small vintage windows)
+    for (const z of [-0.7, 0.7]) b.box(0.4, 0.02, 0.7, v ? mat(f - 0.35, 3.9, z, 0, 0, -0.1) : mat(f - 0.52, 3.6, z, 0, 0, -0.5), '#222');
     b.cyl(0.07, 0.07, 0.5, 10, mat(back + 0.15, fl + 0.3, -1.25), '#c0392b');
     b.box(0.4, 1.5, 0.7, mat(back + 0.22, fl + 0.75, -0.95), '#7d868e');
     this.group.add(b.build(materials() as unknown as Record<string, THREE.Material>, false));
@@ -111,21 +134,22 @@ export class CabModel {
     }
     const wmat = new THREE.MeshBasicMaterial({ map: this.rainTex, transparent: true, depthWrite: false });
     for (const s of [-1, 1]) {
-      const pg = new THREE.PlaneGeometry(1.3, 1.2);
+      const pg = v ? new THREE.PlaneGeometry(0.98, winH) : new THREE.PlaneGeometry(1.3, 1.2);
       const uv = pg.attributes.uv as THREE.BufferAttribute;
       for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 0.5 + (s > 0 ? 0.5 : 0));
       const pane = new THREE.Mesh(pg, wmat);
-      pane.position.set(f - 0.235, 3.12, s * 0.71);
+      pane.position.set(v ? f - 0.03 : f - 0.235, v ? winMid : 3.12, s * 0.71);
       pane.rotation.set(0, -Math.PI / 2, 0);
-      pane.rotateX(-0.33);
+      if (!v) pane.rotateX(-0.33);
       this.group.add(pane);
       this.glass.push(pane);
       // wiper: pivot at the bottom of the pane
       const pivot = new THREE.Object3D();
-      pivot.position.set(f - 0.06, 2.58, s * 0.71 - 0.45);
-      pivot.rotation.set(0, 0, 0.33);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.95, 0.025), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 }));
-      arm.position.y = 0.47;
+      pivot.position.set(v ? f + 0.01 : f - 0.06, v ? winLo + 0.03 : 2.58, s * 0.71 - (v ? 0.38 : 0.45));
+      pivot.rotation.set(0, 0, v ? 0 : 0.33);
+      const armL = v ? 0.68 : 0.95;
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.02, armL, 0.025), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 }));
+      arm.position.y = armL / 2;
       const holder = new THREE.Object3D();
       holder.add(arm);
       pivot.add(holder);

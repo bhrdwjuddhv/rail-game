@@ -1,13 +1,13 @@
 import { hash2, rng } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
-import type { Route } from '@rail/shared/track/Route';
+import { biomeOf, Route } from '@rail/shared/track/Route';
 import type { TerrainField } from '../TerrainField';
 
 /** Instanced prop types. Order matters only for stable ids. */
 export const PROP_TYPES = [
   'mango', 'neem', 'palm', 'forest', 'bush', 'hut', 'house', 'building2', 'building4', 'building7', 'tank',
   'temple', 'mosque', 'church', 'kiln', 'buffalo', 'cow', 'rock', 'billboard', 'quarter', 'haystack', 'tubewell',
-  'hospital', 'school', 'grass', 'treeImp', 'palmImp',
+  'hospital', 'school', 'grass', 'treeImp', 'palmImp', 'camel', 'shed', 'warehouse', 'turbine',
 ] as const;
 export type PropType = typeof PROP_TYPES[number];
 export const PROP_STRIDE = 10; // x y z ry sx sy sz r g b
@@ -26,6 +26,7 @@ export interface TileInfo {
  * shows foundation, never a wall sunk into the ground.
  */
 export const FOOTPRINT: Partial<Record<PropType, [number, number]>> = {
+  shed: [9.1, 6.1], warehouse: [24.1, 12.1],
   building2: [6.2, 5.2], building4: [6.2, 5.2], building7: [6.2, 5.2], hospital: [21.2, 7.2], school: [16.2, 5.7],
   house: [3.7, 3.2], hut: [2.1, 1.8], quarter: [6.6, 3.6], temple: [4.1, 4.1], mosque: [7.3, 5.1], church: [4.1, 11.1], kiln: [17.1, 10.1],
 };
@@ -84,11 +85,8 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
   const out = new Out(hAt);
   const step = 8;
   let rand = cellRng(0, 0, 0);
-  const plains = Object.values(route.regions).find(r => r.sideSlope === 0)!;
-  const ghats = Object.values(route.regions).find(r => r.sideSlope > 0) ?? plains;
-
   const tree = (x: number, y: number, z: number, g: number, near: boolean, rand: () => number) => {
-    const reg = g > 0.5 ? ghats : plains;
+    const reg = route.regionAt(field.kmAt(x, z));
     const t = reg.treeTypes[Math.floor(rand() * reg.treeTypes.length)] as PropType;
     const s = 0.75 + rand() * 0.6;
     if (level === 'impostor' || !near) out.push(t === 'palm' ? 'palmImp' : 'treeImp', x, y, z, rand() * 6.28, s * (t === 'forest' ? 1.3 : 1), s * (t === 'forest' ? 1.5 : 1), s, tint(rand, g > 0.5 ? [0.75, 0.9, 0.7] : [0.95, 1, 0.85], 0.2));
@@ -108,8 +106,9 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       const W = dist < 300 ? route.formationHalfWidth(km) : 0;
       // the track corridor stays clear - except over a tunnel, where trees and grass cover the hill
       if ((dist < W + 7 || dist < 13 + route.halfSpacing) && !route.overTunnel(km)) continue;
-      const g = field.ghatAt(km);
-      const zone = dist < 1800 ? route.zoneAt(km).zone : g > 0.5 ? 'ghats' : 'fields';
+      const reg = route.regionAt(km), biome = biomeOf(reg);
+      const g = biome === 'ghats' ? 1 : 0;
+      const zone = dist < 1800 ? route.zoneAt(km).zone : biome === 'ghats' ? 'ghats' : biome === 'desert' ? 'desert' : biome === 'hills' ? 'hills' : biome === 'coast' ? 'coast' : 'fields';
       const y = hAt(x, z);
       const slope = info.slope[k];
       const r = rand();
@@ -123,7 +122,9 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
         for (let q = 0; q < n; q++) {
           const qx = gx + (gr() - 0.5) * step, qz = gz + (gr() - 0.5) * step;
           if (Math.hypot(qx - x, qz - z) < 0.5) continue;
-          out.push('grass', qx, hAt(qx, qz), qz, gr() * 6.28, 1, 0.7 + gr() * 0.6, 1, tint(gr, g > 0.5 ? [0.8, 1, 0.75] : [1, 0.95, 0.75]));
+          // desert grass is sparse and straw-coloured
+          if (biome === 'desert' && gr() < 0.7) continue;
+          out.push('grass', qx, hAt(qx, qz), qz, gr() * 6.28, 1, 0.7 + gr() * 0.6, 1, tint(gr, g > 0.5 ? [0.8, 1, 0.75] : biome === 'desert' ? [1.25, 1.05, 0.7] : [1, 0.95, 0.75]));
         }
       }
 
@@ -151,17 +152,55 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       if (zone === 'colony') { if (r > 0.95) tree(x, y, z, g, near, rand); continue; }
 
       if (zone === 'ghats') {
-        if (r < ghats.treeDensity * 0.55) tree(x, y, z, g, near, rand);
-        else if (near && r < ghats.treeDensity * 0.7) out.push('bush', x, y, z, rand() * 6.28, 1, 0.8 + rand() * 0.5, 1, tint(rand, [0.8, 0.95, 0.75]));
+        if (r < reg.treeDensity * 0.55) tree(x, y, z, g, near, rand);
+        else if (near && r < reg.treeDensity * 0.7) out.push('bush', x, y, z, rand() * 6.28, 1, 0.8 + rand() * 0.5, 1, tint(rand, [0.8, 0.95, 0.75]));
         continue;
       }
+
+      // desert: dunes with scattered scrub and lone trees, camel herds, the odd hamlet (dhani)
+      if (zone === 'desert') {
+        if (r < reg.treeDensity * 0.08) { tree(x, y, z, g, near, rand); continue; }
+        if (near && r < reg.treeDensity * 0.3) { out.push('bush', x, y, z, rand() * 6.28, 0.7 + rand() * 0.4, 0.5 + rand() * 0.4, 0.7 + rand() * 0.4, tint(rand, [0.85, 0.85, 0.6], 0.2)); continue; }
+        const hc = hash2(Math.floor(x / 400), Math.floor(z / 400), 81);
+        if (near && hc < 0.12 && dist > 60 && r > 0.985) { out.push('camel', x, y, z, rand() * 6.28, 1, 1, 1, tint(rand, [0.85, 0.7, 0.5], 0.1)); continue; }
+        if (hc > 0.93 && dist > 120 && r > 0.96) { out.push('hut', x, y, z, rand() * 6.28, 0.8, 0.9, 0.8, tint(rand, [1.1, 0.95, 0.8])); continue; }
+        if (near && slope > 0.3 && r > 0.995) out.push('rock', x, y - 0.3, z, rand() * 6.28, 1, 0.6, 1.2, tint(rand, [0.8, 0.65, 0.5]));
+        continue;
+      }
+
+      // rocky hills: thorn scrub and boulders, a few trees in the folds
+      if (zone === 'hills') {
+        if (r < reg.treeDensity * 0.3) { tree(x, y, z, g, near, rand); continue; }
+        if (near && r < reg.treeDensity * 0.8) { out.push('bush', x, y, z, rand() * 6.28, 0.8 + rand() * 0.4, 0.6 + rand() * 0.5, 0.8 + rand() * 0.4, tint(rand, [0.7, 0.8, 0.55], 0.2)); continue; }
+        if (near && r > 0.985) out.push('rock', x, y - 0.4, z, rand() * 6.28, 1 + rand() * 2.5, 0.8 + rand() * 1.2, 1 + rand() * 2.5, tint(rand, [0.75, 0.62, 0.52]));
+        continue;
+      }
+
+      // coast: salt pans and scrub with coconut palms
+      if (zone === 'coast') {
+        if (r < reg.treeDensity * 0.2) { tree(x, y, z, g, near, rand); continue; }
+        if (near && r < reg.treeDensity * 0.35) out.push('bush', x, y, z, rand() * 6.28, 0.8, 0.6, 0.8, tint(rand, [0.75, 0.85, 0.6]));
+        continue;
+      }
+
+      // freight belt: sheds and warehouses near the line, trucks' yards (bare ground)
+      if (zone === 'industrial') {
+        if (dist > 40 + route.halfSpacing && dist < 420 && r < 0.022) {
+          const t: PropType = rand() < 0.4 ? 'warehouse' : 'shed';
+          out.push(t, x, y, z, -heading + (rand() < 0.5 ? 0 : Math.PI / 2), 1, 1, 1, tint(rand, [0.85, 0.87, 0.88], 0.1));
+          continue;
+        }
+        if (r > 0.97) tree(x, y, z, g, near, rand);
+        continue;
+      }
+      if (zone === 'terminal') continue; // container yards are built by FreightYards
 
       // fields / village / river plains
       const vcx = Math.floor(x / 300), vcz = Math.floor(z / 300);
       let village = false;
       for (let i = -1; i <= 1 && !village; i++) for (let j = -1; j <= 1 && !village; j++) {
         const cx = vcx + i, cz = vcz + j;
-        const chance = (g > 0.5 ? ghats : plains).villagesPerKm2 * 0.09 * (zone === 'village' ? 4 : 1);
+        const chance = reg.villagesPerKm2 * 0.09 * (zone === 'village' ? 4 : 1);
         if (hash2(cx, cz, 61) > chance) continue;
         const vx = (cx + hash2(cx, cz, 62)) * 300, vz = (cz + hash2(cx, cz, 63)) * 300;
         if (Math.hypot(x - vx, z - vz) < 75) village = true;
@@ -174,7 +213,6 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
         if (r < 0.5) { tree(x, y, z, g, near, rand); continue; }
         continue;
       }
-      const reg = g > 0.5 ? ghats : plains;
       if (r < reg.treeDensity * 0.09) { tree(x, y, z, g, near, rand); continue; }
       if (!near) continue;
       if (r > 0.9985) { out.push('tubewell', x, y, z, rand() * 6.28, 1, 1, 1, [1, 1, 1]); continue; }
@@ -191,11 +229,22 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       const x = (cx + 0.2 + hash2(cx, cz, 71) * 0.6) * 1000, z = (cz + 0.2 + hash2(cx, cz, 72) * 0.6) * 1000;
       if (x < x0 || x >= x0 + size || z < z0 || z >= z0 + size) continue;
       const k = at(x, z);
-      const reg = field.ghatAt(info.km[k]) > 0.5 ? ghats : plains;
+      const reg = route.regionAt(info.km[k]);
       if (hash2(cx, cz, 73) > reg.kilnsPerKm2 || info.dist[k] < 150 || info.water[k] || info.road[k] < 40) continue;
       out.push('kiln', x, hAt(x, z), z, hash2(cx, cz, 74) * 6.28, 1, 1, 1, [1, 1, 1]);
     }
     placeColony(route, info, out, hAt);
+    // wind farms on the ridges and dunes of windy regions: one candidate per 600 m cell
+    const t0x = Math.floor(x0 / 600), t0z = Math.floor(z0 / 600);
+    for (let i = 0; i <= 1; i++) for (let j = 0; j <= 1; j++) {
+      const cx = t0x + i, cz = t0z + j;
+      const x = (cx + 0.25 + hash2(cx, cz, 91) * 0.5) * 600, z = (cz + 0.25 + hash2(cx, cz, 92) * 0.5) * 600;
+      if (x < x0 || x >= x0 + size || z < z0 || z >= z0 + size) continue;
+      const k = at(x, z);
+      const reg = route.regionAt(info.km[k]);
+      if (hash2(cx, cz, 93) > (reg.windTurbinesPerKm2 ?? 0) * 0.36 || info.dist[k] < 260 || info.water[k] || info.road[k] < 40) continue;
+      out.push('turbine', x, hAt(x, z), z, 0.6 + hash2(cx, cz, 94) * 0.3, 1, 1, 1, [1, 1, 1]);
+    }
   }
 
   const result: Partial<Record<PropType, Float32Array>> = {};

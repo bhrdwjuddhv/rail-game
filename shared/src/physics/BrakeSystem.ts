@@ -88,6 +88,9 @@ export class BrakeSystem {
     if (this.infiniteAir) { this.mr = 10.0; this.compressorOn = false; }
   }
 
+  /** Friction braking force of one vehicle (N, magnitude). */
+  vehicleForce(i: number) { return (this.bc[i] / BC_MAX) * this.vehicles[i].maxBrakeN; }
+
   /** Total friction braking force available (N, magnitude). */
   force() {
     let f = 0;

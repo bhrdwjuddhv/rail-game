@@ -70,10 +70,15 @@ export class StationView {
     const region = route.regions[st.regionId];
     const at = (km: number, lat: number) => { route.alignment.sampleOffset(km * 1000, lat, f); return { x: f.x - ox, y: f.y, z: f.z - oz, ry: -f.heading, h: f.heading }; };
     const r = rng(st.km * 1000);
+    // freight crossing stations: the platform length is the loops' standing length; only a short
+    // low service platform is built, by a small station cabin (no passenger amenities)
+    const freight = !!st.servicePlatformM;
+    const pfFrom = freight ? st.km - st.servicePlatformM! / 2000 : st.platformFromKm;
+    const pfTo = freight ? st.km + st.servicePlatformM! / 2000 : st.platformToKm;
 
     // ---- platforms ----
     const strip = new Strip();
-    const s0 = st.platformFromKm * 1000, s1 = st.platformToKm * 1000;
+    const s0 = pfFrom * 1000, s1 = pfTo * 1000;
     const frames = [], ss = [];
     for (let s = s0; s <= s1 + 0.01; s += 5) { const fr = newFrame(); route.alignment.sample(s, fr); fr.cant = 0; frames.push(fr); ss.push(s - s0); }
     for (const p of st.platforms) {
@@ -92,7 +97,7 @@ export class StationView {
       // the face is hollow below FACE_BOTTOM: close it down to the formation
       strip.extrude(frames, ss, facing([[a, -0.2], [a, FACE_BOTTOM]]), ox, oz, 1, 1);
       // end ramps
-      for (const km of [st.platformFromKm, st.platformToKm]) {
+      for (const km of [pfFrom, pfTo]) {
         const e = at(km, (a + c) / 2);
         b.box(0.4, PLATFORM_H + 0.2, Math.abs(c - a), mat(e.x, e.y + PLATFORM_H / 2 - 0.1, e.z, e.ry), '#9c968c', 'concrete');
       }
@@ -102,7 +107,7 @@ export class StationView {
     this.group.add(pm);
 
     const top = (km: number, lat: number) => { const o = at(km, lat); o.y += PLATFORM_H; return o; };
-    const big = st.type !== 'halt';
+    const big = st.type !== 'halt' && !freight;
     const shelterHalf = big ? 0.13 : 0.05;
 
     // ---- shelters, benches, lamps, crowd spots ----
@@ -124,15 +129,15 @@ export class StationView {
           b.box(1.8, 0.4, 0.06, mat(q.x, q.y + 0.75, q.z, q.ry).multiply(mat(0, 0, -0.2)), '#5b4636');
         }
       }
-      for (let km = st.platformFromKm + 0.01; km < st.platformToKm; km += 0.025) {
+      for (let km = pfFrom + 0.01; km < pfTo; km += 0.025) {
         const q = top(km, p.to - Math.sign(p.to - p.from) * 0.8);
         b.cyl(0.06, 0.08, 4.6, 6, mat(q.x, q.y + 2.3, q.z), '#56606a', 'metal');
         b.box(0.9, 0.12, 0.25, mat(q.x, q.y + 4.6, q.z, q.ry), '#fff6d8', 'lamp');
         this.lampSpots.push(new THREE.Vector3(q.x + ox, q.y + 4.4, q.z + oz));
       }
-      const n = big ? 34 : 14;
+      const n = freight ? 3 : big ? 34 : 14;
       for (let i = 0; i < n; i++) {
-        const km = st.km + (r() - 0.5) * (st.platformToKm - st.platformFromKm) * 0.75;
+        const km = st.km + (r() - 0.5) * (pfTo - pfFrom) * 0.75;
         const lat = p.from + (p.to - p.from) * (0.3 + r() * 0.6);
         const q = top(km, lat);
         spots.push({ x: q.x, y: q.y, z: q.z, heading: q.h });
@@ -141,7 +146,7 @@ export class StationView {
       // (alpha cut-out, 4.2 m square) with the name drawn on its panel
       const t = labelTexture(st.name, { bg: '#f5d000', fg: '#111', w: 512, h: 192, lines: [st.nameHi, st.name.toUpperCase(), st.nameRegional] });
       const nameMat = new THREE.MeshStandardMaterial({ map: t, side: THREE.DoubleSide, roughness: 0.6, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.06, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-      for (const km of [st.platformFromKm + 0.04, st.km + 0.03, st.platformToKm - 0.04]) {
+      for (const km of [pfFrom + 0.04, st.km + 0.03, pfTo - 0.04]) {
         const q = top(km, mid);
         const board = new THREE.Mesh(BOARD_GEO, M.nameboard);
         board.position.set(q.x, q.y + 2.1, q.z);
