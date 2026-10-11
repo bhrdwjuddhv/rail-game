@@ -42,6 +42,17 @@ export const isStandalone = () =>
 
 export const isPortrait = () => innerHeight > innerWidth;
 
+/**
+ * --vh = 1 % of the real visible height, for the touch HUD's sizes. CSS dvh is
+ * not recalculated by Chrome on Android after the switch to fullscreen /
+ * landscape until the next app switch, which left the HUD sized (and placed)
+ * for the old screen; this is set on every resize-type event instead.
+ */
+export function syncViewport() {
+  const h = window.visualViewport?.height ?? innerHeight;
+  document.documentElement.style.setProperty('--vh', `${(h / 100).toFixed(3)}px`);
+}
+
 export const isFullscreen = () => !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
 
 /**

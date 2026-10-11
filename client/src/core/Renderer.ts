@@ -71,7 +71,7 @@ export class RenderSystem {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap; // (PCFSoft is gone in r186: PCF is soft by default)
     renderer.domElement.id = 'game-canvas';
     container.appendChild(renderer.domElement);
     return new RenderSystem(renderer, kind, backend);

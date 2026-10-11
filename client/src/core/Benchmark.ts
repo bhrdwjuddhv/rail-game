@@ -8,7 +8,7 @@ export interface BenchResult {
   view: BenchView; renderer: string; seconds: number; frames: number;
   avgFps: number; low1Fps: number; worstMs: number; over33: number; over50: number;
   drawCalls: number; triangles: number; geometriesStart: number; geometriesEnd: number; texturesEnd: number;
-  heapStartMB: number; heapEndMB: number; sections: Record<string, number>; userAgent: string;
+  heapStartMB: number; heapEndMB: number; texMB: number; sections: Record<string, number>; userAgent: string;
 }
 
 /**
@@ -25,7 +25,7 @@ export class Benchmark {
   private heapStart = 0;
   done = false;
 
-  constructor(readonly cfg: BenchConfig, private rs: RenderSystem) {}
+  constructor(readonly cfg: BenchConfig, private rs: RenderSystem, private texMB: () => number = () => 0) {}
 
   frame(dtMs: number) {
     if (this.done) return;
@@ -48,7 +48,7 @@ export class Benchmark {
       worstMs: round(sorted[0]), over33: this.frames.filter(f => f > 33.4).length, over50: this.frames.filter(f => f > 50).length,
       drawCalls: Math.round(this.calls / n), triangles: Math.round(this.tris / n),
       geometriesStart: this.geoStart, geometriesEnd: s.geometries, texturesEnd: s.textures,
-      heapStartMB: round(this.heapStart), heapEndMB: round(heap()),
+      heapStartMB: round(this.heapStart), heapEndMB: round(heap()), texMB: round(this.texMB()),
       sections: { ...Object.fromEntries([...prof.avg.entries()].map(([k2, v]) => [k2, round(v, 2)])), gpu: round(prof.counters.gpu ?? 0, 2) },
       userAgent: navigator.userAgent,
     };

@@ -28,6 +28,21 @@ interface Binding {
 }
 
 const RESIDENT_GRACE_MS = 15000;
+
+/**
+ * Flat 1x1 normal and roughness maps held by a material until its real ones
+ * load. A map appearing changes the material's shader (a recompile on the
+ * next draw: about a second on ANGLE / Direct3D, mid-drive); with a placeholder
+ * from the start the shader never changes, the real map just takes its place.
+ */
+let flatMaps: { normal: THREE.DataTexture; rough: THREE.DataTexture } | null = null;
+function placeholders() {
+  if (!flatMaps) {
+    const one = (r: number, g: number, b: number) => { const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1); t.needsUpdate = true; return t; };
+    flatMaps = { normal: one(128, 128, 255), rough: one(255, 255, 255) };
+  }
+  return flatMaps;
+}
 /** diagnostics: ?textures=0 keeps every material procedural (before/after measurements) */
 const FILES_OFF = new URLSearchParams(location.search).get('textures') === '0';
 /** outdoor surfaces that get shinier in the rain */
@@ -112,6 +127,12 @@ export class TextureLibrary {
     mat.map = proc;
     if (!found) return;
     const [id, entry] = found;
+    // the shader this material will end up with: normal and roughness maps where they will load
+    if (!FILES_OFF && this.quality !== 'low' && entry.processed) {
+      const sets = Object.values(entry.processed.sizes) as SizeSet[];
+      if (sets.some(s => s.normal)) { mat.normalMap = placeholders().normal; mat.normalScale.set(0.9, 0.9); }
+      if (sets.some(s => s.roughness)) mat.roughnessMap = placeholders().rough;
+    }
     const b: Binding = { mat, id, entry, uvMeters: uv, baseRoughness: mat.roughness, procedural: proc, slots: {}, onFileLoaded: opts.onFileLoaded };
     const list = this.bindings.get(material) ?? [];
     list.push(b);
@@ -176,8 +197,8 @@ export class TextureLibrary {
       delete b.slots[kind];
       slot.users--;
       if (kind === 'color') b.mat.map = b.procedural;
-      if (kind === 'normal') b.mat.normalMap = null;
-      if (kind === 'roughness') { b.mat.roughnessMap = null; b.baseRoughness = 0.9; b.mat.roughness = 0.9 * (1 - 0.35 * this.wet); }
+      if (kind === 'normal') b.mat.normalMap = placeholders().normal;
+      if (kind === 'roughness') { b.mat.roughnessMap = placeholders().rough; b.baseRoughness = 0.9; b.mat.roughness = 0.9 * (1 - 0.35 * this.wet); }
       b.mat.needsUpdate = true;
       if (slot.users <= 0 && slot.tex) {
         slot.tex.dispose();

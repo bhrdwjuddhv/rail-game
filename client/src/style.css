@@ -256,3 +256,8 @@ pre.err { white-space: pre-wrap; font-size: 12px; color: #ffb3ad; max-height: 50
 .loco-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232, 178, 58, 0.35); }
 .menu.main button.soon { opacity: 0.75; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .menu.main button.soon small { color: var(--accent); font-weight: 700; font-size: 12px; }
+
+/* ---------- start of a run: the loading screen fades out over the first real frames ---------- */
+#game-canvas { background: #07090c; } /* same dark as the loading screen: never a white or grey flash */
+#menus.revealing { opacity: 0; transition: opacity 0.35s ease-out; pointer-events: none !important; }
+@media (prefers-reduced-motion: reduce) { #menus.revealing { transition: none; } }

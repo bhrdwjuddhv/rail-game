@@ -7,30 +7,30 @@
 :root {
   --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px);
   --edge: 8px; --gap: 6px;
-  --btn: clamp(44px, 12.4dvh, 58px);
-  --card-h: clamp(38px, 10.5dvh, 52px);
+  --btn: clamp(44px, calc(12.4 * var(--vh, 1dvh)), 58px);
+  --card-h: clamp(38px, calc(10.5 * var(--vh, 1dvh)), 52px);
   /* each side column is at most a fifth of the width: the middle 60 % shows the track */
   --card-w: clamp(104px, calc(20vw - 12px), 250px);
-  --speedo-w: clamp(124px, 34dvh, 210px);
+  --speedo-w: clamp(124px, calc(34 * var(--vh, 1dvh)), 210px);
   --right-w: clamp(104px, calc(20vw - 12px), 210px);
   --lever-w: min(76px, calc((var(--right-w) - 6px) / 2));
-  --fs: clamp(11px, 3.3dvh, 15px);
-  --panel: rgba(9, 11, 15, 0.66);
+  --fs: clamp(11px, calc(3.3 * var(--vh, 1dvh)), 15px);
+  --panel: rgba(9, 11, 15, 0.8); /* a little more solid now the cards are not blurred */
   --panel-line: rgba(255, 255, 255, 0.13);
   --led-off: #4a5058; --led-on: #36e07c; --led-amber: #ffb52e;
   --cyan: #5fe1ff;
 }
-html.touch, html.touch body { height: 100vh; height: 100dvh; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
-html.touch #app, html.touch #ui { height: 100vh; height: 100dvh; }
+html.touch, html.touch body { height: 100%; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+/* #app and #ui are position: fixed; inset: 0, which follows the real viewport: no height here (see syncViewport) */
 html.touch #game-canvas, html.touch button, html.touch .m-lever { touch-action: none; }
 
 /* desktop HUD pieces: hidden on touch (the touch layer has its own); "All gauges" opens the panel as a card */
 html.touch .hud-panel, html.touch .track-profile, html.touch .hud-tip, html.touch #hud .pause-btn { display: none; }
 html.touch #hud.details .hud-panel {
   display: block; left: 50%; right: auto; top: calc(var(--st) + 52px); bottom: auto; transform: translateX(-50%);
-  width: min(340px, calc(100vw - 2 * var(--right-w) - 40px)); max-height: calc(100dvh - var(--speedo-w) * 0.55 - 70px); overflow: auto; z-index: 6; font-size: 13px;
+  width: min(340px, calc(100vw - 2 * var(--right-w) - 40px)); max-height: calc(calc(100 * var(--vh, 1dvh)) - var(--speedo-w) * 0.55 - 70px); overflow: auto; z-index: 6; font-size: 13px;
 }
-html.touch #hud.details ~ .track-profile { display: block; bottom: auto; top: calc(100dvh - var(--speedo-w) * 0.55 - 118px); width: min(460px, calc(100vw - 2 * var(--right-w) - 40px)); }
+html.touch #hud.details ~ .track-profile { display: block; bottom: auto; top: calc(calc(100 * var(--vh, 1dvh)) - var(--speedo-w) * 0.55 - 118px); width: min(460px, calc(100vw - 2 * var(--right-w) - 40px)); }
 html.touch .minimap { display: none; }
 html.touch .minimap.shown { display: block; top: calc(var(--st) + var(--edge)); right: calc(var(--sr) + var(--right-w) + 16px); width: 150px; height: 150px; }
 html.touch #hud.bare > * { display: none !important; }
@@ -55,7 +55,8 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-card {
   display: flex; align-items: center; gap: 8px; min-height: var(--card-h); padding: 4px 10px;
   background: var(--panel); border: 1px solid var(--panel-line); border-radius: 12px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); color: #fff; line-height: 1.2;
+  /* no backdrop-filter: a blurred card makes the phone re-blur the 3D view under it every frame */
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); color: #fff; line-height: 1.2;
 }
 .m-card b { font-weight: 800; }
 .m-card small { color: #a9b3bd; font-size: 0.78em; font-weight: 600; letter-spacing: 0.04em; }
@@ -166,7 +167,7 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-sp-limit circle { fill: #fff; stroke: #e0201b; stroke-width: 4; }
 .m-sp-limit text { fill: #111; font: 800 13px system-ui, sans-serif; text-anchor: middle; }
 .m-sp-read { position: absolute; left: 0; right: 0; bottom: 2px; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.m-sp-read b { font-size: clamp(24px, 8.5dvh, 46px); font-weight: 900; font-variant-numeric: tabular-nums; text-shadow: 0 2px 6px #000; }
+.m-sp-read b { font-size: clamp(24px, calc(8.5 * var(--vh, 1dvh)), 46px); font-weight: 900; font-variant-numeric: tabular-nums; text-shadow: 0 2px 6px #000; }
 .m-sp-read small { color: #b9c2cb; font-size: 0.75em; font-weight: 700; }
 .m-speedo.over .m-sp-read b { color: #ff6a5e; }
 
@@ -204,7 +205,7 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 
 /* a cab lever: slotted track, thin level bar, chunky metal handle, label below */
 .m-lever { --hh: max(48px, calc(var(--lever-w) * 0.78)); width: var(--lever-w); display: flex; flex-direction: column; align-items: center; gap: 3px; pointer-events: auto; }
-.touch-ui .m-lever label { margin: 0; min-height: 0; display: block; font-size: clamp(8.5px, 2.5dvh, 11px); font-weight: 800; letter-spacing: 0.02em; color: #d5dbe1; text-shadow: 0 1px 3px #000; }
+.touch-ui .m-lever label { margin: 0; min-height: 0; display: block; font-size: clamp(8.5px, calc(2.5 * var(--vh, 1dvh)), 11px); font-weight: 800; letter-spacing: 0.02em; color: #d5dbe1; text-shadow: 0 1px 3px #000; }
 .m-lv-track { position: relative; flex: 1; width: 100%; border-radius: 12px; background: var(--panel); border: 1px solid var(--panel-line); box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.6); }
 .m-lv-slot { position: absolute; left: 50%; top: 10px; bottom: 10px; width: 8px; margin-left: -4px; border-radius: 4px; background: #050607; box-shadow: inset 0 1px 3px #000; }
 .m-lv-fill { position: absolute; left: 5px; width: 4px; border-radius: 2px; height: calc(var(--level, 0) * (100% - 12px)); }
@@ -232,7 +233,7 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .t-drawer[hidden] { display: none !important; }
 
 /* vigilance ACKNOWLEDGE pop-up (shared with desktop, see style.css): touch places it above the bar, left of the levers */
-html.touch .vig-pop { right: calc(var(--sr) + var(--edge) + var(--right-w) + 10px); bottom: calc(var(--sb) + var(--edge) + var(--btn) + 22px); top: auto; width: clamp(96px, 30dvh, 128px); }
+html.touch .vig-pop { right: calc(var(--sr) + var(--edge) + var(--right-w) + 10px); bottom: calc(var(--sb) + var(--edge) + var(--btn) + 22px); top: auto; width: clamp(96px, calc(30 * var(--vh, 1dvh)), 128px); }
 
 /* the More drawer */
 .t-drawer {
@@ -256,7 +257,7 @@ html.touch .vig-pop { right: calc(var(--sr) + var(--edge) + var(--right-w) + 10p
 html.touch .tutorial-card {
   left: 50%; top: calc(var(--st) + 40px); transform: translateX(-50%);
   width: min(430px, calc(100vw - var(--card-w) - var(--right-w) - var(--sl) - var(--sr) - 4 * var(--edge)));
-  max-height: calc(100dvh - var(--st) - 40px - var(--speedo-w) * 0.56 - 12px); overflow: auto; padding: 8px 12px; font-size: 13px;
+  max-height: calc(calc(100 * var(--vh, 1dvh)) - var(--st) - 40px - var(--speedo-w) * 0.56 - 12px); overflow: auto; padding: 8px 12px; font-size: 13px;
 }
 html.touch .tc-body p { margin: 4px 0; }
 html.touch .tc-dont { min-height: 0; font-size: 12px; }
@@ -268,7 +269,7 @@ html.touch .tc-buttons button { min-height: 44px; padding: 4px 10px; }
    centring: a panel taller than the screen starts at the top and scrolls instead
    of being clipped above it). */
 html.touch #menus {
-  position: fixed; inset: 0; height: 100vh; height: 100dvh; display: flex; overflow: auto;
+  position: fixed; inset: 0; display: flex; overflow: auto;
   padding: var(--st) var(--sr) var(--sb) var(--sl);
 }
 html.touch #menus > .menu { margin: auto; flex: none; }
@@ -276,8 +277,8 @@ html.touch #menus > .menu:not(.main):not(.loading) {
   width: 100%; max-width: none; height: 100%; max-height: none; border-radius: 0; border: 0; margin: 0;
   padding: 14px 18px 18px; overflow-y: auto; overscroll-behavior: contain;
 }
-html.touch #menus > .menu.main { max-height: calc(100dvh - var(--st) - var(--sb) - 16px); overflow-y: auto; padding: 14px 20px; margin-left: calc(16px + var(--sl)); }
-html.touch #menus > .menu.loading { max-height: calc(100dvh - 16px); overflow-y: auto; }
+html.touch #menus > .menu.main { max-height: calc(calc(100 * var(--vh, 1dvh)) - var(--st) - var(--sb) - 16px); overflow-y: auto; padding: 14px 20px; margin-left: calc(16px + var(--sl)); }
+html.touch #menus > .menu.loading { max-height: calc(calc(100 * var(--vh, 1dvh)) - 16px); overflow-y: auto; }
 html.touch .menu h1 { font-size: 30px; }
 html.touch .title img.logo { max-width: 240px; }
 html.touch .menu button { min-height: 48px; font-size: 16px; }
@@ -300,20 +301,20 @@ html.touch .cols { gap: 14px; }
 @media (orientation: landscape) and (max-height: 500px) {
   html.touch #menus > .menu.main {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 1.1fr); grid-template-rows: minmax(0, 1fr) auto; column-gap: clamp(14px, 4vw, 32px);
-    width: min(760px, calc(100vw - var(--sl) - var(--sr) - 32px)); max-height: calc(100dvh - var(--st) - var(--sb) - 16px); overflow: hidden;
-    padding: clamp(10px, 3dvh, 18px) clamp(14px, 3vw, 22px); text-align: left;
+    width: min(760px, calc(100vw - var(--sl) - var(--sr) - 32px)); max-height: calc(calc(100 * var(--vh, 1dvh)) - var(--st) - var(--sb) - 16px); overflow: hidden;
+    padding: clamp(10px, calc(3 * var(--vh, 1dvh)), 18px) clamp(14px, 3vw, 22px); text-align: left;
   }
   html.touch .menu.main .title { grid-column: 1; grid-row: 1; align-self: center; min-height: 0; }
-  html.touch .menu.main .title img.logo { max-width: 100%; max-height: clamp(70px, 38dvh, 190px); width: auto; margin: 0 auto 4px; }
-  html.touch .menu.main .title p { font-size: clamp(11px, 3.4dvh, 14px); margin: 2px 0 0; text-align: center; }
+  html.touch .menu.main .title img.logo { max-width: 100%; max-height: clamp(70px, calc(38 * var(--vh, 1dvh)), 190px); width: auto; margin: 0 auto 4px; }
+  html.touch .menu.main .title p { font-size: clamp(11px, calc(3.4 * var(--vh, 1dvh)), 14px); margin: 2px 0 0; text-align: center; }
   html.touch .menu.main .note { grid-column: 1; grid-row: 2; margin: 6px 0 0; font-size: 11px; text-align: center; }
   html.touch .menu.main .buttons.vertical {
     grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
-    gap: clamp(5px, 1.6dvh, 9px); padding: 2px;
+    gap: clamp(5px, calc(1.6 * var(--vh, 1dvh)), 9px); padding: 2px;
   }
-  html.touch .menu.main .buttons.vertical button { min-height: 44px; height: clamp(44px, 12dvh, 52px); padding: 0 14px; font-size: clamp(14px, 4dvh, 16px); }
-  html.touch .menu h1 { font-size: clamp(22px, 7dvh, 30px); }
-  html.touch #menus > .menu.loading .title img.logo { max-height: 30dvh; width: auto; }
+  html.touch .menu.main .buttons.vertical button { min-height: 44px; height: clamp(44px, calc(12 * var(--vh, 1dvh)), 52px); padding: 0 14px; font-size: clamp(14px, calc(4 * var(--vh, 1dvh)), 16px); }
+  html.touch .menu h1 { font-size: clamp(22px, calc(7 * var(--vh, 1dvh)), 30px); }
+  html.touch #menus > .menu.loading .title img.logo { max-height: calc(30 * var(--vh, 1dvh)); width: auto; }
 }
 
 /* ---------------------------------------------------------------- overlays */

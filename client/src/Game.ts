@@ -36,6 +36,8 @@ import { TextureTest } from './ui/TextureTest';
 import { RoofCover, underRoof } from './infrastructure/Station';
 import { VigilancePopup } from './ui/VigilancePopup';
 import { PantoIndicator } from './ui/PantoIndicator';
+import { Door, PeopleSystem } from './world/people/People';
+import { Billboards } from './world/scenery/Billboards';
 import { Wag12Cab } from './train/cab/Wag12Cab';
 import { RouteChoice, RoutePicker } from './ui/RoutePicker';
 import { DieselSmoke } from './train/Smoke';
@@ -54,7 +56,7 @@ import { buildTunnel } from './infrastructure/Tunnel';
 import { buildFort, buildRob, buildYard } from './infrastructure/FreightCorridor';
 import { setContactHeight } from './infrastructure/OHE';
 import { Gamepad } from './input/Gamepad';
-import { enterGameScreen, iosFullscreenTip, isFullscreen, isTouch } from './input/Device';
+import { enterGameScreen, iosFullscreenTip, isFullscreen, isTouch, syncViewport } from './input/Device';
 import { ResumeScreen } from './ui/ResumeScreen';
 import { TouchControls } from './ui/TouchControls';
 import { Keyboard } from './input/Keyboard';
@@ -222,7 +224,7 @@ export class Game {
   private aheadRamps: Ramp[] = [];
 
   constructor(private rs: RenderSystem, private menus: Menus, private ui: HTMLElement, private audio: AudioEngine | null, scenario: ScenarioData, overrides: ScenarioOverrides, readonly scenarioId: string, benchCfg?: BenchConfig) {
-    this.bench = benchCfg ? new Benchmark(benchCfg, rs) : null;
+    this.bench = benchCfg ? new Benchmark(benchCfg, rs, () => this.debugTextures().mb) : null;
     const routeData = ROUTES[scenario.route];
     setContactHeight(routeData.oheContactHeightM ?? 5.55);
     this.railway = new Railway(routeData, REGIONS);
@@ -252,6 +254,11 @@ export class Game {
     // ---- terrain & world ----
     this.chunks = new ChunkManager(this.route, () => effective());
     this.world.add(this.chunks.root);
+    // roadside hoardings with the ads of data/ads.json (click / tap opens the advertiser's site)
+    this.billboards = new Billboards(rs.renderer.domElement, () => this.rcam);
+    this.world.add(this.billboards.group);
+    this.chunks.onBillboards = (key, arr) => this.billboards.setTile(key, arr);
+    this.offs.push(() => this.billboards.dispose());
     this.world.add(buildRivers(this.route));
     for (const r of this.route.roads) this.world.add(r.kind === 'lc' ? buildLcRoad(this.field, r) : buildParallelRoad(this.route, r));
     this.route.roads.forEach(r => {
@@ -404,10 +411,13 @@ export class Game {
     this.onResize();
     addEventListener('resize', this.onResize);
     addEventListener('orientationchange', this.onResize);
+    window.visualViewport?.addEventListener('resize', this.onResize);
     document.addEventListener('fullscreenchange', this.onFullscreen);
     document.addEventListener('webkitfullscreenchange', this.onFullscreen);
     addEventListener('pageshow', this.onPageShow);
     this.offs.push(() => {
+      removeEventListener('resize', this.onResize);
+      window.visualViewport?.removeEventListener('resize', this.onResize);
       removeEventListener('orientationchange', this.onResize);
       document.removeEventListener('fullscreenchange', this.onFullscreen);
       document.removeEventListener('webkitfullscreenchange', this.onFullscreen);
@@ -430,7 +440,7 @@ export class Game {
       const c = COACHES[type];
       vehicles.push({ kind: 'coach', typeId: type, massKg: 0, length: c.lengthM, frontOffset: AI_LOCO_LEN + 0.6 + i * carM, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
     }
-    const view = new TrainView(vehicles, loco, COACHES, goods ? 'freight' : 'passenger');
+    const view = new TrainView(vehicles, loco, COACHES, goods ? 'freight' : 'passenger', false);
     this.addCompiled(view.group, () => this.ai.some(a => a.view === view), false);
     this.ctl.of(route).add(t);
     this.ai.push({ train: t, view, route, carM });
@@ -494,7 +504,7 @@ export class Game {
     for (const y of this.route.yards) add(y.fromKm, y.toKm, () => buildYard(this.route, y), undefined, ['wall']);
     for (const ft of this.route.data.features) if (ft.type === 'fort') add(ft.km - 0.9, ft.km + 0.9, () => buildFort(this.route, this.field, ft.km), undefined, ['wall']);
     for (const st of this.route.stations) {
-      add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st); this.stations.set(st.code, v); return v.group; },
+      add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st); v.crowd.mesh.visible = !this.people?.ready; this.stations.set(st.code, v); return v.group; },
         () => { this.stations.get(st.code)?.dispose(); this.stations.delete(st.code); }, StationView.MATERIALS);
     }
   }
@@ -524,6 +534,7 @@ export class Game {
     await textures.settle();
     progress('Compiling shaders', 0.95);
     try { await this.rs.renderer.compileAsync(this.scene, this.rcam); } catch { /* optional warm-up */ }
+    this.warmShadows();
     progress('Ready', 1);
   }
 
@@ -582,16 +593,27 @@ export class Game {
       this.trainAudio = new TrainAudio(this.audio, this.shots, this.consist.loco, this.consist.coachCount);
       this.ambience = new Ambience(this.audio, this.shots);
       await this.trainAudio.init();
-      this.applySettings();
     }
-    this.menus.inGame = true;
-    this.menus.hide();
+    // canvas size and pixel ratio set once, before the first frame (a resize clears the canvas)
+    this.applySettings();
     this.wasFullscreen = isFullscreen();
-    if (isTouch) iosFullscreenTip(document.body);
     if (this.bench) this.prepareForBench();
     this.engine.paused = false;
     this.started = true;
+    // from now on new terrain tiles compile their shaders before they are shown
+    this.chunks.prepare = g => this.rs.renderer.compileAsync(g, this.rcam, this.scene);
     this.rs.renderer.setAnimationLoop(t => this.engine.tick(t));
+    // the loading screen stays on top until real frames are on the canvas (and, on phones, until the
+    // fullscreen / landscape switch has settled), then fades out: no blank or half-sized flash
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    if (isTouch && !this.bench) await sleep(350);
+    this.menus.inGame = true;
+    if (this.bench) this.menus.hide(); else await this.menus.reveal();
+    this.startPeople();
+    // the game screen is showing: lay out for its real size now, and again once fullscreen / rotation has settled
+    this.onResize();
+    setTimeout(this.onResize, 350);
+    if (isTouch) iosFullscreenTip(document.body);
     const s = this.scenario;
     bus.emit('message', { text: `${s.name} - ${WEATHER[s.weather].name}, ${formatClock(this.time.seconds)}`, kind: 'info', ms: 6000 });
     bus.emit('message', { text: isTouch ? 'Prepare the loco: raise the pantograph (bottom bar), close the main breaker (\u22ef), reverser F, then the BRAKE lever up and THROTTLE up.' : 'Prepare the loco: P pantograph, O main breaker, ; release brakes, W reverser forward. F1 for help.', kind: 'info', ms: 12000 });
@@ -748,6 +770,9 @@ export class Game {
   }
   private vigPopup!: VigilancePopup;
   private pantoInd: PantoIndicator | null = null;
+  /** platform crowds from the baked people models (null: WebGL only; stations keep their simple crowd until it is ready) */
+  private people: PeopleSystem | null = null;
+  private billboards: Billboards;
   private adaptiveRes = new AdaptiveResolution(isTouch ? 0.5 : 0.6);
   private appliedScale = 1;
   private routePicker!: RoutePicker;
@@ -931,6 +956,74 @@ export class Game {
     };
   }
 
+  /**
+   * Platform crowds: models load in the background once the run has started
+   * (never on the loading screen, never all in one frame). Budget by quality:
+   * High 90, Medium 60, Low and phones 20.
+   */
+  private startPeople() {
+    // benchmarks leave crowds out unless asked (?people=1)
+    if (this.rs.kind !== 'webgl' || (this.bench && !new URLSearchParams(location.search).has('people'))) return;
+    const q = settings.get().quality;
+    // High was 150: on an Intel UHD that cost 9 % of the frame at a junction; 90 costs 2 % (PERF_LOG 2026-10-11)
+    const budget = isTouch || q === 'low' ? 20 : q === 'medium' ? 60 : 90;
+    this.people = new PeopleSystem(this.route, this.rs.renderer as unknown as ConstructorParameters<typeof PeopleSystem>[1], budget, isTouch ? 0.6 : 1);
+    this.world.add(this.people.group);
+    void this.people.load(this.rcam, this.scene).then(ok => { if (ok) for (const v of this.stations.values()) v.crowd.mesh.visible = false; });
+  }
+
+  /** The station the player's train is at or near (within 1.5 km), and what the train is doing there, for the crowds. */
+  private peopleContext() {
+    const d = this.dyn, head = d.headKm, ck = this.line.canonicalKm(head);
+    let near = null as (typeof this.route.stations)[number] | null, best = 1.5;
+    for (const st of this.route.stations) {
+      const dd = Math.max(0, Math.abs(st.km - ck) - (st.platformToKm - st.platformFromKm) / 2);
+      if (dd < best) { best = dd; near = st; }
+    }
+    if (!near) return { near: null, player: null };
+    const vs = this.line.station(near.code);
+    if (!vs) return { near, player: null };
+    const onPlatform = head >= vs.platformFromKm && head <= vs.platformToKm + 0.05;
+    const offset = this.path.offsetAt(head);
+    const line = vs.lineInfo.find(l => Math.abs(l.offset - offset) < 0.5)?.id ?? this.line.running.id;
+    // doors of passenger coaches (both ends of each), surveyed km
+    const doors: Door[] = [];
+    if (onPlatform) for (const v of this.consist.vehicles) {
+      const c = COACHES[v.typeId];
+      if (v.kind !== 'coach' || !c || (c.kind && c.kind !== 'coach')) continue;
+      for (const o of [1.4, v.length - 1.4]) doors.push({ km: this.line.canonicalKm(head - (v.frontOffset + o) / 1000), x: 0, z: 0 });
+    }
+    return {
+      near,
+      player: { code: near.code, stopped: onPlatform && Math.abs(d.speed) < 0.1, approaching: head > vs.platformFromKm - 0.8 && head < vs.platformToKm && Math.abs(d.speed) > 1, doors, platformLines: [line] },
+    };
+  }
+
+  /**
+   * Compile the shadow pass's depth shaders now, behind the loading screen:
+   * compileAsync does not cover shadows, and each caster type's depth shader
+   * compiling on its first shadow render stalled the drive for ~0.7 s. One
+   * render with the shadow camera opened over everything loaded does it.
+   */
+  private warmShadows() {
+    const sun = this.lighting.sun;
+    if (!sun.castShadow) return;
+    const cam = sun.shadow.camera as THREE.OrthographicCamera;
+    const saved = [cam.left, cam.right, cam.top, cam.bottom, cam.far] as const;
+    const pos = sun.position.clone(), tgt = sun.target.position.clone();
+    const c = this.cameras.camera.position;
+    sun.target.position.set(c.x, c.y, c.z);
+    sun.position.set(c.x + 300, c.y + 3000, c.z + 300);
+    sun.target.updateMatrixWorld();
+    cam.left = cam.bottom = -3000; cam.right = cam.top = 3000; cam.far = 8000;
+    cam.updateProjectionMatrix();
+    this.syncRenderCamera();
+    this.rs.renderer.render(this.scene, this.rcam);
+    [cam.left, cam.right, cam.top, cam.bottom, cam.far] = saved;
+    cam.updateProjectionMatrix();
+    sun.position.copy(pos); sun.target.position.copy(tgt); sun.target.updateMatrixWorld();
+  }
+
   /** Benchmark: loco ready to run, fixed camera. */
   private prepareForBench() {
     const s = this.sys, b = this.dyn.brakes;
@@ -966,6 +1059,7 @@ export class Game {
 
   private pausedNeedsRender = false;
   private onResize = () => {
+    syncViewport();
     this.pausedNeedsRender = true;
     this.rs.resize(innerWidth, innerHeight);
     this.cameras.camera.aspect = innerWidth / innerHeight;
@@ -1310,8 +1404,7 @@ export class Game {
     // cab
     if (inCab) {
       this.cab.update(dt, this.sheltered ? 0 : this.weather.p.rain, d.speed, s.wipers);
-      this.cab.lightMat.color.setScalar(s.cabLight ? 3 : 0.2);
-      this.cab.cabLight.intensity = s.cabLight ? 2.5 : 0;
+      this.cab.setCabLight(s.cabLight);
       const ns = this.nextSignal();
       const units = settings.get().units;
       const conv = units === 'mph' ? 0.6214 : 1;
@@ -1338,7 +1431,7 @@ export class Game {
         if (Math.hypot(fr.x - cam.position.x, fr.z - cam.position.z) > Math.min(drawD, 3000)) continue;
         v = new SignalView(l.route, sig);
         this.signalViews.set(sig.id, v);
-        this.world.add(v.group);
+        this.addCompiled(v.group, () => true, !this.started); // built 3 km ahead: shaders compile in the background
       }
       const dist = v.position.distanceTo(cam.position);
       v.group.visible = dist < drawD;
@@ -1347,6 +1440,8 @@ export class Game {
     for (const sv of this.switchViews) sv.update();
     for (const st of this.stations.values()) st.update(this.time.seconds, this.t, st.centre.distanceTo(cam.position) < 600);
     this.traffic.update(dt, cam.position);
+    this.billboards.update(this.lighting.nightLight);
+    if (this.people) { const pc = this.peopleContext(); this.people.update(dt, cam.position, pc.near, pc.player); }
     this.waterfalls.update(dt, this.weather.p.rain > 0.3 || this.route.regionAt(this.cameraKm()).sideSlope > 0);
 
     prof.end('scenery');
@@ -1387,18 +1482,19 @@ export class Game {
     }
 
     if (this.debugHide.size) this.applyDebugHide();
+    // dynamic resolution, from the last frame's time (not in benchmarks: they measure a fixed setup).
+    // Changed before rendering: resizing clears the canvas, so a change after it showed a blank frame.
+    const st = settings.get();
+    if (st.adaptiveQuality && !this.bench) {
+      const sc = this.adaptiveRes.update(this.engine.rawMs, this.rs.gpuMs, st.renderScale, dt);
+      if (Math.abs(sc - this.appliedScale) > 1e-3) { this.appliedScale = sc; this.rs.setRenderScale(sc); }
+    } else if (Math.abs(st.renderScale - this.appliedScale) > 1e-3) { this.appliedScale = st.renderScale; this.rs.setRenderScale(st.renderScale); }
     prof.begin('render');
     this.rs.render();
     prof.end('render');
     const c = prof.counters;
     c.km = this.line.canonicalKm(d.headKm); c.tiles = this.chunks.tileCount; c.trackChunks = this.trackChunks.size; c.grass = this.chunks.grassCount; c.props = this.chunks.propCount;
     prof.frame(this.engine.rawMs);
-    // dynamic resolution (not in benchmarks: they measure a fixed setup)
-    const st = settings.get();
-    if (st.adaptiveQuality && !this.bench) {
-      const sc = this.adaptiveRes.update(this.engine.rawMs, this.rs.gpuMs, st.renderScale, dt);
-      if (Math.abs(sc - this.appliedScale) > 1e-3) { this.appliedScale = sc; this.rs.setRenderScale(sc); }
-    } else if (Math.abs(st.renderScale - this.appliedScale) > 1e-3) { this.appliedScale = st.renderScale; this.rs.setRenderScale(st.renderScale); }
     this.bench?.frame(this.engine.rawMs);
     this.perf.frame(dt);
   }

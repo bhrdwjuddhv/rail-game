@@ -122,9 +122,9 @@ export function effective(): QualityPreset {
   return p;
 }
 
-/** First run on a phone/tablet: Low or Medium (never higher), pixel ratio 1.0-1.25, no bloom. */
-export function applyMobileDefaults(detected: Quality) {
-  const q: Quality = detected === 'low' ? 'low' : 'medium';
+/** First run on a phone/tablet: always Low (most phones cannot hold 30 FPS on Medium); players can raise it. */
+export function applyMobileDefaults(_detected: Quality) {
+  const q: Quality = 'low';
   applyPreset(q);
   settings.set({ maxPixelRatio: q === 'low' ? 1 : 1.25, bloom: false, renderScale: q === 'low' ? 0.75 : 0.85 });
 }

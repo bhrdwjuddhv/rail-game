@@ -7,7 +7,7 @@ import { assets } from './core/AssetRegistry';
 import { textures } from './core/TextureLibrary';
 import { RendererKind, RenderSystem } from './core/Renderer';
 import { applyMobileDefaults, applyPreset, PRESETS, settings } from './core/Settings';
-import { enterGameScreen, isTouch, lockControlMode } from './input/Device';
+import { enterGameScreen, isTouch, lockControlMode, syncViewport } from './input/Device';
 import { RotateScreen } from './ui/RotateScreen';
 import { setMaxAnisotropy } from './core/Textures';
 import { SCENARIOS } from './data';
@@ -35,7 +35,15 @@ function captureKey(cb: (code: string) => void) {
 
 const params = new URLSearchParams(location.search);
 const benchView = params.get('bench') as BenchView | null;
-const benchCfg: BenchConfig | undefined = benchView ? { view: benchView, seconds: Number(params.get('seconds') ?? 60), warmup: 6, speedKmph: 80 } : undefined;
+/** benchmark places: a busy station, open line, inside a tunnel (slow, so it stays inside), the freight depot with a 90-wagon train */
+const BENCH_AT: Record<string, { scenario: string; overrides: ScenarioOverrides; speed: number }> = {
+  station: { scenario: 'free-roam', overrides: { startStation: 'RNPJ' }, speed: 80 },
+  open: { scenario: 'free-roam', overrides: { startKm: 4.6 }, speed: 80 },
+  tunnel: { scenario: 'free-roam', overrides: { startKm: 35.31, track: 'DOWN' }, speed: 30 },
+  freight: { scenario: 'first-haul', overrides: { startStation: 'MRDI', consist: { loco: 'wag-12b', locos: 2, coaches: [{ type: 'boxcar', count: 90 }, { type: 'brakevan', count: 1 }], loaded: true } }, speed: 80 },
+};
+const benchAt = BENCH_AT[params.get('at') ?? 'station'] ?? BENCH_AT.station;
+const benchCfg: BenchConfig | undefined = benchView ? { view: benchView, seconds: Number(params.get('seconds') ?? 60), warmup: 6, speedKmph: Number(params.get('speed') ?? benchAt.speed) } : undefined;
 function applyUrlOverrides() {
   if (params.get('quality')) applyPreset(params.get('quality') as Quality);
   if (params.get('shadows')) settings.set({ shadows: params.get('shadows') as 'off' | 'low' | 'high' });
@@ -45,6 +53,11 @@ function applyUrlOverrides() {
 }
 
 async function boot() {
+  // touch layout sizes follow the real visible height (menus too, before any run)
+  syncViewport();
+  for (const ev of ['resize', 'orientationchange']) addEventListener(ev, syncViewport);
+  window.visualViewport?.addEventListener('resize', syncViewport);
+  document.addEventListener('fullscreenchange', syncViewport);
   const menus = new Menus(ui, { start: (id, o, opts) => start(id, o, false, opts), captureKey });
   let rs: RenderSystem;
   try {
@@ -111,7 +124,7 @@ async function boot() {
   try { auto = JSON.parse(sessionStorage.getItem('railbharat.autostart') ?? 'null'); } catch { /* ignore */ }
   const q = params.get('scenario');
   if (q && SCENARIOS[q]) auto = { id: q, overrides: params.get('loco') ? { loco: params.get('loco')! } : {} };
-  if (benchCfg) auto = { id: 'free-roam', overrides: { startStation: 'RNPJ', time: '12:00', weather: 'clear', timeScale: 1, consist: { loco: 'ep-7', coaches: [{ type: 'general', count: 6 }, { type: 'sleeper', count: 6 }], loaded: true } } };
+  if (benchCfg) auto = { id: benchAt.scenario, overrides: { time: '12:00', weather: 'clear', timeScale: 1, consist: { loco: 'ep-7', coaches: [{ type: 'general', count: 6 }, { type: 'sleeper', count: 6 }], loaded: true }, ...benchAt.overrides } };
   if (auto && SCENARIOS[auto.id]) start(auto.id, auto.overrides, true);
   else menus.main();
 }

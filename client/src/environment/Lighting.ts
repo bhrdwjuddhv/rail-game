@@ -1,7 +1,10 @@
 import * as THREE from 'three/webgpu';
 import { allLabelMaterials, materials } from '../core/Materials';
 import { clamp, lerp } from '@rail/shared/util';
-import type { QualityPreset } from '../core/Settings';
+import { settings, type Quality, type QualityPreset } from '../core/Settings';
+import { isTouch } from '../input/Device';
+
+const POOL: Record<Quality, number> = { low: 0, medium: 1, high: 2, ultra: 4 };
 import type { Sky } from './Sky';
 import type { TimeOfDay } from './TimeOfDay';
 import type { Weather } from './Weather';
@@ -24,7 +27,12 @@ export class Lighting {
   constructor(scene: THREE.Scene, world: THREE.Object3D) {
     world.add(this.sun, this.sun.target, this.hemi);
     scene.fog = this.fog;
-    for (let i = 0; i < 4; i++) {
+    // point lights for the nearest platform lamps. Every light is evaluated for every lit pixel, day or
+    // night (4 lights: 7 ms a frame on an Intel UHD), and the count is fixed for the run (changing it
+    // recompiles every shader), so it is set by quality: none on Low (lamps glow), more on stronger GPUs
+    const q = settings.get().quality;
+    const n = isTouch ? Math.min(1, POOL[q]) : POOL[q];
+    for (let i = 0; i < n; i++) {
       const l = new THREE.PointLight(0xffe2b0, 0, 40, 1.6);
       this.pool.push(l);
       world.add(l);

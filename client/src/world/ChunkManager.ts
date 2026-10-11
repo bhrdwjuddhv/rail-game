@@ -52,12 +52,28 @@ ${s.splat}
   m.customProgramCacheKey = () => TerrainTextures.cacheKey(tt.quality);
 }
 
+/**
+ * Prop materials shared by several prop types: always drawn as BatchedMesh,
+ * even in a tile where only one of those types grows. Batched and instanced
+ * draws need different shaders; a material drawn both ways got its second
+ * shader compiled mid-drive (compileAsync tracks one shader per material).
+ */
+let batchedSet: Set<string> | null = null;
+function batchedMaterials() {
+  if (batchedSet) return batchedSet;
+  const types = new Map<string, number>();
+  for (const t of PROP_TYPES) for (const part of propTemplate(t)) types.set(part.material, (types.get(part.material) ?? 0) + 1);
+  return (batchedSet = new Set([...types].filter(([, n]) => n > 1).map(([m]) => m)));
+}
+
 interface Tile {
   key: string; tx: number; tz: number;
   res: number; scenery: TileRequest['scenery'];
   group: THREE.Group | null;
   pendingId: number; // >0 while a rebuild is in flight
   wantRes: number; wantScenery: TileRequest['scenery'];
+  /** a built group waiting for its shaders (see prepare) */
+  preparing?: THREE.Group;
 }
 
 export const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x3b6470, roughness: 0.06, metalness: 0.35, transparent: true, opacity: 0.86 });
@@ -123,11 +139,27 @@ export class ChunkManager {
     tile.pendingId = 0;
     if (!this.tiles.has(tile.key)) return; // unloaded meanwhile
     const g = this.buildTileGroup(tile, m);
-    if (tile.group) this.disposeGroup(tile.group);
-    tile.group = g;
-    this.root.add(g);
-    this.count(g, 1);
+    const swap = () => {
+      if (tile.preparing !== g || this.tiles.get(tile.key) !== tile) { this.disposeGroup(g); return; } // superseded or unloaded meanwhile
+      tile.preparing = undefined;
+      if (tile.group) this.disposeGroup(tile.group);
+      tile.group = g;
+      this.root.add(g);
+      this.count(g, 1);
+      if (g.userData.billboards) this.onBillboards?.(tile.key, g.userData.billboards);
+    };
+    tile.preparing = g;
+    // the old group stays on show until the new one's shaders are ready
+    if (this.prepare) this.prepare(g).then(swap, swap); else swap();
   }
+
+  /**
+   * Set once the run has started: compile a new tile's shaders before it is
+   * shown (Game: renderer.compileAsync). During loading tiles go straight in.
+   */
+  prepare: ((g: THREE.Group) => Promise<unknown>) | null = null;
+  /** a shown tile's billboards (PROP_STRIDE floats each, world coordinates), or null when it goes */
+  onBillboards: ((tileKey: string, arr: Float32Array | null) => void) | null = null;
 
   private buildTileGroup(tile: Tile, m: any) {
     const group = new THREE.Group();
@@ -161,6 +193,8 @@ export class ChunkManager {
     for (const t of PROP_TYPES) {
       const arr = (m.props as Record<string, Float32Array>)[t];
       if (!arr || !arr.length) continue;
+      // billboards are drawn by Billboards (each shows its own ad), handed over when the tile is shown
+      if (t === 'billboard' && this.onBillboards) { group.userData.billboards = arr; group.userData.tileKey = tile.key; continue; }
       const count = arr.length / PROP_STRIDE;
       if (t === 'grass') group.userData.grass = count; else group.userData.props = (group.userData.props ?? 0) + count;
       for (const part of propTemplate(t)) {
@@ -182,7 +216,7 @@ export class ChunkManager {
       const material = mats[key];
       const shadow = list[0].part.shadow;
       let mesh: THREE.Mesh;
-      if (list.length === 1) {
+      if (list.length === 1 && !batchedMaterials().has(key)) {
         const { part, arr } = list[0];
         const im = new THREE.InstancedMesh(part.geometry, material, arr.length / PROP_STRIDE);
         fill((i, mtx, col) => { im.setMatrixAt(i, mtx); im.setColorAt(i, col); }, arr);
@@ -196,7 +230,9 @@ export class ChunkManager {
         for (const { part, arr } of list) { instances += arr.length / PROP_STRIDE; vertices += part.geometry.attributes.position.count; indices += part.geometry.index?.count ?? 0; }
         const bm = new THREE.BatchedMesh(instances, vertices, indices, material);
         bm.sortObjects = false;            // opaque: no per-frame sort
-        bm.perObjectFrustumCulled = false; // cull the whole tile batch by its bounds instead
+        // cull every tree / house on its own: a 400 m tile culled as one block drew all of it, even behind the camera,
+        // and again in the shadow pass (forest tiles: 3.2M -> 1.5M triangles, see PERF_LOG 2026-10-11)
+        bm.perObjectFrustumCulled = true;
         for (const { part, arr } of list) {
           const gid = bm.addGeometry(part.geometry);
           fill((_i, mtx, col) => { const id = bm.addInstance(gid); bm.setMatrixAt(id, mtx); bm.setColorAt(id, col); }, arr);
@@ -225,7 +261,7 @@ export class ChunkManager {
   }
 
   private disposeGroup(g: THREE.Group) {
-    if (g.parent) this.count(g, -1);
+    if (g.parent) { this.count(g, -1); if (g.userData.billboards) this.onBillboards?.(g.userData.tileKey, null); }
     g.removeFromParent();
     g.traverse(o => {
       const mesh = o as THREE.Mesh;

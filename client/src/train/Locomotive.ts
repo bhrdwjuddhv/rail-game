@@ -123,7 +123,13 @@ export class LocoModel {
   /** distance from the body centre to each bogie centre */
   readonly bogieX: number;
 
-  constructor(readonly data: LocoData, variant: 'passenger' | 'freight' = 'passenger') {
+  /**
+   * realLight: this section's headlight is a real SpotLight (the player's leading
+   * cab only). Every light in the scene is compiled into every material's
+   * shader, so a light appearing with an AI train recompiled them all (a
+   * multi-second freeze); other sections show the lamp glow and beam only.
+   */
+  constructor(readonly data: LocoData, variant: 'passenger' | 'freight' = 'passenger', realLight = true) {
     const n = sectionsOf(data);
     const L = data.lengthM / n;
     this.length = L;
@@ -192,7 +198,7 @@ export class LocoModel {
     this.headlight.position.set(headX + 0.2, headY - 0.05, 0);
     this.headlightTarget.position.set(L / 2 + 60, 0.5, 0);
     this.headlight.target = this.headlightTarget;
-    this.body.add(this.headlight, this.headlightTarget);
+    if (realLight) this.body.add(this.headlight, this.headlightTarget);
     // volumetric-looking beam (visible in fog/night)
     const beamGeo = new THREE.ConeGeometry(9, 120, 20, 1, true);
     beamGeo.translate(0, -60, 0);

@@ -7,6 +7,7 @@ import { formatClock } from '@rail/shared/util';
 import { settingsPanel } from './Settings';
 import { assets } from '../core/AssetRegistry';
 import { isTouch } from '../input/Device';
+import CREDITS from '../../../data/credits.json';
 
 export interface PauseCallbacks {
   title: string; godActive: boolean;
@@ -140,6 +141,15 @@ export class Menus {
     this.root.style.display = el ? '' : 'none';
   }
   hide() { this.show(null); }
+
+  /** Fade the loading screen out over the running game (no hard cut to a blank canvas). */
+  async reveal() {
+    if (!this.current) return;
+    this.root.classList.add('revealing');
+    await new Promise(r => setTimeout(r, 380));
+    this.root.classList.remove('revealing');
+    this.hide();
+  }
   get open() { return !!this.current; }
 
   main() {
@@ -375,11 +385,14 @@ function pickLoco(root: HTMLElement, b: HTMLElement) {
   return true;
 }
 
-/** Credits for third-party 3D models (attribution licences such as CC BY), from each loco's model data. */
+/** Credits for third-party 3D models (attribution licences such as CC BY): each loco's model data, then data/credits.json. */
 function creditsHtml() {
-  const rows = Object.values(LOCOS).filter(l => l.model?.author && !/FILL IN/.test(l.model.author)).map(l => {
-    const m = l.model!, src = /^https:///.test(m.source ?? '') ? `<a href="${esc(m.source!)}" target="_blank" rel="noopener">source</a>` : '';
-    return `<li>${esc(l.name)}: "${esc(m.title ?? l.name)}" by ${esc(m.author!)}, ${esc(m.licence ?? '')} ${src} (modified for the game)</li>`;
+  const link = (u?: string) => ((u ?? '').startsWith('https://') ? ` <a href="${esc(u!)}" target="_blank" rel="noopener">source</a>` : '');
+  const locos = Object.values(LOCOS).filter(l => l.model?.author && !/FILL IN/.test(l.model.author)).map(l => {
+    const m = l.model!;
+    return `<li>${esc(l.name)}: "${esc(m.title ?? l.name)}" by ${esc(m.author!)}, ${esc(m.licence ?? '')}${link(m.source)} (modified for the game)</li>`;
   });
-  return `<h3>Credits</h3><ul class="credits">${rows.join('')}<li>Everything else: original work generated in code. Fictional operator, stations and liveries.</li></ul>`;
+  const others = (CREDITS as { assets: { title: string; author: string; licence: string; source?: string }[] }).assets.map(a =>
+    `<li>"${esc(a.title)}" by ${esc(a.author)}, ${esc(a.licence)}${link(a.source)} (modified for the game)</li>`);
+  return `<h3>Credits</h3><ul class="credits">${[...locos, ...others].join('')}<li>Everything else: original work generated in code. Fictional operator, stations and liveries.</li></ul>`;
 }

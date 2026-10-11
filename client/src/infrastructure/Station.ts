@@ -89,7 +89,11 @@ export class StationView {
       // the other way; otherwise their top faces point down and get culled (see-through).
       const facing = (pts: [number, number][]) => (sg < 0 ? pts.reverse() : pts);
       // platform top beyond the edge strip, far face (tiles texture, metre UVs)
-      strip.extrude(frames, ss, facing([[a + sg * EDGE_W, PLATFORM_H], [c, PLATFORM_H], [c, -0.2]]), ox, oz, 1, 1);
+      // (a profile edge walked away from the track faces down; so the top and far face are walked from the
+      // far side towards the track on the right-hand platforms, and the other way on the left: the reverse
+      // of the track-facing face below. The old rule had them backwards and both tops were culled from above.)
+      const outward = (pts: [number, number][]) => (sg > 0 ? pts.reverse() : pts);
+      strip.extrude(frames, ss, outward([[a + sg * EDGE_W, PLATFORM_H], [c, PLATFORM_H], [c, -0.2]]), ox, oz, 1, 1);
       // edge strip: top near the edge + the face toward the track (edge texture)
       const edge = new THREE.Mesh(edgeStrip(frames, ss, a, sg, ox, oz, 2), M.platformEdge);
       edge.receiveShadow = true;
@@ -288,7 +292,7 @@ export class StationView {
   update(clockSec: number, t: number, near: boolean) {
     const minute = Math.floor(clockSec / 60);
     if (minute !== this.lastMinute) { this.lastMinute = minute; this.drawClock(clockSec); }
-    if (near) this.crowd.update(t);
+    if (near && this.crowd.mesh.visible) this.crowd.update(t); // hidden once the 3D people are in
   }
 
   dispose() {

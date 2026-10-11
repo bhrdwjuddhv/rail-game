@@ -1,0 +1,10 @@
+{
+  "help": "Third-party assets other than loco models (those carry their credit in their own data file). Shown in the game under Controls & help -> Credits.",
+  "assets": [
+    { "title": "Indian Woman in Saree", "file": "client/public/assets/models/people/woman1.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "Sketchfab Free Standard", "source": "https://sketchfab.com/3d-models/indian-woman-in-saree-b5965a93b03440dea65160f7cbac1fc7" },
+    { "title": "Indian Man", "file": "client/public/assets/models/people/man2.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/indian-man-aa1cb70d9c4f4573a3ff7ae0a5bf82dd" },
+    { "title": "Indian Office Woman", "file": "client/public/assets/models/people/woman2.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/indian-office-woman-e6c60cafd33c4d54b0b840c4146ed244" },
+    { "title": "Indian Teenager", "file": "client/public/assets/models/people/teenagerboy.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/indian-teenager-b2804b40f671431ca7b5cc53b239175e" },
+    { "title": "Indian Man with Red Clothes", "file": "client/public/assets/models/people/porter.glb", "author": "pankhkhan", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/indian-man-with-red-clothes-23b1805e473d4e5cb3e439b576ca39a9" }
+  ]
+}

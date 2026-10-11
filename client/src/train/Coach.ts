@@ -165,8 +165,9 @@ export class TrainView {
   /** world transforms of each vehicle body (for cameras, sound) */
   readonly vehicleMatrices: THREE.Matrix4[] = [];
 
-  constructor(readonly vehicles: Vehicle[], loco: LocoData, coachTypes: Record<string, CoachData>, variant: 'passenger' | 'freight' = 'passenger') {
-    for (const v of vehicles) if (v.kind === 'loco') { const m = new LocoModel(loco, variant); this.locos.push(m); this.group.add(m.group); }
+  /** playerTrain: the leading loco gets a real headlight (see LocoModel); AI trains get none */
+  constructor(readonly vehicles: Vehicle[], loco: LocoData, coachTypes: Record<string, CoachData>, variant: 'passenger' | 'freight' = 'passenger', playerTrain = true) {
+    for (const v of vehicles) if (v.kind === 'loco') { const m = new LocoModel(loco, variant, playerTrain && !this.locos.length); this.locos.push(m); this.group.add(m.group); }
     this.loco = this.locos[0];
     const coaches = vehicles.filter(v => v.kind === 'coach');
     const byType = new Map<string, number[]>();

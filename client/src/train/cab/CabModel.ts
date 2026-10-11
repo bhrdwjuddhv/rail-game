@@ -37,7 +37,8 @@ interface Drop { x: number; y: number; r: number; vx: number; vy: number; life: 
 export class CabModel {
   readonly group = new THREE.Group();
   readonly lightMat: THREE.MeshBasicMaterial;
-  readonly cabLight: THREE.PointLight;
+  /** the cab's own surface material: the cab light glows it (a real point light would cost every pixel on screen) */
+  private shellMat: THREE.MeshStandardMaterial;
   private rainCanvas = document.createElement('canvas');
   private rainCtx: CanvasRenderingContext2D;
   private rainTex: THREE.CanvasTexture;
@@ -108,16 +109,17 @@ export class CabModel {
     for (const z of [-0.7, 0.7]) b.box(0.4, 0.02, 0.7, v ? mat(f - 0.35, 3.9, z, 0, 0, -0.1) : mat(f - 0.52, 3.6, z, 0, 0, -0.5), '#222');
     b.cyl(0.07, 0.07, 0.5, 10, mat(back + 0.15, fl + 0.3, -1.25), '#c0392b');
     b.box(0.4, 1.5, 0.7, mat(back + 0.22, fl + 0.75, -0.95), '#7d868e');
-    this.group.add(b.build(materials() as unknown as Record<string, THREE.Material>, false));
+    const M = materials();
+    this.shellMat = (M.std as THREE.MeshStandardMaterial).clone();
+    this.shellMat.emissive.setRGB(1, 0.95, 0.85);
+    this.shellMat.emissiveIntensity = 0;
+    this.group.add(b.build({ ...(M as unknown as Record<string, THREE.Material>), std: this.shellMat }, false));
 
     // ceiling light
     this.lightMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.18), this.lightMat);
     lamp.position.set(f - 1.6, 3.96, 0);
     this.group.add(lamp);
-    this.cabLight = new THREE.PointLight(0xfff2d8, 0, 5, 1.5);
-    this.cabLight.position.set(f - 1.6, 3.8, 0);
-    this.group.add(this.cabLight);
 
     // windshield with rain canvas (two panes)
     this.rainCanvas.width = 512; this.rainCanvas.height = 256;
@@ -157,6 +159,12 @@ export class CabModel {
       this.wipers.push(holder);
     }
     this.drawRain(0);
+  }
+
+  /** Cab light switch: the ceiling lamp and a warm glow on the cab surfaces. */
+  setCabLight(on: boolean) {
+    this.lightMat.color.setScalar(on ? 3 : 0.2);
+    this.shellMat.emissiveIntensity = on ? 0.16 : 0;
   }
 
   /** Advance rain/wiper simulation and repaint the windshield canvas. */

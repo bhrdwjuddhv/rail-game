@@ -31,7 +31,7 @@ function build() {
   const facade = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, emissiveMap: tex.facade(true), emissive: new THREE.Color(0xffffff), emissiveIntensity: 0 });
   // building template UVs: one unit = 12.4 m (4 floors x 4 windows); a real facade image has its own windows,
   // so the procedural lit-window mask is dropped when it loads
-  textures.bind(facade, 'facade', () => tex.facade(false), 12.4, { resident: true, onFileLoaded: () => { facade.emissiveMap = null; facade.emissive.setRGB(0, 0, 0); } });
+  textures.bind(facade, 'facade', () => tex.facade(false), 12.4, { resident: true, onFileLoaded: () => { facade.emissive.setRGB(0, 0, 0); } }); // keep the map: removing it would change (recompile) the shader
   // station-only surfaces (acquired by StationView)
   const platform = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 });
   textures.bind(platform, 'platform', tex.concrete, 1);

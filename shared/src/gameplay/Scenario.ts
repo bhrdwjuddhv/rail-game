@@ -20,7 +20,7 @@ export interface ScenarioData {
 }
 
 /** Overrides chosen in the menus (free roam start, consist builder, time/weather). */
-export interface ScenarioOverrides { startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number }
+export interface ScenarioOverrides { startKm?: number; startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number }
 
 export function applyOverrides(s: ScenarioData, o: ScenarioOverrides, route: Route): ScenarioData {
   const out: ScenarioData = JSON.parse(JSON.stringify(s));
@@ -34,6 +34,8 @@ export function applyOverrides(s: ScenarioData, o: ScenarioOverrides, route: Rou
     if (st) out.start = { km: st.km, atPlatform: st.code, track: out.start.track };
   }
   if (o.track) out.start = { ...out.start, track: o.track, line: undefined };
+  // a surveyed km on the open line (benchmarks)
+  if (o.startKm !== undefined) out.start = { km: o.startKm, track: out.start.track };
   return out;
 }
 

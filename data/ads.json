@@ -1,0 +1,9 @@
+{
+  "help": "Billboards along the line show these ads, picked per billboard (weight = how often). image: a file in client/public/assets/ads/ (2:1, e.g. 1024x512 JPG or PNG); without one, the text ad below is drawn. url: the advertiser's site (https), opened in a new tab when a player clicks or taps the billboard; leave it out for no link.",
+  "ads": [
+    { "id": "chai-supreme", "weight": 1, "fallback": { "bg": "#c0392b", "fg": "#ffffff", "title": "CHAI SUPREME", "sub": "Fresh every morning" } },
+    { "id": "ganga-cement", "weight": 1, "fallback": { "bg": "#1f6f8b", "fg": "#ffffff", "title": "GANGA CEMENT", "sub": "Strong like a bridge" } },
+    { "id": "raja-mobiles", "weight": 1, "fallback": { "bg": "#f1c40f", "fg": "#222222", "title": "RAJA MOBILES", "sub": "5G phones from Rs 6999" } },
+    { "id": "kisan-tractors", "weight": 1, "fallback": { "bg": "#27ae60", "fg": "#ffffff", "title": "KISAN TRACTORS", "sub": "Built for every field" } }
+  ]
+}
