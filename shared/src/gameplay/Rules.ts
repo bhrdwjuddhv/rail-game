@@ -127,6 +127,7 @@ export class Rules {
     if (!this.enabled || !p?.stop) return;
     if (!arrived && this.cfg().mustStop) this.scoring.add('stops', -200, `Missed booked stop at ${st.name}`, clock);
     else if (p.dep !== undefined && clock - p.dep > 120) this.scoring.add('punctuality', -20, `Late departure from ${st.name}`, clock);
+    else if (p.dep !== undefined && p.dep - clock > 30) this.scoring.add('punctuality', -10, `Left ${st.name} early (due ${formatClock(p.dep)})`, clock);
     bus.emit('station-departure', { code: st.code });
   }
 }

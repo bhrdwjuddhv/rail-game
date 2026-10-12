@@ -10,7 +10,9 @@ const DECEL = 0.45;      // planning deceleration (m/s^2), well inside full-serv
 const STOP_SHORT = 40;   // stop this far before a red signal (m)
 
 export interface DriveTargets {
-  limitKmph: number;           // current applicable limit
+  limitKmph: number;           // speed to drive at (the limit, or whatever God Mode allows)
+  /** planning deceleration (m/s^2): the normal cautious value, or the train's real braking with God Mode's instant brakes */
+  decel?: number;
   nextStop: Signal | null;     // next stop signal on the set route
   stationStopKm: number | null; // booked stop marker ahead, if any
 }
@@ -26,9 +28,11 @@ export class AutoDriver {
   braking = false;
 
   /** Highest safe speed now (m/s) given a stopping point `dist` metres ahead. */
-  private curve(dist: number) { return Math.sqrt(2 * DECEL * Math.max(0, dist)); }
+  private decel = DECEL;
+  private curve(dist: number) { return Math.sqrt(2 * this.decel * Math.max(0, dist)); }
 
   private targetSpeed(dyn: TrainDynamics, t: DriveTargets) {
+    this.decel = t.decel ?? DECEL;
     let v = Math.max(0, t.limitKmph - 3) * KMPH;
     if (t.nextStop && t.nextStop.aspect === 'R' && !t.nextStop.callingOn) v = Math.min(v, this.curve((t.nextStop.km - dyn.headKm) * 1000 - STOP_SHORT));
     if (t.nextStop?.callingOn) v = Math.min(v, 12 * KMPH);
@@ -81,7 +85,9 @@ export class AutoDriver {
       if (dyn.brakes.handle !== RUNNING && dyn.brakes.handle !== 0) sys.setTrainBrake(RUNNING);
       if (this.notchTimer <= 0 && dyn.brakes.lastBC < 0.3) {
         this.notchTimer = 0.6;
-        if (v < target - 1.5) sys.throttle(1);
+        // far below the target: full power at once; near it, a notch at a time
+        if (v < target - 8) sys.setThrottle(sys.loco.notches);
+        else if (v < target - 1.5) sys.throttle(1);
         else if (v > target - 0.3 && sys.notch > 0) sys.throttle(-1);
       }
     }

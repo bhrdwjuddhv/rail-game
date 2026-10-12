@@ -116,6 +116,21 @@ export class DieselTraction extends ElectricTraction {
   }
 }
 
+/**
+ * High-speed electric multiple unit: motors on most axles of every car
+ * (distributed traction), so the grip is the whole train's weight (the
+ * Consist gives the trainset's full mass as the driven mass) and the effort
+ * builds faster than a loco's; a long constant-power region up to top speed.
+ * Same interface as a loco: notches, regen and the power-on rules (pantograph,
+ * main breaker) are those of an electric.
+ */
+export class HighSpeedEmuTraction extends ElectricTraction {
+  update(i: TractionInput) {
+    // effort is shared by many small motors: it follows the controller quickly and slips less
+    super.update({ ...i, adhesionN: i.adhesionN * 1.15 });
+  }
+}
+
 export function createTraction(loco: LocoData, units = 1): TractionModel {
-  return loco.type === 'diesel' ? new DieselTraction(loco, units) : new ElectricTraction(loco, units);
+  return loco.type === 'diesel' ? new DieselTraction(loco, units) : loco.type === 'trainset' ? new HighSpeedEmuTraction(loco, units) : new ElectricTraction(loco, units);
 }

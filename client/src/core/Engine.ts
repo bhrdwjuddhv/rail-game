@@ -4,6 +4,8 @@ import { prof } from './Profiler';
 export class Engine {
   readonly step: number;
   paused = false;
+  /** simulation speed (time warp): 1 = real time; the frame budget is the same 24 steps */
+  speed = 1;
   simTime = 0;
   private acc = 0;
   private last = -1;
@@ -41,7 +43,7 @@ export class Engine {
     this.last = nowMs;
     if (!this.paused) {
       prof.begin('sim');
-      this.acc += dt;
+      this.acc += dt * this.speed;
       let n = 0;
       while (this.acc >= this.step && n < 24) {
         this.sim(this.step);

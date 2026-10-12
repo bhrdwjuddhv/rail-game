@@ -3,6 +3,7 @@ import type { Interlocking } from '../signalling/Interlocking';
 import type { Occupant } from '../signalling/Signal';
 import type { Route, StationInfo } from '../track/Route';
 import { parseClock } from '../util';
+import type { WorkKind } from './StationWork';
 
 export interface StopPlan {
   station: string;
@@ -13,9 +14,13 @@ export interface StopPlan {
   arr?: number; // seconds since midnight
   dep?: number;
   dwellS?: number;
+  /** work at this stop (default: passengers board at a passenger train's stops) */
+  work?: WorkKind[];
+  /** a festival crowd at this stop (more passengers, longer boarding) */
+  festival?: boolean;
 }
 
-export interface TimetableEntry { station: string; arr?: string; dep?: string; line?: string; dwellS?: number; exitLine?: string }
+export interface TimetableEntry { station: string; arr?: string; dep?: string; line?: string; dwellS?: number; exitLine?: string; work?: WorkKind[]; festival?: boolean }
 
 /** `line` defaults to the running line of the train's direction (resolved by the Dispatcher). */
 export function planFromTimetable(entries: TimetableEntry[]): Map<string, StopPlan> {
@@ -24,6 +29,7 @@ export function planFromTimetable(entries: TimetableEntry[]): Map<string, StopPl
     m.set(e.station, {
       station: e.station, line: e.line ?? '', stop: true, exitLine: e.exitLine,
       arr: e.arr ? parseClock(e.arr) : undefined, dep: e.dep ? parseClock(e.dep) : undefined, dwellS: e.dwellS,
+      work: e.work, festival: e.festival,
     });
   }
   return m;
@@ -55,6 +61,11 @@ export class Dispatcher {
   readonly departNow = new Set<string>();
   /** trains whose routes are not set automatically (God Mode "Manual points") */
   readonly manual = new Set<string>();
+  /**
+   * Trains whose departure waits for their station work (doors closed,
+   * loading done) instead of a minimum dwell: ready(code) gives the road.
+   */
+  readonly gates = new Map<string, (code: string) => boolean>();
 
   constructor(private route: Route, private interlocking: Interlocking, private block: BlockSystem) {}
 
@@ -144,7 +155,8 @@ export class Dispatcher {
         }
 
         // departure authority
-        const dwellOk = !plan.stop || this.departNow.has(t.id) || (s.arrived && clock - s.arrivedAt >= (plan.dwellS ?? MIN_DWELL) && (plan.dep === undefined || clock >= plan.dep - 10));
+        const gate = this.gates.get(t.id);
+        const dwellOk = !plan.stop || this.departNow.has(t.id) || (s.arrived && (gate ? gate(st.code) : clock - s.arrivedAt >= (plan.dwellS ?? MIN_DWELL)) && (plan.dep === undefined || clock >= plan.dep - 10));
         if (interlocked && dwellOk && t.headKm > st.entryKm - 3) {
           const recv = this.interlocking.reception(st);
           const lineId = recv && recv.trainId === t.id ? recv.lineId : this.lineOf(st, t.offsetAt(Math.max(t.tailKm, Math.min(t.headKm, st.platformToKm))));

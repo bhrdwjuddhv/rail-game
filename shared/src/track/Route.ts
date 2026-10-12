@@ -258,7 +258,7 @@ export class Route {
       for (const l of st.lineInfo) {
         sig.push({ id: sid(st.code, `S-${l.id}`), km: st.platformToKm + 0.03, kind: 'starter', offset: l.offset, aspects: 4, station: st.code, line: l.id });
       }
-      if (st.type !== 'terminal' && st.exitKm + 0.4 < this.lengthKm - 0.2) {
+      if (st.exitKm + 0.4 < this.lengthKm - 0.2) { // (a terminal at the end of the line has no room for one)
         sig.push({ id: sid(st.code, 'AS'), km: st.exitKm + 0.4, kind: 'advanced-starter', offset: ro, aspects: 4, station: st.code });
       }
     }

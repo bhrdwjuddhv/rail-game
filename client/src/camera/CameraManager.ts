@@ -50,6 +50,8 @@ export class CameraManager {
   private from: Pose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fov: 60 };
   private pose: Pose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fov: 60 };
   private started = false;
+  /** may refuse a mode for now (the bullet train's cab while its console loads) */
+  gate: ((i: number) => boolean) | null = null;
 
   constructor(aspect: number, far: number) {
     this.camera = new THREE.PerspectiveCamera(60, aspect, 0.05, far);
@@ -61,6 +63,7 @@ export class CameraManager {
   select(i: number, ctx: CameraContext) {
     if (i < 0 || i >= this.modes.length) return;
     if (i === this.index && this.started) { this.mode.again?.(); return; }
+    if (this.gate && !this.gate(i)) return;
     this.mode?.exit?.();
     this.from.pos.copy(this.camera.position);
     this.from.quat.copy(this.camera.quaternion);

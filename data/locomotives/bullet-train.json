@@ -1,0 +1,68 @@
+{
+  "id": "bullet-train",
+  "name": "Bullet Train",
+  "operator": "Bharat Rail Network",
+  "number": "E-401",
+  "type": "trainset",
+  "bodyStyle": "trainset",
+  "massT": 210,
+  "lengthM": 71.9,
+  "axles": 16,
+  "bogieCentresM": 11.5,
+  "axleSpacingM": 2.5,
+  "wheelDiameterM": 0.86,
+  "maxPowerKW": 5200,
+  "maxTractiveEffortKN": 95,
+  "maxSpeedKmph": 320,
+  "notches": 10,
+  "regen": { "maxEffortKN": 110, "maxPowerKW": 6000, "fadeStartKmph": 15, "fadeEndKmph": 3, "notches": 10 },
+  "brakes": { "maxBrakeForceKN": 230, "independentMaxBarKgcm2": 3.5 },
+  "resistance": { "aN": 3800, "bNperMs": 42, "cNperMs2": 6.0 },
+  "adhesion": { "dry": 0.33, "wet": 0.24, "damp": 0.29, "sanderBonus": 0.05 },
+  "electrical": { "lineVoltageKV": 25, "motorCount": 16, "ampsPerKN": 6 },
+  "livery": { "body": "#f4f6f8", "band": "#1f4fa3", "roof": "#d9dde2", "underframe": "#3a3f44", "logoText": "BRN" },
+  "cabLayout": "ep-desk-left",
+  "soundProfile": { "motorBaseHz": 70, "motorHzPerKmph": 4.2, "hornLowHz": [415, 523], "hornHighHz": [554, 698], "blowerHz": 160, "highSpeed": true },
+  "trainset": {
+    "cars": [
+      { "lengthM": 15.63, "keep": [44.65, 61.1], "seats": 64, "doors": [-6.2] },
+      { "lengthM": 20.8, "keep": [22.75, 44.65], "seats": 98, "doors": [-8.9, 8.9] },
+      { "lengthM": 19.9, "keep": [1.8, 22.75], "seats": 98, "doors": [-8.4, 8.4] },
+      { "lengthM": 15.57, "keep": [-14.6, 1.8], "seats": 64, "doors": [6.2] }
+    ]
+  },
+  "model": {
+    "file": "assets/models/locos/bullet-train.glb",
+    "title": "Bullet Train",
+    "author": "haddly Anand Kumar S (Sketchfab: hadleyanand)",
+    "licence": "CC BY 4.0",
+    "source": "https://sketchfab.com/3d-models/bullet-train-51c7475346ca45d28206aaaecd129f10",
+    "scale": 0.95,
+    "rotationDeg": [0, 0, 0],
+    "offset": [0, -0.19, 0],
+    "bogies": [],
+    "pantographs": [],
+    "hideInCab": [],
+    "lights": { "head": [7.4, 1.05], "markers": [7.2, 0.8, 0.85] },
+    "look": { "roughness": 0.35, "metalness": 0.2 },
+    "cab": {
+      "eye": [1.85, 2.02, 0],
+      "interior": "panel",
+      "panel": {
+        "file": "assets/models/locos/bullet-control-panel.glb",
+        "title": "Desiro 45 \"Lastochka\" Train Driver Console",
+        "author": "romeocharlie (Sketchfab: romeo-charlie)",
+        "licence": "CC BY 4.0",
+        "source": "https://sketchfab.com/3d-models/desiro-45-lastochka-train-driver-console-cc0e1e15308e486383503f9eb18a4f35",
+        "scale": 1,
+        "rotationDeg": [0, 90, 0],
+        "offset": [2.85, 0.77, 0],
+        "remove": [
+          "UnderConsole_M_UnderConsole_a_0", "UnderConsole_M_UnderConsole_b_0"
+        ],
+        "screens": { "Console_M_Display_HMI_0": ["main", "power"], "Console_M_Display_SLUC_0": "signal", "Console_M_Display_CCTV_0": "brake" },
+        "hits": {}
+      }
+    }
+  }
+}

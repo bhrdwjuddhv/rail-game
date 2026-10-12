@@ -4,7 +4,7 @@ import { canvasTexture } from '../core/Textures';
 import { materials } from '../core/Materials';
 import { CONTACT_H } from '../infrastructure/OHE';
 import { LocoData, sectionsOf } from '@rail/shared/train/Consist';
-import { GlbLevel, instanceLevel, loadLocoModel, poseRig } from './LocoModelLoader';
+import { GlbLevel, instanceLevel, loadLocoModel, partConfig, poseRig } from './LocoModelLoader';
 
 export const BODY_FLOOR = 1.25;  // underside of body above rail
 export const ROOF_H = 4.05;      // roof above rail
@@ -129,9 +129,10 @@ export class LocoModel {
    * shader, so a light appearing with an AI train recompiled them all (a
    * multi-second freeze); other sections show the lamp glow and beam only.
    */
-  constructor(readonly data: LocoData, variant: 'passenger' | 'freight' = 'passenger', realLight = true) {
+  /** section: which section / car of the loco this is (a trainset's cars each have their own part of the model) */
+  constructor(readonly data: LocoData, variant: 'passenger' | 'freight' = 'passenger', realLight = true, readonly section = 0) {
     const n = sectionsOf(data);
-    const L = data.lengthM / n;
+    const L = data.trainset ? data.trainset.cars[section].lengthM : data.lengthM / n;
     this.length = L;
     this.style = data.bodyStyle ?? 'twin-cab';
     this.bogieX = data.bogieCentresM / 2;
@@ -153,7 +154,8 @@ export class LocoModel {
       mid.add(new THREE.Mesh(geo, shellMat));
       full.add(this.electricDetails(L, twin).build(M as unknown as Record<string, THREE.Material>));
       // pantographs: twin cab has two; a section of a twin loco has one, towards its inner end
-      const pantoX = twin ? [L / 2 - 4.3, -(L / 2 - 4.3)] : [-(L / 2 - 3.6)];
+      // (a trainset's model is not rigged: its pantographs are part of the body and do not move)
+      const pantoX = data.trainset ? [] : twin ? [L / 2 - 4.3, -(L / 2 - 4.3)] : [-(L / 2 - 3.6)];
       for (const x of pantoX) this.buildPanto(x, x > 0 ? 1 : -1);
       if (!twin) headX = L / 2 - 0.5;
     }
@@ -167,7 +169,8 @@ export class LocoModel {
 
     // lights: headlight(s) and markers at the cab end(s)
     this.headMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
-    const ends = this.style === 'twin-cab' ? [1, -1] : [1];
+    // a trainset's lamps are on the leading car only
+    const ends = this.style === 'twin-cab' ? [1, -1] : data.trainset && section > 0 ? [] : [1];
     for (const end of ends) {
       // one headlight, or a twin lamp (diesel hood units)
       const r = lampZ.length > 1 ? 0.13 : 0.2;
@@ -193,6 +196,7 @@ export class LocoModel {
     const fl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), this.flasherMat);
     fl.position.set(this.style === 'diesel-hood' ? headX - 0.3 : L / 2 - 1.4, this.style === 'diesel-hood' ? headY + 0.25 : ROOF_H + 0.12, 0);
     this.body.add(fl);
+    fl.visible = !(data.trainset && section > 0);
 
     this.headlight = new THREE.SpotLight(0xfff1d6, 0, 600, 0.26, 0.45, 1.2);
     this.headlight.position.set(headX + 0.2, headY - 0.05, 0);
@@ -210,7 +214,7 @@ export class LocoModel {
     this.body.add(this.beam);
     this.group.add(this.body);
     // a real 3D model replaces the procedural one when it has loaded (the procedural one stays if it fails)
-    if (data.model) void loadLocoModel(data).then(t => { if (t) this.attachGlb(t); });
+    if (data.model) void loadLocoModel(data, section).then(t => { if (t) this.attachGlb(t); });
 
     // bogies + wheelsets (positioned per frame by TrainView): Bo (2 axles) or Co (3 axles)
     const perBogie = Math.max(2, Math.round(data.axles / (n * 2)));
@@ -465,7 +469,7 @@ export class LocoModel {
    * lamps move to the positions in data.model.lights.
    */
   private attachGlb(t: Record<'near' | 'mid' | 'far', THREE.Group>) {
-    const cfg = this.data.model!;
+    const cfg = partConfig(this.data, this.section);
     const levels = (['near', 'mid', 'far'] as const).map(k => instanceLevel(t[k], cfg));
     this.lod.levels.length = 0;
     this.lod.clear();
@@ -522,9 +526,10 @@ export class LocoModel {
     const ownCab = this.usesModelCab;
     // a model without its own cab (data.model.cab) is not drawn from the driver's seat: our cab
     // interior is shown alone, so the model's body (often double-sided, with painted windows) never
-    // closes in around the camera
+    // closes in around the camera. Neither is one whose console brings its own cabin (interior
+    // 'panel': a shell without an interior would cut through it)
     // (on the LOD itself: THREE.LOD sets its levels' visibility every frame)
-    if (this.glb) this.lod.visible = !inCab || ownCab;
+    if (this.glb) this.lod.visible = !inCab || (ownCab && this.data.model?.cab?.interior !== 'panel');
     if (this.glb) for (const l of this.glb) {
       for (const c of l.cab) c.visible = !inCab || ownCab;
       for (const r of l.pantos) { r.lower.visible = r.upper.visible = !inCab; }

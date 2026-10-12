@@ -2,7 +2,7 @@
   "id": "free-roam",
   "name": "Free Roam",
   "difficulty": "Sandbox",
-  "description": "No timetable, no penalties. Pick a start station, build your own consist, set the time and weather, and drive anywhere on the line.",
+  "description": "No timetable, no penalties. Pick a station, loco, train, time and weather, and drive anywhere.",
   "route": "ghat-express",
   "start": { "km": 1.0, "track": "DOWN", "atPlatform": "SNGH" },
   "consist": { "loco": "ep-7", "coaches": [ { "type": "general", "count": 6 }, { "type": "sleeper", "count": 6 } ], "loaded": true },

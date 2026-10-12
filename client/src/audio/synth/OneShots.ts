@@ -136,5 +136,21 @@ export class OneShots {
     }
   }
 
+  /** guard's whistle: a pea whistle trill, two blasts */
+  guardWhistle(dest: AudioNode, vol = 0.18) {
+    const c = this.a.ctx, t0 = this.a.now;
+    for (const [s, d] of [[0, 0.35], [0.5, 0.9]]) {
+      const o = c.createOscillator(), lfo = c.createOscillator(), depth = c.createGain();
+      o.type = 'sine'; o.frequency.value = 2900;
+      lfo.frequency.value = 28; depth.gain.value = 260; // the pea rattling: fast frequency wobble
+      lfo.connect(depth).connect(o.frequency);
+      o.connect(this.env(dest, t0 + s, vol, 0.01, d));
+      o.start(t0 + s); lfo.start(t0 + s); o.stop(t0 + s + d + 0.1); lfo.stop(t0 + s + d + 0.1);
+    }
+  }
+
+  /** door gear: a short pneumatic hiss and thud */
+  doors(dest: AudioNode, vol = 0.15) { const t = this.a.now; this.tone(dest, t, 180, 0.08, vol, 'triangle'); this.tone(dest, t + 0.05, 95, 0.18, vol * 0.8, 'sine'); }
+
   cricket(dest: AudioNode, vol = 0.05) { const t = this.a.now; for (let i = 0; i < 3; i++) this.tone(dest, t + i * 0.06, 4400, 0.035, vol); }
 }

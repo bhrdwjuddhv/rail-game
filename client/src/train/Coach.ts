@@ -158,7 +158,10 @@ export class TrainView {
   readonly loco: LocoModel;
   /** every loco section, in train order */
   readonly locos: LocoModel[] = [];
-  private bodies = new Map<string, { body: THREE.InstancedMesh; under: THREE.InstancedMesh; idx: number[] }>();
+  private bodies = new Map<string, { body: THREE.InstancedMesh; under: THREE.InstancedMesh; idx: number[]; ct: CoachData }>();
+  /** the type each vehicle is drawn as (an empty wagon may look different: CoachData.emptyLook) */
+  private look: string[] = [];
+  private slot: number[] = [];
   private bogies: THREE.InstancedMesh;
   private wheels: THREE.InstancedMesh;
   wheelAngle = 0;
@@ -167,24 +170,31 @@ export class TrainView {
 
   /** playerTrain: the leading loco gets a real headlight (see LocoModel); AI trains get none */
   constructor(readonly vehicles: Vehicle[], loco: LocoData, coachTypes: Record<string, CoachData>, variant: 'passenger' | 'freight' = 'passenger', playerTrain = true) {
-    for (const v of vehicles) if (v.kind === 'loco') { const m = new LocoModel(loco, variant, playerTrain && !this.locos.length); this.locos.push(m); this.group.add(m.group); }
+    for (const v of vehicles) if (v.kind === 'loco') { const m = new LocoModel(loco, variant, playerTrain && !this.locos.length, v.section ?? 0); this.locos.push(m); this.group.add(m.group); }
     this.loco = this.locos[0];
     const coaches = vehicles.filter(v => v.kind === 'coach');
-    const byType = new Map<string, number[]>();
-    vehicles.forEach((v, i) => { if (v.kind !== 'coach') return; const l = byType.get(v.typeId) ?? []; l.push(i); byType.set(v.typeId, l); });
+    this.coachTypes = coachTypes;
+    // instance sets: every type a vehicle is or may be drawn as (loaded / empty look), room for all of them
+    const cap = new Map<string, number>();
+    vehicles.forEach((v, i) => {
+      this.look[i] = v.kind === 'coach' ? this.lookOf(i, v.loaded !== false) : '';
+      if (v.kind !== 'coach') return;
+      const e = coachTypes[v.typeId]?.emptyLook;
+      for (const t of new Set([v.typeId, ...(e && coachTypes[e] ? [e] : [])])) cap.set(t, (cap.get(t) ?? 0) + 1);
+    });
     const M = materials();
-    for (const [type, idx] of byType) {
+    for (const [type, n] of cap) {
       const ct = coachTypes[type];
       const t = coachTemplate(ct);
-      const body = new THREE.InstancedMesh(t.body, t.mat, idx.length);
-      // per-vehicle colour (containers, weathering shades)
-      if (ct.tints?.length) idx.forEach((vi, k) => body.setColorAt(k, new THREE.Color(wagonTint(ct, vi)!)));
-      const under = new THREE.InstancedMesh(t.under, M.metal, idx.length);
+      const body = new THREE.InstancedMesh(t.body, t.mat, n);
+      const under = new THREE.InstancedMesh(t.under, M.metal, n);
       body.castShadow = under.castShadow = true; body.receiveShadow = true;
       body.frustumCulled = under.frustumCulled = false;
       this.group.add(body, under);
-      this.bodies.set(type, { body, under, idx });
+      this.bodies.set(type, { body, under, idx: [], ct });
     }
+    vehicles.forEach((v, i) => { if (v.kind === 'coach') this.bodies.get(this.look[i])!.idx.push(i); });
+    for (const s of this.bodies.values()) this.refreshSet(s);
     this.bogies = new THREE.InstancedMesh(coachBogie(), M.std, Math.max(1, coaches.length * 2));
     this.wheels = new THREE.InstancedMesh(coachWheelset(), M.metal, Math.max(1, coaches.length * 4));
     this.bogies.count = coaches.length * 2;
@@ -199,6 +209,27 @@ export class TrainView {
       this.tailLamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshBasicMaterial({ color: 0x330000 }));
       this.group.add(this.tailLamp);
     }
+  }
+  private coachTypes: Record<string, CoachData>;
+  private lookOf(i: number, loaded: boolean) {
+    const t = this.vehicles[i].typeId, e = this.coachTypes[t]?.emptyLook;
+    return !loaded && e && this.coachTypes[e] ? e : t;
+  }
+  /** a set's instance count, slots and per-vehicle colours after vehicles moved in or out */
+  private refreshSet(s: { body: THREE.InstancedMesh; under: THREE.InstancedMesh; idx: number[]; ct: CoachData }) {
+    s.body.count = s.under.count = s.idx.length;
+    s.idx.forEach((vi, k) => { this.slot[vi] = k; if (s.ct.tints?.length) s.body.setColorAt(k, new THREE.Color(wagonTint(s.ct, vi)!)); });
+    if (s.body.instanceColor) s.body.instanceColor.needsUpdate = true;
+  }
+  /** A wagon was loaded or unloaded: draw it as its loaded or empty look (containers on or off). */
+  setLook(i: number, loaded: boolean) {
+    const to = this.lookOf(i, loaded), from = this.look[i];
+    if (to === from) return;
+    const a = this.bodies.get(from)!, b = this.bodies.get(to)!;
+    a.idx.splice(a.idx.indexOf(i), 1);
+    b.idx.push(i); b.idx.sort((x, y) => x - y);
+    this.look[i] = to;
+    this.refreshSet(a); this.refreshSet(b);
   }
   private tailLamp: THREE.Mesh | null = null;
   private lampT = 0;
@@ -250,8 +281,8 @@ export class TrainView {
         lm.syncLod();
         continue;
       }
-      const set = this.bodies.get(v.typeId)!;
-      const slot = set.idx.indexOf(i);
+      const set = this.bodies.get(this.look[i])!;
+      const slot = this.slot[i];
       set.body.setMatrixAt(slot, _m);
       set.under.setMatrixAt(slot, _m);
       // bogies and wheelsets

@@ -22,7 +22,8 @@ export interface CabLayout {
  * its short hood.
  */
 export function cabLayout(loco: LocoData): CabLayout {
-  const front = loco.lengthM / sectionsOf(loco) / 2 - (loco.bodyStyle === 'diesel-hood' ? 3.1 : 0);
+  // a trainset's cab is behind the nose of its leading car
+  const front = loco.trainset ? loco.trainset.cars[0].lengthM / 2 - 4 : loco.lengthM / sectionsOf(loco) / 2 - (loco.bodyStyle === 'diesel-hood' ? 3.1 : 0);
   // a WDM-3 type cab: the driver sits higher, looking out over the short hood
   if (loco.cabLayout.startsWith('wdm3')) return { front, floor: 1.72, eye: new THREE.Vector3(front - 1.55, 3.2, -0.62), deskTop: 2.42, vintage: true, panelY: 2.7 };
   return { front, floor: 1.62, eye: new THREE.Vector3(front - 1.72, 2.92, -0.7), deskTop: 2.2 };

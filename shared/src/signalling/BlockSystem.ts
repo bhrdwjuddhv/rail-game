@@ -83,7 +83,9 @@ export class BlockSystem {
         return !!r && r.set && !r.callingOn;
       }
       case 'starter': {
-        if (st.type === 'terminal') return false;
+        // a terminal's starters stay at danger only where the line ends (buffer stops); a terminal that
+        // trains start from in the other direction (Sagarpattan, Up) gives departures like any station
+        if (st.type === 'terminal' && st.exitKm + 0.4 >= this.route.lengthKm - 0.2) return false;
         const r = this.interlocking.departure(st, s.def.line!);
         return !!r && r.set;
       }

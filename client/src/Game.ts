@@ -38,7 +38,9 @@ import { VigilancePopup } from './ui/VigilancePopup';
 import { PantoIndicator } from './ui/PantoIndicator';
 import { Door, PeopleSystem } from './world/people/People';
 import { Billboards } from './world/scenery/Billboards';
+import { StationStop } from './gameplay/StationStop';
 import { Wag12Cab } from './train/cab/Wag12Cab';
+import { PanelCab } from './train/cab/PanelCab';
 import { RouteChoice, RoutePicker } from './ui/RoutePicker';
 import { DieselSmoke } from './train/Smoke';
 import type { DieselTraction } from '@rail/shared/physics/TractionModel';
@@ -319,6 +321,16 @@ export class Game {
       this.modelInterior.group.visible = false;
       this.trainView.loco.body.add(this.modelInterior.group);
     }
+    // a separate console model (bullet train): loaded in the background once the world is up; the
+    // game starts outside and moves into the cab when it is ready
+    const panel = loco.model?.cab?.interior === 'panel' ? loco.model.cab.panel : undefined;
+    if (panel) {
+      this.panel = new PanelCab(panel, loco.id, this.sys);
+      this.trainView.loco.body.add(this.panel.group);
+      this.cameras.index = 4;
+      this.wantCab = true;
+      this.cameras.gate = i => i !== 0 || this.panelReady();
+    }
 
     // ---- AI trains: scenario trains (km in the data are surveyed km), then traffic on the other line ----
     for (const def of s.aiTrains) {
@@ -333,11 +345,28 @@ export class Game {
     this.scoring.enabled = !this.god.usedThisRun;
     this.offs.push(this.god.onChange(() => this.applyGod()));
     this.scene.add(this.highlight.group);
+    this.stop = new StationStop({
+      route: () => this.line, consist: this.consist, coachTypes: COACHES, trainView: () => this.trainView, plan: this.plan, endStation: s.endStation,
+      headKm: () => this.dyn.headKm, speed: () => this.dyn.speed, offsetAt: km => this.path.offsetAt(km),
+      clock: () => this.time.seconds, setClock: v => { this.time.seconds = v; }, setWarp: x => { this.engine.speed = x; },
+      signalAhead: () => this.block.nextSignal(this.dyn.headKm, this.path.offsetAt(this.dyn.headKm), true, this.pathOffset)?.aspect ?? null,
+      approaching: st => this.trainToPass(st),
+      message: (text, kind = 'info') => bus.emit('message', { text, kind, ms: 4000 }),
+      whistle: () => { if (this.audio && this.shots) this.shots.guardWhistle(this.audio.buses.env); },
+      doorSound: () => { if (this.audio && this.shots) this.shots.doors(this.audio.buses.env); },
+      auto: () => this.god.eff.autoDrive, scene: this.world,
+    }, ui, () => (isTouch ? null : settings.get().keys.doors.replace(/^Key/, '')));
+    this.offs.push(() => this.stop.dispose());
+    if (startSt) this.stop.arrive(startSt, true);
     // the player can change line (teleport), so listen on every direction's dispatcher
-    for (const l of this.ctl.lines) l.dispatcher.listeners.push({
-      arrived: (t, st, clock) => { if (t.id === 'player' && l === this.lc) this.rules.arrived(st, clock, this.dyn.headKm); },
-      departed: (t, st, clock) => { if (t.id === 'player' && l === this.lc) this.rules.departed(st, !!this.dispatcher.stationState('player', st.code)?.arrived, clock); },
-    });
+    for (const l of this.ctl.lines) {
+      // departure is given when the stop's work is done (doors closed, loading over), not after a fixed dwell
+      l.dispatcher.gates.set('player', code => this.stop.work.ready(code));
+      l.dispatcher.listeners.push({
+        arrived: (t, st, clock) => { if (t.id === 'player' && l === this.lc) { this.rules.arrived(st, clock, this.dyn.headKm); this.stop.arrive(st, false); } },
+        departed: (t, st, clock) => { if (t.id === 'player' && l === this.lc) { this.rules.departed(st, !!this.dispatcher.stationState('player', st.code)?.arrived, clock); this.stop.leave(); } },
+      });
+    }
 
     // ---- cameras ----
     for (const m of [this.cabCam, new FrontCamera(), new RearCamera(), new SideCamera(), new ChaseCamera(), new CinematicCamera(), this.freeCam]) this.cameras.register(m);
@@ -610,6 +639,7 @@ export class Game {
     this.menus.inGame = true;
     if (this.bench) this.menus.hide(); else await this.menus.reveal();
     this.startPeople();
+    if (this.panel) this.panelReady();
     // the game screen is showing: lay out for its real size now, and again once fullscreen / rotation has settled
     this.onResize();
     setTimeout(this.onResize, 350);
@@ -762,6 +792,21 @@ export class Game {
   private modelCabShown = false;
   /** interior built for a loco model's own cab (WAG-12B) */
   private modelInterior: Wag12Cab | null = null;
+  private panel: PanelCab | null = null;
+  /** the cab view was asked for while the console was loading: switch when it is ready */
+  private wantCab = false;
+
+  /** The console is loaded; otherwise start loading it (once), say so, and switch to the cab when done. */
+  private panelReady() {
+    const p = this.panel!;
+    if (p.ready) return true;
+    if (this.started && !this.wantCab) bus.emit('message', { text: 'Loading cab\u2026', kind: 'info', ms: 2500 });
+    this.wantCab = true;
+    void p.load(o => this.rs.renderer.compileAsync(o, this.rcam, this.scene)).then(ok => {
+      if (ok && this.wantCab) { this.wantCab = false; this.cameras.select(0, this.cameraContext(0.016)); }
+    });
+    return false;
+  }
 
   /** Driver's eye in the loco body frame: the model's own cab seat, or our cab's. */
   private cabEye() {
@@ -773,6 +818,9 @@ export class Game {
   /** platform crowds from the baked people models (null: WebGL only; stations keep their simple crowd until it is ready) */
   private people: PeopleSystem | null = null;
   private billboards: Billboards;
+  /** the player's station stops: doors, boarding, loading, and when the train may leave */
+  private stop!: StationStop;
+  private doorHintAt = -Infinity;
   private adaptiveRes = new AdaptiveResolution(isTouch ? 0.5 : 0.6);
   private appliedScale = 1;
   private routePicker!: RoutePicker;
@@ -824,6 +872,7 @@ export class Game {
     this.sys.setThrottle(0); this.sys.regen = 0;
     this.interlocking.releaseTrain('player');
     this.dispatcher.resetTrain('player');
+    this.stop.leave();
     if (st) this.dispatcher.startAt(this.player, st.code, this.time.seconds);
     this.path = new TrackPath(L.graph, km, d.tailKm, L.running.offset);
     this.oncoming?.reset();
@@ -972,6 +1021,22 @@ export class Game {
     void this.people.load(this.rcam, this.scene).then(ok => { if (ok) for (const v of this.stations.values()) v.crowd.mesh.visible = false; });
   }
 
+  /**
+   * A train that will pass the player's while it stands in a loop at `st`:
+   * the nearest AI train on the same running line, not yet past the station.
+   */
+  private trainToPass(st: StationInfo) {
+    const off = this.path.offsetAt(this.dyn.headKm);
+    if (Math.abs(off - this.line.running.offset) < 0.5) return null; // on the main line: nothing can pass
+    let best: { name: string; km: number } | null = null;
+    for (const a of this.ai) {
+      if (a.route !== this.line || a.train.gone) continue;
+      const km = st.platformToKm - a.train.headKm;
+      if (km > 0 && km < 25 && (!best || km < best.km)) best = { name: a.train.def.name, km };
+    }
+    return best;
+  }
+
   /** The station the player's train is at or near (within 1.5 km), and what the train is doing there, for the crowds. */
   private peopleContext() {
     const d = this.dyn, head = d.headKm, ck = this.line.canonicalKm(head);
@@ -995,7 +1060,7 @@ export class Game {
     }
     return {
       near,
-      player: { code: near.code, stopped: onPlatform && Math.abs(d.speed) < 0.1, approaching: head > vs.platformFromKm - 0.8 && head < vs.platformToKm && Math.abs(d.speed) > 1, doors, platformLines: [line] },
+      player: { code: near.code, stopped: onPlatform && Math.abs(d.speed) < 0.1 && this.stop.work.doorsOpen, approaching: head > vs.platformFromKm - 0.8 && head < vs.platformToKm && Math.abs(d.speed) > 1, doors, platformLines: [line] },
     };
   }
 
@@ -1093,6 +1158,7 @@ export class Game {
       case 'wipers': s.cycleWipers(); break;
       case 'vigilance': s.acknowledgeVigilance(this.dyn.speed); break;
       case 'pantograph': s.togglePanto(); break;
+      case 'doors': this.stop.toggle(); break;
       case 'vcb': s.toggleVcb(); break;
       case 'fuelPump': s.toggleFuelPump(); break;
       case 'engine': s.toggleEngine(); break;
@@ -1183,8 +1249,9 @@ export class Game {
   private controlAt(x: number, y: number): string | null {
     if (!this.cameras.mode.inCab) return null;
     this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.rcam);
-    // the model's own cab has no clickable controls (keyboard / gamepad / touch drive it)
-    const hit = this.trainView.loco.usesModelCab ? undefined : this.raycaster.intersectObjects(this.controls.hitTargets, false)[0];
+    // a model's own cab: only a console with hit boxes is clickable (otherwise keyboard / gamepad / touch drive it)
+    const targets = !this.trainView.loco.usesModelCab ? this.controls.hitTargets : this.panel?.ready ? this.panel.hitTargets : [];
+    const hit = this.raycaster.intersectObjects(targets, false)[0];
     return hit && hit.distance < 2.5 ? (hit.object.userData.control as string) : null;
   }
 
@@ -1198,7 +1265,9 @@ export class Game {
 
   // ------------------------------------------------------------------ simulation
   private limitAt = (km: number) => {
-    let v = Math.min(this.line.speedLimitAt(km), this.god.eff.unlimitedSpeed ? Infinity : this.consist.loco.maxSpeedKmph);
+    const e = this.god.eff;
+    let v = Math.min(e.ignoreLineSpeed ? Infinity : this.line.speedLimitAt(km), e.unlimitedSpeed ? Infinity : this.consist.loco.maxSpeedKmph);
+    if (e.ignoreLineSpeed) return v; // God Mode test: line, loop and calling-on limits lifted
     if (Math.abs(this.pathOffset(km) - this.line.running.offset) > 0.3) v = Math.min(v, 30); // loop lines, turnouts, wrong line
     if (km <= this.rules.callingOnUntil) v = Math.min(v, 15);
     return v;
@@ -1226,7 +1295,16 @@ export class Game {
     for (const l of this.ctl.lines) l.block.forceGreen = l === this.lc && e.forceGreen;
     this.time.scale = this.god.active ? (e.freezeTime ? 0 : e.timeSpeed) : this.baseTimeScale;
     if (e.autoDrive || e.autoStopAtRed) {
-      const targets = { limitKmph: limit, nextStop: this.block.nextSignal(d.headKm, this.path.offsetAt(d.headKm), true, this.pathOffset), stationStopKm: this.nextBookedStopKm() };
+      // auto-drive follows God Mode's rules: line limits off when they are not enforced, the train's real
+      // braking with instant brakes, reds ignored when signals are not obeyed
+      const free = !e.speedEnforcement || e.ignoreLineSpeed;
+      const brake = this.consist.vehicles.reduce((a, v) => a + v.maxBrakeN, 0) / (this.consist.mass * d.massScale);
+      const targets = {
+        limitKmph: free ? (e.unlimitedSpeed ? Infinity : this.consist.loco.maxSpeedKmph) : limit,
+        decel: e.instantBrakes ? Math.max(0.45, brake * 0.8) : undefined,
+        nextStop: e.obeySignals ? this.block.nextSignal(d.headKm, this.path.offsetAt(d.headKm), true, this.pathOffset) : null,
+        stationStopKm: this.nextBookedStopKm(),
+      };
       if (e.autoDrive) this.autoDriver.drive(dt, d, s, targets);
       else this.autoDriver.autoStop(d, s, targets);
     }
@@ -1234,7 +1312,10 @@ export class Game {
     d.baseAdhesion = this.weather.adhesion(this.consist.loco.adhesion) * (1 + Math.sin(this.t * 0.37) * 0.04);
     const prevHead = d.headKm;
     if (this.bench) { d.speed = this.bench.cfg.speedKmph / 3.6; s.vigilanceTimer = 0; }
-    d.step(dt, { notch: s.notch, regenNotch: s.regen, reverser: s.reverser, sander: s.sander, powerAvailable: s.powerAvailable }, env);
+    // doors open: no traction (interlock)
+    const doorsOpen = this.stop.blocksTraction;
+    if (doorsOpen && s.notch > 0 && this.t - this.doorHintAt > 4) { this.doorHintAt = this.t; bus.emit('message', { text: isTouch ? 'Close doors first' : `Close doors first (${settings.get().keys.doors.replace(/^Key/, '')})`, kind: 'warn', ms: 3000 }); }
+    d.step(dt, { notch: s.notch, regenNotch: s.regen, reverser: s.reverser, sander: s.sander, powerAvailable: s.powerAvailable && !doorsOpen }, env);
     if (this.bench) d.speed = this.bench.cfg.speedKmph / 3.6;
     for (const id of this.path.update(d.headKm, d.tailKm)) bus.emit('switch-crossed', { id });
     // scenario AI trains (traffic trains are moved by their manager)
@@ -1350,6 +1431,12 @@ export class Game {
     const inCab = !!this.cameras.mode.inCab;
     this.cab.group.visible = inCab;
     if (this.modelInterior) this.modelInterior.group.visible = inCab && this.trainView.loco.usesModelCab;
+    if (this.panel) {
+      this.panel.group.visible = inCab && this.panel.ready;
+      if (!inCab && this.started) this.wantCab &&= this.cameras.index === 4; // another view picked: forget the cab request
+      // phones: the console's memory back after 2 minutes out of the cab (reloaded on the way in)
+      if (!inCab && isTouch && (this.panel.idle += dt) > 120) this.panel.drop();
+    }
     // a loco model with its own cab: ours is not drawn (only its cab lamp stays)
     const modelCab = this.trainView.loco.usesModelCab;
     if (modelCab !== this.modelCabShown) {
@@ -1416,6 +1503,11 @@ export class Game {
         aspect: ns ? ns.aspect : '-', clock: formatClock(this.time.seconds, true), units: units === 'mph' ? 'mph' : 'km/h', displaySpeed: Math.abs(d.speedKmph) * conv,
       };
       if (this.modelInterior?.group.visible) this.modelInterior.update(dt, readings, night);
+      else if (this.panel) {
+        const L = this.line, head = d.headKm, st = L.stations.find(x => x.platformToKm > head + 0.01);
+        const stDist = st ? ((this.plan.get(st.code) ? L.stopKm(st, this.consist.length) : st.platformFromKm) - head) * 1000 : 0;
+        this.panel.update(dt, readings, { station: st?.name ?? '', stationDist: stDist });
+      }
       else this.controls.update(dt, readings, night);
     }
 
@@ -1441,6 +1533,7 @@ export class Game {
     for (const st of this.stations.values()) st.update(this.time.seconds, this.t, st.centre.distanceTo(cam.position) < 600);
     this.traffic.update(dt, cam.position);
     this.billboards.update(this.lighting.nightLight);
+    this.stop.update(dt);
     if (this.people) { const pc = this.peopleContext(); this.people.update(dt, cam.position, pc.near, pc.player); }
     this.waterfalls.update(dt, this.weather.p.rain > 0.3 || this.route.regionAt(this.cameraKm()).sideSlope > 0);
 
@@ -1747,7 +1840,7 @@ export class Game {
       maxKmph: Math.round((this.god.eff.unlimitedSpeed ? Math.max(160, this.consist.loco.maxSpeedKmph) : this.consist.loco.maxSpeedKmph) * conv),
       signal: ns ? { aspect: ns.aspect, dist: (ns.km - head) * 1000 } : null,
       restriction,
-      station: st ? { name: st.name, dist: stDist } : null,
+      station: st ? { name: `${st.name}${this.stop.summary ? ' · ' + this.stop.summary : ''}`, dist: stDist } : null,
       timetable: { clock: formatClock(this.time.seconds, true), arrival, departure, nextStop: st ? st.name : null },
       score: this.scenario.rules && this.scoring.enabled ? this.scoring.total : null,
     });
@@ -1758,7 +1851,7 @@ export class Game {
       notch: s.notch > 0 ? `P${s.notch}` : s.regen > 0 ? `B${s.regen}` : '0', reverser: s.reverser > 0 ? 'F' : s.reverser < 0 ? 'R' : 'N',
       bp: d.brakes.locoBP, bc: d.brakes.lastBC, mr: d.brakes.mr,
       signal: ns ? { id: ns.id, aspect: ns.aspect, dist: (ns.km - head) * 1000 } : null,
-      station: st ? { name: st.name, dist: stDist, stop: stopping } : null,
+      station: st ? { name: `${st.name}${this.stop.summary ? ' · ' + this.stop.summary : ''}`, dist: stDist, stop: stopping } : null,
       restriction, clock: formatClock(this.time.seconds, true), eta, due,
       gradient: formatGradient(L.alignment.gradientAt(head)), km: L.canonicalKm(head),
       score: this.scenario.rules ? this.scoring.total : null,

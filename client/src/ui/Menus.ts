@@ -187,7 +187,7 @@ export class Menus {
       <h3>Locomotive</h3>${locoPicker('', true)}
       <div class="cards">${list.map(s => `
       <div class="card"><h3>${esc(s.name)} <small>${esc(s.difficulty)}</small></h3><p>${esc(s.description)}</p>
-      <p class="meta">${esc(ROUTES[s.route]?.name ?? s.route)} &middot; ${s.time} &middot; ${WEATHER[s.weather].name} &middot; ${s.consist.coaches.reduce((a, c) => a + c.count, 0)} coaches
+      <p class="meta">${esc(ROUTES[s.route]?.name ?? s.route)} &middot; ${s.time} &middot; ${WEATHER[s.weather].name} &middot; ${s.consist.coaches.reduce((a, c) => a + c.count, 0)} ${s.consist.coaches.every(c => COACHES[c.type]?.kind && COACHES[c.type].kind !== 'coach') ? 'wagons' : 'coaches'}
       ${best[s.id] ? `&middot; Best: <b>${best[s.id].score} (${best[s.id].grade})</b>` : ''}</p>
       <button data-id="${s.id}">Drive</button></div>`).join('')}</div>
       <div class="buttons"><button data-a="back">Back</button></div></div>`);
@@ -224,6 +224,13 @@ export class Menus {
       <div class="buttons"><button data-a="back">Back</button><button data-a="go">Start</button></div></div>`);
     const summary = el.querySelector<HTMLElement>('[data-f="summary"]')!;
     const read = () => {
+      // a fixed trainset (bullet train): its own cars only, nothing to add
+      const L = LOCOS[(el.querySelector('[data-f="loco"]') as HTMLInputElement).value];
+      el.querySelectorAll<HTMLInputElement>('[data-c]').forEach(i => { i.disabled = !!L?.trainset; });
+      if (L?.trainset) {
+        summary.textContent = `Fixed trainset: ${L.trainset.cars.length} cars, ${L.lengthM.toFixed(1)} m, ${Math.round(L.massT)} t - coaches cannot be added`;
+        return { coaches: [], loaded: true, n: 0 };
+      }
       const coaches = Object.keys(counts).map(id => ({ type: id, count: Math.max(0, Math.min(24, Number(el.querySelector<HTMLInputElement>(`[data-c="${id}"]`)!.value) || 0)) })).filter(c => c.count > 0);
       const n = coaches.reduce((a, c) => a + c.count, 0);
       const loaded = el.querySelector<HTMLInputElement>('[data-f="loaded"]')!.checked;
@@ -374,7 +381,7 @@ function locoPicker(selected: string, allowDefault: boolean) {
       ${img ? `<img src="assets/thumbs/${id}.jpg" alt="" loading="lazy" onerror="this.remove()">` : ''}<span class="lc-name">${esc(name)}</span><small>${esc(sub)}</small></button>`;
   return `<input type="hidden" data-f="loco" value="${selected}"><div class="loco-grid">
     ${allowDefault ? card('', 'As in scenario', 'the scenario\'s own loco', '#3a4450', false) : ''}
-    ${Object.values(LOCOS).map(l => card(l.id, l.name, `${l.type === 'diesel' ? 'Diesel' : 'Electric'} · ${Math.round(l.maxPowerKW)} kW · ${l.maxSpeedKmph} km/h`, l.livery.body, true)).join('')}</div>`;
+    ${Object.values(LOCOS).map(l => card(l.id, l.name, `${l.type === 'diesel' ? 'Diesel' : l.type === 'trainset' ? 'Fixed trainset' : 'Electric'} · ${Math.round(l.maxPowerKW)} kW · ${l.maxSpeedKmph} km/h`, l.livery.body, true)).join('')}</div>`;
 }
 
 /** Handle a click on a loco card (true if it was one). */

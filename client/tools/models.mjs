@@ -200,6 +200,58 @@ async function processLoco(id, cfg, cache) {
   return result;
 }
 
+/**
+ * A loco's separate driver's console (model.cab.panel): loaded only for the cab
+ * view, so it gets its own files <id>-panel.<high|medium|lod1>.glb. Hidden parts
+ * (panel.remove) are dropped; textures capped at 2048 / 1024 / 512; the mobile
+ * copy also drops the printed-label geometry (unreadable on a phone screen).
+ * Geometry is not simplified: it is seen from half a metre away.
+ */
+/**
+ * Baked occlusion / roughness / metal atlases on the second uv set whose export
+ * lost texCoord 1 (Sketchfab): pointed back at it, or prune drops TEXCOORD_1 and
+ * the atlas is sampled with the tiling uvs (patterned walls).
+ */
+function orm2ndUv(doc) {
+  for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) {
+    const mat = p.getMaterial();
+    if (!mat || !p.getAttribute('TEXCOORD_1')) continue;
+    if (mat.getOcclusionTexture()) mat.getOcclusionTextureInfo().setTexCoord(1);
+    if (mat.getMetallicRoughnessTexture()) mat.getMetallicRoughnessTextureInfo().setTexCoord(1);
+  }
+}
+
+const PANEL_VARIANTS = [
+  { name: 'high', tex: 2048, drop: [] },
+  { name: 'medium', tex: 1024, drop: [] },
+  { name: 'lod1', tex: 512, drop: ['Decals_M_Labels_0'] },
+];
+async function processPanel(id, panel, cache) {
+  const src = path.join(PUBLIC, panel.file);
+  if (!fs.existsSync(src)) return { id, status: 'missing', note: `${panel.file} not found` };
+  const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify([panel.remove ?? null, PANEL_VARIANTS, 'orm-uv1'])).update(fs.readFileSync(src)).digest('hex');
+  const outputs = PANEL_VARIANTS.map(v => path.join(OUT, `${id}.${v.name}.glb`));
+  if (!flag('--force') && cache[id]?.key === key && outputs.every(f => fs.existsSync(f))) return { ...cache[id].result, cached: true };
+  const before = await io.read(src);
+  const result = { id, status: 'ok', source: { mb: +(fs.statSync(src).size / 1048576).toFixed(2), triangles: triangles(before), meshes: before.getRoot().listMeshes().length, materials: before.getRoot().listMaterials().length, textures: before.getRoot().listTextures().map(t => (t.getSize() ?? []).join('x')) }, variants: {} };
+  const b = getBounds(before.getRoot().listScenes()[0]);
+  result.source.size = b.max.map((v, i) => +(v - b.min[i]).toFixed(3));
+  for (const v of PANEL_VARIANTS) {
+    const doc = await io.read(src);
+    keepParts(doc, { remove: [...(panel.remove ?? []), ...v.drop] });
+    orm2ndUv(doc);
+    await doc.transform(dedup(), prune({ keepLeaves: true }), weld());
+    for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) if (p.getMode() === 5 || p.getMode() === 6) convertPrimitiveToTriangles(p);
+    const gpu = await compressTextures(doc, v.tex);
+    await doc.transform(prune({ keepLeaves: true }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+    const file = outputs[PANEL_VARIANTS.indexOf(v)];
+    await io.write(file, doc);
+    result.variants[v.name] = { mb: +(fs.statSync(file).size / 1048576).toFixed(2), triangles: triangles(doc), textureGpuMB: +(gpu / 1048576).toFixed(1), materials: doc.getRoot().listMaterials().length };
+  }
+  cache[id] = { key, result };
+  return result;
+}
+
 fs.mkdirSync(TEX_CACHE, { recursive: true });
 const cache = fs.existsSync(CACHE) ? JSON.parse(fs.readFileSync(CACHE, 'utf8')) : {};
 const rows = [];
@@ -211,6 +263,13 @@ for (const f of fs.readdirSync(DATA).filter(f => f.endsWith('.json'))) {
   const r = await processLoco(loco.id, loco.model, cache);
   console.log(`${r.status}${r.cached ? ' (cached)' : ''} ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   rows.push(r);
+  if (loco.model.cab?.panel) {
+    const t1 = Date.now();
+    process.stdout.write(`  ${loco.id}-panel ... `);
+    const rp = await processPanel(`${loco.id}-panel`, loco.model.cab.panel, cache);
+    console.log(`${rp.status}${rp.cached ? ' (cached)' : ''} ${((Date.now() - t1) / 1000).toFixed(1)} s`);
+    rows.push(rp);
+  }
 }
 fs.writeFileSync(CACHE, JSON.stringify(cache, null, 1));
 for (const r of rows) {

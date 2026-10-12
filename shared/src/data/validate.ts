@@ -43,8 +43,8 @@ function checkRules(file: string, obj: any, rules: Record<string, Rule>, issues:
 // ---------------------------------------------------------------- locomotives
 const LOCO_RULES: Record<string, Rule> = {
   id: str(), name: str(), operator: str(), number: str(), type: str(),
-  massT: num(20, 400), lengthM: num(8, 60), axles: num(2, 16), bogieCentresM: num(2, 40), axleSpacingM: num(1, 5), wheelDiameterM: num(0.6, 1.6),
-  maxPowerKW: num(100, 20000), maxTractiveEffortKN: num(20, 1500), maxSpeedKmph: num(10, 250), notches: num(1, 40),
+  massT: num(20, 900), lengthM: num(8, 420), axles: num(2, 16), bogieCentresM: num(2, 40), axleSpacingM: num(1, 5), wheelDiameterM: num(0.6, 1.6),
+  maxPowerKW: num(100, 20000), maxTractiveEffortKN: num(20, 1500), maxSpeedKmph: num(10, 360), notches: num(1, 40),
   'regen.maxEffortKN': num(0, 1200), 'regen.maxPowerKW': num(0, 20000), 'regen.fadeStartKmph': num(0, 60), 'regen.fadeEndKmph': num(0, 60), 'regen.notches': num(1, 40),
   'brakes.maxBrakeForceKN': num(10, 1000), 'brakes.independentMaxBarKgcm2': num(0.5, 6),
   'resistance.aN': num(0, 20000), 'resistance.bNperMs': num(0, 1000), 'resistance.cNperMs2': num(0, 100),
@@ -102,7 +102,7 @@ export function normaliseLoco(file: string, raw: unknown, issues: DataIssue[]) {
   if (brakeDecel > 2.0) issues.push({ file, level: 'warning', message: `brakes.maxBrakeForceKN ${o.brakes.maxBrakeForceKN} gives ${brakeDecel.toFixed(1)} m/s^2 on a light engine (wheels would lock above ~1.5); typical is ${Math.round(o.massT * 1.1)} kN or less` });
   if (o.regen.maxEffortKN > o.maxTractiveEffortKN * 1.2) issues.push({ file, level: 'warning', message: `regen.maxEffortKN (${o.regen.maxEffortKN}) is far above maxTractiveEffortKN (${o.maxTractiveEffortKN})` });
   const secL = o.lengthM / Math.max(1, o.sections ?? 1);
-  if (o.bogieCentresM >= secL) issues.push({ file, level: 'error', message: `bogieCentresM (${o.bogieCentresM}) must be less than the section length (${secL.toFixed(1)} m)` });
+  if (!o.trainset && o.bogieCentresM >= secL) issues.push({ file, level: 'error', message: `bogieCentresM (${o.bogieCentresM}) must be less than the section length (${secL.toFixed(1)} m)` });
   if (o.type === 'diesel') {
     const d = o.diesel;
     if (!d) issues.push({ file, level: 'error', message: 'a diesel loco needs a "diesel" block (engineKW, idleRpm, maxRpm, cylinders, crankS, turboLagS, fuelLitres, stackX)' });
@@ -110,7 +110,15 @@ export function normaliseLoco(file: string, raw: unknown, issues: DataIssue[]) {
       if (typeof d[k] !== 'number' || !Number.isFinite(d[k])) issues.push({ file, level: 'error', message: `diesel.${k} must be a number` });
     }
     if (d && d.maxRpm <= d.idleRpm) issues.push({ file, level: 'error', message: 'diesel.maxRpm must be above diesel.idleRpm' });
-  } else if (o.type !== 'electric') issues.push({ file, level: 'error', message: `type must be "electric" or "diesel", got ${JSON.stringify(o.type)}` });
+  } else if (o.type === 'trainset') {
+    const cars = o.trainset?.cars;
+    if (!Array.isArray(cars) || !cars.length) issues.push({ file, level: 'error', message: 'a trainset needs "trainset.cars" (lengthM, keep, seats, doors for each car)' });
+    else {
+      const sum = cars.reduce((a: number, c: any) => a + c.lengthM, 0);
+      if (Math.abs(sum - o.lengthM) > 0.5) issues.push({ file, level: 'warning', message: `lengthM ${o.lengthM} differs from the cars' total ${sum.toFixed(1)}` });
+      if (cars.some((c: any) => o.bogieCentresM >= c.lengthM)) issues.push({ file, level: 'error', message: 'bogieCentresM must be shorter than every car' });
+    }
+  } else if (o.type !== 'electric') issues.push({ file, level: 'error', message: `type must be "electric", "diesel" or "trainset", got ${JSON.stringify(o.type)}` });
   return issues.slice(before).some(i => i.level === 'error') ? null : o;
 }
 

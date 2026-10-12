@@ -52,6 +52,19 @@ const LEVELS = ['near', 'mid', 'far'] as const;
 let renderer: unknown = null;
 let loader: GLTFLoader | null = null;
 const cache = new Map<string, Promise<Record<(typeof LEVELS)[number], THREE.Group> | null>>();
+/** the loaded files themselves (one download however many parts are fitted from them) */
+const raw = new Map<string, Promise<THREE.Object3D[]>>();
+
+/**
+ * The model settings for one section: for a trainset, car `section` only (its
+ * x range of the source model), centred on the car; otherwise the model as is.
+ */
+export function partConfig(data: LocoData, section = 0): LocoModelFile {
+  const cfg = data.model!, car = data.trainset?.cars[section];
+  if (!car) return cfg;
+  const centre = (car.keep[0] + car.keep[1]) / 2;
+  return { ...cfg, keep: { axis: 0, min: car.keep[0], max: car.keep[1] }, offset: [cfg.offset[0] - centre * cfg.scale, cfg.offset[1], cfg.offset[2]] };
+}
 
 /** Set once at start-up (KTX2 needs the renderer to pick a GPU format). */
 export function initModelLoader(r: unknown) { renderer = r; }
@@ -70,6 +83,23 @@ function files(id: string) {
   const near = q === 'low' ? 'lod1' : q === 'medium' ? 'medium' : 'high';
   const base = `${import.meta.env.BASE_URL}assets/models/_processed/${id}`;
   return { near: `${base}.${near}.glb`, mid: `${base}.lod1.glb`, far: `${base}.lod2.glb` };
+}
+
+type PanelFile = NonNullable<NonNullable<LocoModelFile['cab']>['panel']>;
+
+/**
+ * A loco's separate driver's console (model.cab.panel): the optimised copy for
+ * the quality preset (<id>-panel.<high|medium|lod1>.glb from `npm run models`),
+ * else the source file. Not cached: the cab keeps it while needed and may drop it.
+ */
+export async function loadPanelScene(locoId: string, panel: PanelFile) {
+  const l = gltfLoader();
+  const opt = files(`${locoId}-panel`).near;
+  try { return (await l.loadAsync(opt)).scene; }
+  catch {
+    console.warn(`[models] ${locoId}: optimised cab panel missing (${opt}) - loading the source ${panel.file}. Run "npm run models" for the small, compressed copy.`);
+    return (await l.loadAsync(`${import.meta.env.BASE_URL}${panel.file}`)).scene;
+  }
 }
 
 /** Float32 position / normal / uv only, in the model root's frame, so different parts can merge. */
@@ -225,29 +255,32 @@ function fit(scene: THREE.Object3D, cfg: LocoModelFile) {
  * Resolves to null when the files are missing or broken: the procedural
  * model then simply stays (a warning says why).
  */
-export function loadLocoModel(data: LocoData) {
-  const cfg = data.model;
-  if (!cfg) return Promise.resolve(null);
-  let p = cache.get(data.id);
+export function loadLocoModel(data: LocoData, section = 0) {
+  if (!data.model) return Promise.resolve(null);
+  const cfg = partConfig(data, section);
+  const key = data.trainset ? `${data.id}#${section}` : data.id;
+  let p = cache.get(key);
   if (!p) {
     const f = files(data.id);
     const l = gltfLoader();
     const source = `${import.meta.env.BASE_URL}${cfg.file}`;
-    p = Promise.all(LEVELS.map(k => l.loadAsync(f[k])))
-      .then(([near, mid, far]) => ({ near: fit(near.scene, cfg), mid: fit(mid.scene, cfg), far: fit(far.scene, cfg) }))
+    // the scenes are cloned for each part fitted from them (fit removes the other parts' meshes)
+    const scenes = (k: string, load: () => Promise<THREE.Object3D[]>) => { let r = raw.get(k); if (!r) raw.set(k, (r = load())); return r.then(s => s.map(x => x.clone(true))); };
+    p = scenes(`${data.id}:opt`, () => Promise.all(LEVELS.map(k => l.loadAsync(f[k]).then(g => g.scene))))
+      .then(([near, mid, far]) => ({ near: fit(near, cfg), mid: fit(mid, cfg), far: fit(far, cfg) }))
       // not optimised yet (npm run models not run): use the source file for every level - slower to
       // load and heavier to draw, with the source livery, but enough to try a new model straight away
       .catch(async () => {
         console.warn(`[models] ${data.id}: optimised files missing (${f.near}) - loading the source ${cfg.file}. Run "npm run models" for the fast, compressed version.`);
-        const g = await l.loadAsync(source);
-        const t = fit(g.scene, cfg); // every level copies this one template
+        const [g] = await scenes(`${data.id}:src`, () => l.loadAsync(source).then(x => [x.scene]));
+        const t = fit(g, cfg); // every level copies this one template
         return { near: t, mid: t, far: t };
       })
       .catch(err => {
         console.warn(`[models] ${data.id}: could not load the 3D model - keeping the procedural model.`, err);
         return null;
       });
-    cache.set(data.id, p);
+    cache.set(key, p);
   }
   return p;
 }

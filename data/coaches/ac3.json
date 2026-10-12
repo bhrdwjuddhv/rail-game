@@ -7,8 +7,18 @@
   "bogieCentresM": 14.9,
   "axleSpacingM": 2.56,
   "maxBrakeForceKN": 27,
-  "resistance": { "aN": 950, "bNperMs": 25, "cNperMs2": 1.0 },
-  "livery": { "body": "#7a2230", "band": "#c9ccd1", "roof": "#8a8f94", "window": "#20303c" },
+  "resistance": {
+    "aN": 950,
+    "bNperMs": 25,
+    "cNperMs2": 1
+  },
+  "livery": {
+    "body": "#7a2230",
+    "band": "#c9ccd1",
+    "roof": "#8a8f94",
+    "window": "#20303c"
+  },
   "windows": "sealed",
-  "interiorLight": "#e9f2ff"
+  "interiorLight": "#e9f2ff",
+  "seats": 64
 }
