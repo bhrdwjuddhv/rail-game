@@ -10,6 +10,10 @@ export interface GodPanelHooks {
   setHours(h: number): void;
   setWeather(id: WeatherId): void;
   currentWeather(): WeatherId;
+  /** Free Roam: every landscape type, and the one the whole route is shown as (null = the route's own) */
+  regions: { id: string; name: string }[];
+  sceneryPreview(): string | null;
+  setSceneryPreview(id: string | null): void;
   teleport(target: { station?: string; km?: number; line?: string }): void;
   /** running lines (double line: UP, DOWN) and the one the train is on */
   lines: string[];
@@ -77,6 +81,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
         ${tog('freezeTime', 'Freeze time', '')}
         <label>Time speed <input type="range" min="1" max="10" step="1" value="${s.timeSpeed}" data-n="timeSpeed"><output>${s.timeSpeed}&times;</output></label>
         <label>Weather <select data-w="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}" ${w === h.currentWeather() ? 'selected' : ''}>${WEATHER[w].name}</option>`).join('')}</select></label>
+        ${h.freeRoam ? `<label title="Show the whole route as one landscape (the terrain rebuilds around you)">Scenery preview <select data-w="scenery"><option value="">Route's own</option>${h.regions.map(r => `<option value="${r.id}" ${r.id === h.sceneryPreview() ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>` : ''}
         <h3>Teleport</h3>
         <label>Station <select data-t="station"><option value="">&mdash;</option>${h.stations.map(st => `<option value="${st.code}">${esc(st.name)} (km ${st.km})</option>`).join('')}</select></label>
         ${h.lines.length > 1 ? `<label>Line <select data-t="line">${h.lines.map(l => `<option value="${l}" ${l === h.currentLine ? 'selected' : ''}>${l} line (${l === 'DOWN' ? 'km increasing' : 'km decreasing'})</option>`).join('')}</select></label>` : ''}
@@ -107,6 +112,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     } else if (g === 'remember') god.setRemember((t as HTMLInputElement).checked);
     else if (g) god.set(g as BoolKey, (t as HTMLInputElement).checked);
     if ((t as HTMLElement).dataset.w === 'weather') { god.set('weather', t.value as WeatherId); h.setWeather(t.value as WeatherId); }
+    if ((t as HTMLElement).dataset.w === 'scenery') h.setSceneryPreview(t.value || null);
   });
   el.addEventListener('input', e => {
     const t = e.target as HTMLInputElement;

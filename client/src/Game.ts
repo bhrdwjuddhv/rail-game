@@ -23,6 +23,8 @@ import { formatClock, KMPH, parseClock } from '@rail/shared/util';
 import { COACHES, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
 import { Lighting } from './environment/Lighting';
 import { Sky } from './environment/Sky';
+import { Horizon } from './world/Horizon';
+import { buildHillStation, buildStepwell } from './world/scenery/Landmarks';
 import { TimeOfDay } from './environment/TimeOfDay';
 import { WEATHER, Weather } from './environment/Weather';
 import { AITrain, AI_LOCO_LEN, AI_WAGON_LEN } from '@rail/shared/gameplay/AITrain';
@@ -69,7 +71,7 @@ import { Railway } from '@rail/shared/track/Railway';
 import { DEFAULT_TRAFFIC, FREIGHT_TRAFFIC, TrafficManager } from '@rail/shared/traffic/TrafficManager';
 import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import { formatGradient } from '@rail/shared/track/Gradient';
-import { Route } from '@rail/shared/track/Route';
+import { biomeOf, Route, RouteData } from '@rail/shared/track/Route';
 import { buildTrackChunk, CHUNK_M, SwitchView } from './track/TrackMeshBuilder';
 import { TrackGraph, TrackPath, Ramp } from '@rail/shared/track/TrackGraph';
 import { CabControls, CONTROL_NAMES } from './train/cab/CabControls';
@@ -227,7 +229,8 @@ export class Game {
 
   constructor(private rs: RenderSystem, private menus: Menus, private ui: HTMLElement, private audio: AudioEngine | null, scenario: ScenarioData, overrides: ScenarioOverrides, readonly scenarioId: string, benchCfg?: BenchConfig) {
     this.bench = benchCfg ? new Benchmark(benchCfg, rs, () => this.debugTextures().mb) : null;
-    const routeData = ROUTES[scenario.route];
+    // Free Roam may run on any route
+    const routeData = ROUTES[(!scenario.rules && overrides.route && ROUTES[overrides.route] ? overrides.route : null) ?? scenario.route];
     setContactHeight(routeData.oheContactHeightM ?? 5.55);
     this.railway = new Railway(routeData, REGIONS);
     this.route = this.railway.main;
@@ -247,7 +250,8 @@ export class Game {
     this.weather = new Weather(s.weather);
     this.cameras = new CameraManager(innerWidth / innerHeight, preset.drawDistance + 400);
     this.sky = new Sky(2000);
-    this.scene.add(this.sky.group, this.world);
+    this.horizon = new Horizon();
+    this.scene.add(this.sky.group, this.horizon.group, this.world);
     this.world.add(this.weather.rainMesh);
     this.lighting = new Lighting(this.scene, this.world);
     this.lighting.applyQuality(preset);
@@ -532,6 +536,11 @@ export class Game {
     for (const r of this.route.data.structures) if (r.type === 'rob') add(r.fromKm, r.toKm + 0.4, () => buildRob(this.route, this.field, r));
     for (const y of this.route.yards) add(y.fromKm, y.toKm, () => buildYard(this.route, y), undefined, ['wall']);
     for (const ft of this.route.data.features) if (ft.type === 'fort') add(ft.km - 0.9, ft.km + 0.9, () => buildFort(this.route, this.field, ft.km), undefined, ['wall']);
+    // landmarks: step-wells near villages, ghat hill stations
+    for (const ft of this.route.data.features) {
+      if (ft.type === 'stepwell') add(ft.km - 0.3, ft.km + 0.3, () => buildStepwell(this.route, this.field, ft));
+      if (ft.type === 'hillstation') add(ft.km - 0.6, ft.km + 0.6, () => buildHillStation(this.route, this.field, ft), undefined, ['wall', 'roof']);
+    }
     for (const st of this.route.stations) {
       add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st); v.crowd.mesh.visible = !this.people?.ready; this.stations.set(st.code, v); return v.group; },
         () => { this.stations.get(st.code)?.dispose(); this.stations.delete(st.code); }, StationView.MATERIALS);
@@ -757,6 +766,9 @@ export class Game {
       setHours: h => { this.time.seconds = h * 3600; this.pausedNeedsRender = true; },
       setWeather: id => { this.weather.set(id, true); this.pausedNeedsRender = true; },
       currentWeather: () => this.weather.id,
+      regions: Object.values(REGIONS).map(r => ({ id: r.id, name: r.name })),
+      sceneryPreview: () => this.sceneryPreview,
+      setSceneryPreview: id => this.setSceneryPreview(id),
       teleport: target => { void this.teleportTo(target); },
       back, resume: () => this.resume(),
       textureTest: () => this.openTextureTest(),
@@ -791,6 +803,9 @@ export class Game {
   private modelCabShown = false;
   /** interior built for a loco model's own cab (WAG-12B) */
   private modelInterior: Wag12Cab | null = null;
+  private horizon: Horizon;
+  private air = { haze: 1, clouds: 0, tint: new THREE.Color(), tintW: 0 };
+  private tmpColor = new THREE.Color();
   private panel: PanelCab | null = null;
   /** the cab view was asked for while the console was loading: switch when it is ready */
   private wantCab = false;
@@ -1465,6 +1480,10 @@ export class Game {
 
     // environment
     const tunnelKm = this.cameraInTunnel();
+    // deep in a tunnel the hillside's forest above and around is still in view (no occlusion culling):
+    // trees and buildings are not drawn until the portal the camera faces is near
+    const portal = tunnelKm ? this.portalAhead() : null;
+    this.chunks.setPropsVisible(portal === null || portal < 150);
     this.lighting.tunnel += ((tunnelKm ? 1 : 0) - this.lighting.tunnel) * Math.min(1, dt * 1.5);
     const speedVec = new THREE.Vector3(Math.cos(this.headHeading()) * d.speed, 0, Math.sin(this.headHeading()) * d.speed);
     // shelter: no rain inside tunnels; none under platform roofs near the camera (cab glass and roof drumming too)
@@ -1475,10 +1494,22 @@ export class Game {
     this.weather.update(dt, cam.position, inCab ? speedVec : new THREE.Vector3(), inCab ? 3.2 : 0, !!tunnelKm, covered);
     wind.update(dt, this.weather.p.wind);
     this.sky.group.scale.setScalar((cam.far * 0.85) / 2000);
-    this.sky.update(dt, this.rcam.position, this.time, this.weather);
+    // the region around the camera: its air (haze, tint, clouds) and its far horizon
+    const regions = this.route.regionWeights(this.cameraKm());
+    const air = this.air;
+    air.haze = 0; air.clouds = 0; air.tintW = 0; air.tint.setRGB(0, 0, 0);
+    for (const { r, w } of regions) {
+      air.haze += (r.air?.haze ?? 1) * w; air.clouds += (r.air?.clouds ?? 0) * w;
+      if (r.air?.tint) { air.tint.add(this.tmpColor.set(r.air.tint).multiplyScalar(w)); air.tintW += w; }
+    }
+    if (air.tintW > 0) air.tint.multiplyScalar(1 / air.tintW);
+    this.sky.update(dt, this.rcam.position, this.time, this.weather, air.clouds);
     const lampSpots: THREE.Vector3[] = [];
     for (const st of this.stations.values()) lampSpots.push(...st.lampSpots);
-    this.lighting.update(inCab ? cam.position : this.trainView.group.position, this.time, this.weather, this.sky, settings.get().fogMultiplier, lampSpots, cam.position);
+    this.lighting.update(inCab ? cam.position : this.trainView.group.position, this.time, this.weather, this.sky, settings.get().fogMultiplier, lampSpots, cam.position, { haze: air.haze, tint: air.tintW > 0 ? air.tint : null });
+    // the ring stands on the valley floor (the line's level), not on whatever hill the camera is on
+    this.horizon.update(dt, this.rcam.position, this.route.alignment.elevationAt(this.cameraKm()) - this.origin.y, effective().drawDistance + 200,
+      Horizon.blend(regions.map(x => ({ ...x, biome: biomeOf(x.r) }))), this.lighting.fog.color, this.time.day);
     this.lighting.fog.density = Math.max(this.lighting.fog.density, 1.35 / effective().drawDistance);
     // bloom only where it shows (lamps at night, glow in fog, tunnel mouths): in daylight it costs a full-screen
     // blur chain for almost nothing
@@ -1626,6 +1657,26 @@ export class Game {
     if (h.has('scenery')) for (const it of this.streamed) if (it.obj) it.obj.visible = false;
   }
 
+  /** God Mode scenery preview (Free Roam): the region the whole route is shown as, or null */
+  private sceneryPreview: string | null = null;
+  private ownRegions: RouteData['regions'] | null = null;
+
+  /**
+   * Show the whole route as one landscape (God Mode, Free Roam): the route's
+   * regions are replaced, the height field rebuilt and every terrain tile
+   * rebuilt by the workers (the old tiles stay until their new ones are ready).
+   */
+  private setSceneryPreview(id: string | null) {
+    if (id === this.sceneryPreview || this.scenario.rules) return;
+    this.ownRegions ??= this.route.data.regions;
+    this.route.data.regions = id ? [{ fromKm: -1, toKm: this.route.lengthKm + 1, region: id }] : this.ownRegions;
+    this.sceneryPreview = id;
+    this.field.refresh();
+    this.chunks.reinit(this.route);
+    this.pausedNeedsRender = true;
+    bus.emit('message', { text: id ? `Scenery preview: ${REGIONS[id]?.name ?? id}` : "Scenery: the route's own", kind: 'info', ms: 3000 });
+  }
+
   /** Free Roam stations made stops for auto-drive (God Mode "Must stop at stations"), with what the plan had before. */
   private autoStops = new Map<string, boolean | null>();
 
@@ -1643,7 +1694,8 @@ export class Game {
     const want = !this.scenario.timetable.length && g.active && e.autoDrive && e.mustStop;
     for (const st of this.line.stations) {
       const had = this.autoStops.has(st.code);
-      if (want && !had) {
+      // only stations still ahead: the one the train stands at (or has passed) is not made a stop it can never arrive at
+      if (want && !had && st.platformFromKm > this.dyn.headKm) {
         const p = this.plan.get(st.code);
         this.autoStops.set(st.code, p ? p.stop : null);
         if (p) p.stop = true; else this.plan.set(st.code, { station: st.code, line: '', stop: true });
@@ -1666,6 +1718,16 @@ export class Game {
       return this.line.stopKm(st, this.consist.length);
     }
     return null;
+  }
+
+  /** Inside a tunnel: metres to the portal the camera faces (null outside one). */
+  private portalAhead() {
+    const c = this.cameras.camera, n = this.field.nearest(c.position.x, c.position.z, 12);
+    const t = n && this.route.tunnels.find(x => n.km >= x.fromKm && n.km <= x.toKm);
+    if (!n || !t) return null;
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(c.quaternion);
+    const toward = fwd.x * Math.cos(n.heading) + fwd.z * Math.sin(n.heading) >= 0 ? t.toKm : t.fromKm;
+    return Math.abs(toward - n.km) * 1000;
   }
 
   private cameraInTunnel() {
@@ -1814,6 +1876,12 @@ export class Game {
         if (!river || dd < river.d) river = { x: p.x, y: r.water, z: p.z, d: dd };
       }
     }
+    // the nearest waterfall on show
+    let fall: { x: number; y: number; z: number; d: number } | null = null;
+    if (this.waterfalls.group.visible) for (const p of this.waterfalls.positions) {
+      const dd = p.distanceTo(cam.position);
+      if (!fall || dd < fall.d) fall = { x: p.x, y: p.y, z: p.z, d: dd };
+    }
     let station: { x: number; y: number; z: number; d: number } | null = null;
     for (const sv of this.stations.values()) {
       const dd = sv.centre.distanceTo(cam.position);
@@ -1821,7 +1889,7 @@ export class Game {
     }
     this.ambience!.update(dt, {
       rain: this.sheltered ? this.weather.p.rain * 0.25 : this.weather.p.rain, wind: this.weather.p.wind, day: this.time.day, speed: d.speed, inCab: !!this.cameras.mode.inCab,
-      river, station, cam: cam.position,
+      river, fall, station, cam: cam.position,
       bells: this.lcs.filter(l => l.manned).map((l, i) => ({ id: i, x: l.position.x, y: l.position.y, z: l.position.z, ringing: l.closing && l.position.distanceTo(cam.position) < 900 })),
     });
   }

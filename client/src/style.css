@@ -149,6 +149,8 @@ button:hover { background: #33404c; }
 .buttons:not(.vertical) button:last-child:not(:only-child), .card button { background: #8e1b1b; border-color: #b33; }
 .buttons:not(.vertical) button:last-child:not(:only-child):hover, .card button:hover { background: #a82424; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; }
+.route-head { margin: 22px 0 10px; }
+.route-head small { display: block; margin-top: 3px; font-weight: 400; opacity: 0.7; font-size: 0.78em; }
 .card { padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, 0.03); display: flex; flex-direction: column; }
 .card h3 { color: var(--fg); justify-content: space-between; margin-top: 0; }
 .card h3 small { color: var(--accent); font-weight: 500; }

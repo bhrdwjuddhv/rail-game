@@ -100,6 +100,30 @@ export interface RegionData {
   air?: { haze?: number; tint?: string; clouds?: number };
 }
 
+/**
+ * Ground shapes some features need: a step-well's pit, and for a waterfall placed
+ * by offsetM a cliff for it to fall down (waterfallCliff: foot toward the line)
+ * with a plunge pool in front.
+ */
+/** A waterfall placed by offsetM: lip (top edge) and foot of its cliff, lateral offsets (+ right), and its drop. */
+export function waterfallCliff(ft: FeatureData) {
+  const s = Math.sign(ft.offsetM ?? 1) || 1, drop = ft.heightM ?? 35, face = Math.max(9, drop * 0.45);
+  return { side: s, lip: ft.offsetM ?? 0, foot: (ft.offsetM ?? 0) - s * face, face, drop };
+}
+
+export function featureLandforms(features: FeatureData[]): LandformData[] {
+  const out: LandformData[] = [];
+  for (const ft of features) {
+    if (ft.type === 'stepwell') out.push({ type: 'hill', km: ft.km, offsetM: ft.offsetM ?? 180, widthM: 30, heightM: -10 });
+    if (ft.type === 'waterfall' && ft.offsetM !== undefined) {
+      const c = waterfallCliff(ft);
+      out.push({ type: 'cliff', km: ft.km - 0.015, toKm: ft.km + 0.015, offsetM: c.foot, widthM: c.face, heightM: c.drop });
+      out.push({ type: 'hill', km: ft.km, offsetM: c.foot - c.side * 8, widthM: 18, heightM: -2.5 });
+    }
+  }
+  return out;
+}
+
 export const biomeOf = (r: RegionData) => r.biome ?? (r.sideSlope > 0 ? 'ghats' : 'plains');
 
 // ---------- compiled shapes ----------
@@ -199,7 +223,7 @@ export class Route {
     (data.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `XO${i}`, undefined, []));
     this.compileSignals();
     this.compileBoards();
-    if (!this.mirrored) { this.compileRivers(); this.compileRoads(); this.landforms = compileLandforms(data.landforms, this.alignment); }
+    if (!this.mirrored) { this.compileRivers(); this.compileRoads(); this.landforms = compileLandforms([...(data.landforms ?? []), ...featureLandforms(data.features)], this.alignment); }
   }
 
   /** Surveyed km (as on the km posts) of a km in this view, and back. */

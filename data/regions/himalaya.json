@@ -1,0 +1,24 @@
+{
+  "id": "himalaya",
+  "name": "Himalayan Snow",
+  "biome": "snow",
+  "ground": ["#e9eef2", "#dfe6ec", "#f2f5f7"],
+  "crops": [
+    { "name": "green", "color": "#7e9b5c" }
+  ],
+  "hillAmpNear": 4,
+  "hillAmpFar": 160,
+  "hillFreq": 0.0019,
+  "sideSlope": 0,
+  "ridges": 1.4,
+  "snow": 0.85,
+  "treeTypes": ["pine", "pine", "pine", "forest"],
+  "treeDensity": 0.42,
+  "pondsPerKm2": 0.1,
+  "kilnsPerKm2": 0,
+  "villagesPerKm2": 0.12,
+  "stationStyle": "stone",
+  "regionalScript": "devanagari",
+  "horizon": { "deg": 8, "jagged": 0.95, "color": "#535d6a", "snowCap": 0.55 },
+  "air": { "haze": 0.7, "tint": "#bcd2ee", "clouds": 0.15 }
+}

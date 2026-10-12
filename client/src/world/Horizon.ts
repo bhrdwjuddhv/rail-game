@@ -6,7 +6,7 @@ export interface HorizonProfile { deg: number; jagged: number; color: THREE.Colo
 
 /** Regions without a horizon in their data: a sensible one for their landscape type. */
 const BY_BIOME: Record<string, RegionData['horizon']> = {
-  plains: { deg: 0.9, jagged: 0.15, color: '#6a7866' },
+  plains: { deg: 2.2, jagged: 0.2, color: '#6a7866' },
   ghats: { deg: 3.6, jagged: 0.55, color: '#4a6046' },
   desert: { deg: 0.7, jagged: 0.3, color: '#9c8668' },
   hills: { deg: 2.2, jagged: 0.7, color: '#76685a' },
@@ -35,7 +35,7 @@ export class Horizon {
 
   constructor() {
     this.group.name = 'horizon';
-    for (const [scale, seed, haze, dark] of [[1, 3, 0.62, 1], [0.78, 11, 0.38, 0.72]] as const) {
+    for (const [scale, seed, haze, dark] of [[1, 3, 0.42, 1], [0.78, 11, 0.26, 0.72]] as const) {
       const pos = new Float32Array(N * ROWS * 3), col = new Float32Array(N * ROWS * 3), idx: number[] = [];
       for (let i = 0; i < N; i++) {
         const j = (i + 1) % N;
@@ -50,7 +50,9 @@ export class Horizon {
       geo.setIndex(idx);
       const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
       mesh.frustumCulled = false;
-      mesh.renderOrder = -5; // drawn before the terrain in front of it; the sky dome is -10
+      // after every other solid object: where hills and the land in front hide it, the depth test skips it
+      // (drawn first it shaded about a third of the screen for nothing)
+      mesh.renderOrder = 5;
       this.group.add(mesh);
       this.layers.push({ mesh, pos, col, scale, seed, haze, dark });
     }

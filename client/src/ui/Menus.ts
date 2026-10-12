@@ -183,13 +183,20 @@ export class Menus {
   scenarios() {
     const best = loadSave().best;
     const list = Object.values(SCENARIOS).filter(s => s.id !== 'free-roam');
-    const el = html(`<div class="menu scen"><h2>Scenarios</h2>
-      <h3>Locomotive</h3>${locoPicker('', true)}
-      <div class="cards">${list.map(s => `
+    // grouped by route, each with its length and stations
+    const routes = [...new Set(list.map(s => s.route))];
+    const routeHead = (id: string) => {
+      const r = ROUTES[id];
+      return `<h3 class="route-head">${esc(r?.name ?? id)}${r ? ` <small>${r.lengthKm} km &middot; ${r.stations.length} stations: ${r.stations.map(x => esc(x.name)).join(' &ndash; ')}</small>` : ''}</h3>`;
+    };
+    const card = (s: (typeof list)[number]) => `
       <div class="card"><h3>${esc(s.name)} <small>${esc(s.difficulty)}</small></h3><p>${esc(s.description)}</p>
       <p class="meta">${esc(ROUTES[s.route]?.name ?? s.route)} &middot; ${s.time} &middot; ${WEATHER[s.weather].name} &middot; ${s.consist.coaches.reduce((a, c) => a + c.count, 0)} ${s.consist.coaches.every(c => COACHES[c.type]?.kind && COACHES[c.type].kind !== 'coach') ? 'wagons' : 'coaches'}
       ${best[s.id] ? `&middot; Best: <b>${best[s.id].score} (${best[s.id].grade})</b>` : ''}</p>
-      <button data-id="${s.id}">Drive</button></div>`).join('')}</div>
+      <button data-id="${s.id}">Drive</button></div>`;
+    const el = html(`<div class="menu scen"><h2>Scenarios</h2>
+      <h3>Locomotive</h3>${locoPicker('', true)}
+      ${routes.map(id => `${routeHead(id)}<div class="cards">${list.filter(s => s.route === id).map(card).join('')}</div>`).join('')}
       <div class="buttons"><button data-a="back">Back</button></div></div>`);
     el.addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('button');
@@ -204,13 +211,14 @@ export class Menus {
     this.show(el);
   }
 
-  freeRoam() {
+  freeRoam(routeId = SCENARIOS['free-roam'].route) {
     const fr = SCENARIOS['free-roam'];
-    const route = ROUTES[fr.route];
+    const route = ROUTES[routeId] ?? ROUTES[fr.route];
     const counts: Record<string, number> = {};
     for (const c of Object.values(COACHES)) if (c.windows !== 'none') counts[c.id] = fr.consist.coaches.find(x => x.type === c.id)?.count ?? 0;
     const el = html(`<div class="menu free"><h2>Free roam</h2>
       <div class="cols"><section><h3>Start</h3>
+        <label>Route <select data-f="route">${Object.values(ROUTES).map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
         <label>Station <select data-f="station">${route.stations.map(s => `<option value="${s.code}">${esc(s.name)} (${s.code}, km ${s.km})</option>`).join('')}</select></label>
         ${route.lines && route.lines.length > 1 ? `<label>Line <select data-f="track"><option value="DOWN">Down line (towards ${esc(route.stations[route.stations.length - 1].name)})</option><option value="UP">Up line (towards ${esc(route.stations[0].name)})</option></select></label>` : ''}
         <label>Time <input type="time" value="${fr.time}" data-f="time"></label>
@@ -240,6 +248,8 @@ export class Menus {
     };
     read();
     el.addEventListener('input', read);
+    // another route: its own stations and lines (the menu is rebuilt for it)
+    el.querySelector<HTMLSelectElement>('[data-f="route"]')!.addEventListener('change', e => this.freeRoam((e.target as HTMLSelectElement).value));
     el.addEventListener('click', e => {
       const btn = (e.target as HTMLElement).closest('button');
       if (btn && pickLoco(el, btn)) { read(); return; }
@@ -250,7 +260,7 @@ export class Menus {
         if (n > 24) return;
         const v = (k: string) => (el.querySelector(`[data-f="${k}"]`) as HTMLInputElement).value;
         const track = (el.querySelector('[data-f="track"]') as HTMLSelectElement | null)?.value;
-        this.cb.start('free-roam', { startStation: v('station'), track, time: v('time'), weather: v('weather') as WeatherId, consist: { loco: v('loco'), coaches, loaded } });
+        this.cb.start('free-roam', { route: route.id, startStation: v('station'), track, time: v('time'), weather: v('weather') as WeatherId, consist: { loco: v('loco'), coaches, loaded } });
       }
     });
     this.show(el);

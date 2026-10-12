@@ -20,10 +20,16 @@ export interface ScenarioData {
 }
 
 /** Overrides chosen in the menus (free roam start, consist builder, time/weather). */
-export interface ScenarioOverrides { startKm?: number; startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number }
+/** route: Free Roam on another route (its first station unless startStation is given) */
+export interface ScenarioOverrides { route?: string; startKm?: number; startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number }
 
 export function applyOverrides(s: ScenarioData, o: ScenarioOverrides, route: Route): ScenarioData {
   const out: ScenarioData = JSON.parse(JSON.stringify(s));
+  if (o.route && o.route !== s.route) {
+    out.route = o.route;
+    const first = route.stations[0];
+    out.start = { km: first.km, atPlatform: first.code, track: out.start.track };
+  }
   if (o.consist) out.consist = o.consist;
   if (o.loco) out.consist = { ...out.consist, loco: o.loco };
   if (o.time) out.time = o.time;

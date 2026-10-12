@@ -58,7 +58,8 @@ export class Lighting {
     this.shadowSize = size;
   }
 
-  update(focus: THREE.Vector3, time: TimeOfDay, w: Weather, sky: Sky, fogMul: number, lampSpots: THREE.Vector3[], cam: THREE.Vector3) {
+  /** air: the region's haze (1 = as the weather has it) and haze tint (dust in the desert, blue in the mountains) */
+  update(focus: THREE.Vector3, time: TimeOfDay, w: Weather, sky: Sky, fogMul: number, lampSpots: THREE.Vector3[], cam: THREE.Vector3, air?: { haze: number; tint: THREE.Color | null }) {
     const day = time.day;
     const oc = w.p.overcast;
     const dark = 1 - this.tunnel * 0.94;
@@ -85,8 +86,10 @@ export class Lighting {
     this.hemi.intensity = (0.12 + day * (0.75 + oc * 0.35) + flash * 2.5) * dark + 0.03;
 
     // fog follows the horizon colour; darker at night and in tunnels
-    this.fog.color.copy(sky.horizon).lerp(w.p.haze.clone().multiplyScalar(0.2 + day * 0.8), 0.5).multiplyScalar(dark);
-    this.fog.density = w.p.fog * fogMul * (1 + this.tunnel * 6);
+    this.fog.color.copy(sky.horizon).lerp(w.p.haze.clone().multiplyScalar(0.2 + day * 0.8), 0.5);
+    if (air?.tint) this.fog.color.lerp(air.tint.clone().multiplyScalar(0.25 + day * 0.75), 0.35 * day);
+    this.fog.color.multiplyScalar(dark);
+    this.fog.density = w.p.fog * fogMul * (air?.haze ?? 1) * (1 + this.tunnel * 6);
 
     // night lamps
     this.nightLight = clamp(1 - day * 1.6 + oc * 0.25, 0, 1);

@@ -7,7 +7,7 @@ import type { TerrainField } from '../TerrainField';
 export const PROP_TYPES = [
   'mango', 'neem', 'palm', 'forest', 'bush', 'hut', 'house', 'building2', 'building4', 'building7', 'tank',
   'temple', 'mosque', 'church', 'kiln', 'buffalo', 'cow', 'rock', 'billboard', 'quarter', 'haystack', 'tubewell',
-  'hospital', 'school', 'grass', 'treeImp', 'palmImp', 'camel', 'shed', 'warehouse', 'turbine',
+  'hospital', 'school', 'grass', 'treeImp', 'palmImp', 'camel', 'shed', 'warehouse', 'turbine', 'pine', 'pineImp',
 ] as const;
 export type PropType = typeof PROP_TYPES[number];
 export const PROP_STRIDE = 10; // x y z ry sx sy sz r g b
@@ -89,6 +89,12 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
     const reg = route.regionAt(field.kmAt(x, z));
     const t = reg.treeTypes[Math.floor(rand() * reg.treeTypes.length)] as PropType;
     const s = 0.75 + rand() * 0.6;
+    if (t === 'pine') {
+      // conifers: dark needles; a cone far away
+      if (level === 'impostor' || !near) out.push('pineImp', x, y, z, rand() * 6.28, s, s * (0.9 + rand() * 0.4), s, tint(rand, [1, 1, 1], 0.15));
+      else out.push('pine', x, y, z, rand() * 6.28, s, s * (0.9 + rand() * 0.4), s, tint(rand, [0.5, 0.66, 0.55], 0.12));
+      return;
+    }
     if (level === 'impostor' || !near) out.push(t === 'palm' ? 'palmImp' : 'treeImp', x, y, z, rand() * 6.28, s * (t === 'forest' ? 1.3 : 1), s * (t === 'forest' ? 1.5 : 1), s, tint(rand, g > 0.5 ? [0.75, 0.9, 0.7] : [0.95, 1, 0.85], 0.2));
     else out.push(t, x, y, z, rand() * 6.28, s, s, s, tint(rand, [1, 1, 1], 0.18));
   };
@@ -108,7 +114,10 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       if ((dist < W + 7 || dist < 13 + route.halfSpacing) && !route.overTunnel(km)) continue;
       const reg = route.regionAt(km), biome = biomeOf(reg);
       const g = biome === 'ghats' ? 1 : 0;
-      const zone = dist < 1800 ? route.zoneAt(km).zone : biome === 'ghats' ? 'ghats' : biome === 'desert' ? 'desert' : biome === 'hills' ? 'hills' : biome === 'coast' ? 'coast' : 'fields';
+      const far = biome === 'ghats' ? 'ghats' : biome === 'desert' ? 'desert' : biome === 'hills' ? 'hills' : biome === 'coast' ? 'coast' : biome === 'snow' ? 'snow' : 'fields';
+      // snow country is snow country whatever the route's zones say (only towns and colonies keep their own)
+      const zone0 = dist < 1800 ? route.zoneAt(km).zone : far;
+      const zone = biome === 'snow' && zone0 !== 'town' && zone0 !== 'colony' && zone0 !== 'village' ? 'snow' : zone0;
       const y = hAt(x, z);
       const slope = info.slope[k];
       const r = rand();
@@ -154,6 +163,14 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
       if (zone === 'ghats') {
         if (r < reg.treeDensity * 0.55) tree(x, y, z, g, near, rand);
         else if (near && r < reg.treeDensity * 0.7) out.push('bush', x, y, z, rand() * 6.28, 1, 0.8 + rand() * 0.5, 1, tint(rand, [0.8, 0.95, 0.75]));
+        continue;
+      }
+
+      // snow: pine forest in bands and clumps up the slopes, open snowfields and boulders between
+      if (zone === 'snow') {
+        const forest = hash2(Math.floor(x / 160), Math.floor(z / 160), 97) < 0.5 || hash2(Math.floor(x / 60), Math.floor(z / 60), 98) < 0.18;
+        if (forest ? r < reg.treeDensity * 0.9 : r < reg.treeDensity * 0.05) { tree(x, y, z, g, near, rand); continue; }
+        if (near && r > 0.993) out.push('rock', x, y - 0.4, z, rand() * 6.28, 1 + rand() * 2, 0.8 + rand(), 1 + rand() * 2, tint(rand, [0.62, 0.62, 0.66]));
         continue;
       }
 

@@ -16,5 +16,7 @@
   "kilnsPerKm2": 0,
   "villagesPerKm2": 0.25,
   "stationStyle": "stone",
-  "regionalScript": "kannada"
+  "regionalScript": "kannada",
+  "horizon": { "deg": 5.5, "jagged": 0.6, "color": "#43603e" },
+  "air": { "haze": 1.2, "tint": "#c3d2d4", "clouds": 0.35 }
 }

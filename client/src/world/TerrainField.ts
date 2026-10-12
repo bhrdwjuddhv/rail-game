@@ -14,7 +14,8 @@ import { landformHeight } from '@rail/shared/track/Landforms';
  *   -> road beds flattened
  */
 export interface NearestTrack { km: number; d: number; dist: number; heading: number }
-export interface GroundSample { h: number; hole: boolean; nt: NearestTrack | null; river: number; road: number; pond: number; natural: number }
+/** river: metres from the nearest river's edge (negative in the water); waterY: that river's water level */
+export interface GroundSample { h: number; hole: boolean; nt: NearestTrack | null; river: number; waterY: number; road: number; pond: number; natural: number }
 export interface Pond { x: number; z: number; r: number; level: number }
 
 const SAMPLE_M = 25;
@@ -29,7 +30,7 @@ export class TerrainField {
   private sideSign: Float32Array;
   private bx0 = 0; private bz0 = 0; private bnx = 0; private bnz = 0;
   private base!: Float32Array; private baseKm!: Float32Array;
-  private ghats: RegionData;
+  private ghats!: RegionData;
   private pondCache = new Map<number, Pond | null>();
   readonly grounds: { x: number; z: number; r: number; heading: number }[] = [];
   private nt: NearestTrack = { km: 0, d: 0, dist: 0, heading: 0 };
@@ -64,6 +65,14 @@ export class TerrainField {
       const off = -(Math.sign(z.roadOffset ?? 1) || 1) * 150;
       this.grounds.push({ x: f.x - Math.sin(f.heading) * off, z: f.z + Math.cos(f.heading) * off, r: 55, heading: f.heading });
     }
+    this.buildBase();
+  }
+
+  /** The route's regions changed (God Mode scenery preview): rebuild what depends on them. */
+  refresh() {
+    const regs = this.route.data.regions.map(r => this.route.regions[r.region]).filter(Boolean);
+    this.ghats = regs.find(r => r.sideSlope > 0) ?? regs[0];
+    this.pondCache.clear();
     this.buildBase();
   }
 
@@ -280,12 +289,12 @@ export class TerrainField {
     const nt = nt0 ? { ...nt0 } : null;
     let h = this.natural(x, z, nt);
     out.natural = h;
-    out.hole = false; out.river = Infinity; out.road = Infinity; out.pond = Infinity;
+    out.hole = false; out.river = Infinity; out.waterY = -Infinity; out.road = Infinity; out.pond = Infinity;
 
     for (const r of this.route.rivers) {
       const dr = this.riverDistance(r, x, z);
       if (dr === Infinity) continue;
-      out.river = Math.min(out.river, dr);
+      if (dr - r.width / 2 < out.river) { out.river = dr - r.width / 2; out.waterY = r.water; }
       const half = r.width / 2;
       if (dr < half) h = Math.min(h, r.floor - 1.8 * (1 - (dr / half) ** 2));
       else if (dr < half + 170) h = Math.min(h, lerp(r.floor, h, smoothstep(half, half + 170, dr)));
@@ -338,10 +347,12 @@ export class TerrainField {
     const W = R.formationHalfWidth(km);
     const top = bed - 0.05;
     if (nt.dist <= W) return top;
-    // banks at 1 : 1.5; cuttings in hill country are blasted through rock, near vertical
+    // banks at 1 : 1.5; cuttings in hill country are benched: a steep rock face for the
+    // first 12 m, then 1 : 1.5 above it (deep cuts stay cuttings, not canyon walls)
     const b = biomeOf(R.regionAt(km));
-    const rockCut = b === 'ghats' || b === 'hills' || b === 'snow';
-    const s = (nt.dist - W) / (h > top && rockCut ? 0.45 : 1.5);
+    const rockCut = h > top && (b === 'ghats' || b === 'hills' || b === 'snow');
+    const out0 = nt.dist - W;
+    const s = rockCut ? (out0 <= 9 ? out0 / 0.75 : 12 + (out0 - 9) / 1.5) : out0 / 1.5;
     return h < top ? Math.max(h, top - s) : Math.min(h, top + s);
   }
 
@@ -370,6 +381,6 @@ export class TerrainField {
     return h;
   }
 
-  private tmp: GroundSample = { h: 0, hole: false, nt: null, river: 0, road: 0, pond: 0, natural: 0 };
+  private tmp: GroundSample = { h: 0, hole: false, nt: null, river: 0, waterY: 0, road: 0, pond: 0, natural: 0 };
   height(x: number, z: number) { return this.sample(x, z, this.tmp).h; }
 }

@@ -129,7 +129,7 @@ function build(t: PropType): Template[] {
   if (fp) b.box(fp[0] * 2 + 0.3, PLINTH_DEPTH + 0.15, fp[1] * 2 + 0.3, mat(0, (0.15 - PLINTH_DEPTH) / 2, 0), t === 'hut' ? '#8a7356' : '#9c968c', t === 'kiln' ? 'brick' : 'std');
   const one = (material: string, shadow = true): Template[] => [{ geometry: b.geometry('std')!, material, shadow }];
   switch (t) {
-    case 'mango': case 'neem': case 'palm': case 'forest': case 'bush': {
+    case 'mango': case 'neem': case 'palm': case 'forest': case 'bush': case 'pine': {
       // trunk and branches (bark), crown of leaf cards (leaves): see Vegetation
       buildTree(t, b);
       const parts: Template[] = [{ geometry: b.geometry('leaves')!, material: 'leaves', shadow: true }];
@@ -243,6 +243,11 @@ function build(t: PropType): Template[] {
       return [{ geometry: grassTuft(), material: 'grass', shadow: false }];
     case 'treeImp': { const s = treeSize('mango'); return [{ geometry: crossedQuads(s.w, s.h), material: 'impostor', shadow: false }]; }
     case 'palmImp': { const s = treeSize('palm'); return [{ geometry: crossedQuads(s.w, s.h), material: 'impostorPalm', shadow: false }]; }
+    case 'pineImp':
+      // a far pine reads as a dark spire: a 7-sided cone on a stub of trunk
+      b.add(new THREE.ConeGeometry(2.7, 11.5, 7), mat(0, 7.2, 0), '#2c4632');
+      b.cyl(0.25, 0.3, 1.6, 5, mat(0, 0.8, 0), '#4a3a2c');
+      return [{ geometry: b.geometry('std')!, material: 'std', shadow: false }];
     case 'camel': {
       // long legs, humped body, curved neck (tinted per instance)
       const c = '#c49a68';

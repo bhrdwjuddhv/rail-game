@@ -1,0 +1,48 @@
+{
+  "id": "alpine-meadow",
+  "name": "Alpine Meadows",
+  "biome": "snow",
+  "ground": [
+    "#6f8f4a",
+    "#7d9a52",
+    "#64843f"
+  ],
+  "crops": [
+    {
+      "name": "green",
+      "color": "#7fa152"
+    },
+    {
+      "name": "mustard",
+      "color": "#c9b53a"
+    }
+  ],
+  "hillAmpNear": 3,
+  "hillAmpFar": 120,
+  "hillFreq": 0.0019,
+  "sideSlope": 0,
+  "ridges": 1.2,
+  "snow": 0.06,
+  "treeTypes": [
+    "pine",
+    "pine",
+    "forest"
+  ],
+  "treeDensity": 0.3,
+  "pondsPerKm2": 0.2,
+  "kilnsPerKm2": 0,
+  "villagesPerKm2": 0.2,
+  "stationStyle": "stone",
+  "regionalScript": "devanagari",
+  "horizon": {
+    "deg": 7,
+    "jagged": 0.9,
+    "color": "#4f5a66",
+    "snowCap": 0.5
+  },
+  "air": {
+    "haze": 0.75,
+    "tint": "#c4d8ee",
+    "clouds": 0.1
+  }
+}

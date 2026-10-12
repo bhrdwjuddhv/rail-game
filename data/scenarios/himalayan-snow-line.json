@@ -1,0 +1,62 @@
+{
+  "id": "himalayan-snow-line",
+  "name": "Himalayan Snow Line",
+  "difficulty": "Medium",
+  "description": "A winter morning express from the meadows of Devghati up the snowbound valley to Himshikhar: green pastures under white peaks, the Neelganga bridge, a ledge above the gorge, a tunnel and the Deodar viaduct, then the long 1 in 60 climb. Stop at every station and mind the grade.",
+  "route": "himalayan-line",
+  "start": {
+    "km": 1,
+    "track": "DOWN",
+    "atPlatform": "DVGT"
+  },
+  "consist": {
+    "loco": "wap7",
+    "coaches": [
+      {
+        "type": "ac3",
+        "count": 4
+      },
+      {
+        "type": "sleeper",
+        "count": 4
+      },
+      {
+        "type": "general",
+        "count": 2
+      }
+    ],
+    "loaded": true
+  },
+  "time": "08:20",
+  "timeScale": 1,
+  "weather": "clear",
+  "timetable": [
+    {
+      "station": "DVGT",
+      "dep": "08:22"
+    },
+    {
+      "station": "CNRB",
+      "arr": "08:30",
+      "dep": "08:31"
+    },
+    {
+      "station": "BRFJ",
+      "arr": "08:40",
+      "dep": "08:43",
+      "line": "DL"
+    },
+    {
+      "station": "DDGT",
+      "arr": "08:56",
+      "dep": "08:58"
+    },
+    {
+      "station": "HMSK",
+      "arr": "09:10"
+    }
+  ],
+  "aiTrains": [],
+  "endStation": "HMSK",
+  "rules": true
+}

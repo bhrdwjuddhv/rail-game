@@ -785,17 +785,29 @@
     "shoreM": 150
   },
   "features": [
-    {
-      "type": "depot",
-      "km": 1.5
-    },
-    {
-      "type": "fort",
-      "km": 41.2
-    },
-    {
-      "type": "port",
-      "km": 70.4
-    }
+    { "type": "depot", "km": 1.5 },
+    { "type": "fort", "km": 41.2 },
+    { "type": "stepwell", "km": 31.2, "offsetM": -230 },
+    { "type": "port", "km": 70.4 }
+  ],
+  "landforms": [
+    { "type": "ridge", "km": 26, "toKm": 30, "offsetM": -700, "widthM": 500, "heightM": 90 },
+    { "type": "ridge", "km": 33, "toKm": 37, "offsetM": 600, "widthM": 450, "heightM": 110 },
+    { "type": "ridge", "km": 40.4, "toKm": 42, "offsetM": 600, "widthM": 420, "heightM": 120 },
+    { "type": "cliff", "km": 37.2, "toKm": 37.9, "offsetM": 18, "widthM": 20, "heightM": 30 },
+    { "type": "cliff", "km": 38.5, "toKm": 39.2, "offsetM": -18, "widthM": 20, "heightM": 28 },
+    { "type": "ridge", "km": 43.2, "toKm": 43.9, "offsetM": 0, "widthM": 260, "heightM": 22 },
+    { "type": "ridge", "km": 48.3, "toKm": 48.9, "offsetM": 0, "widthM": 240, "heightM": 18 },
+    { "type": "ridge", "km": 45, "toKm": 52, "offsetM": -1500, "widthM": 1200, "heightM": 150 }
+  ],
+  "riversAlong": [
+
+  ],
+  "postcards": [
+    { "name": "Desert dunes", "km": 10, "offsetM": 60, "heightM": 5 },
+    { "name": "Step-well village", "km": 31.2, "offsetM": -40, "heightM": 5 },
+    { "name": "Reti Nadi bridge", "km": 38.2, "offsetM": 330, "heightM": 12 },
+    { "name": "Hill fort ridge", "km": 39.6, "offsetM": -60, "heightM": 6 },
+    { "name": "Salt pans", "km": 63.5, "offsetM": 80, "heightM": 3 }
   ]
 }

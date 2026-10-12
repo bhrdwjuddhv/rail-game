@@ -13,6 +13,9 @@ export class Ambience {
   private insects: GainNode;
   private river: GainNode;
   private riverPan: PannerNode;
+  /** waterfall roar: deep rumble plus hiss, at the nearest waterfall */
+  private fall: GainNode;
+  private fallPan: PannerNode;
   private crowd: GainNode;
   private crowdPan: PannerNode;
   private nextBird = 2;
@@ -40,6 +43,11 @@ export class Ambience {
     this.insects = mk(am, 'bandpass', 6200, 3, env);
     this.riverPan = a.panner('env', 40, 1.2);
     this.river = mk(a.noiseSource('white'), 'bandpass', 900, 0.4, this.riverPan);
+    this.fallPan = a.panner('env', 70, 1.1);
+    this.fall = c.createGain(); this.fall.gain.value = 0;
+    this.fall.connect(this.fallPan);
+    mk(a.noiseSource('brown'), 'lowpass', 420, 0.7, this.fall).gain.value = 1;
+    mk(a.noiseSource('white'), 'bandpass', 1400, 0.6, this.fall).gain.value = 0.35;
     this.crowdPan = a.panner('env', 25, 1.3);
     const babble = c.createGain(); babble.gain.value = 1;
     for (let i = 0; i < 4; i++) {
@@ -58,6 +66,7 @@ export class Ambience {
   update(dt: number, s: {
     rain: number; wind: number; day: number; speed: number; inCab: boolean;
     river: { x: number; y: number; z: number; d: number } | null;
+    fall: { x: number; y: number; z: number; d: number } | null;
     station: { x: number; y: number; z: number; d: number } | null;
     bells: { id: number; x: number; y: number; z: number; ringing: boolean }[];
     cam: { x: number; y: number; z: number };
@@ -69,6 +78,8 @@ export class Ambience {
     this.insects.gain.setTargetAtTime(s.day > 0.5 && s.rain < 0.2 ? 0.035 : 0, t, 2);
     if (s.river) { this.a.setPannerPos(this.riverPan, s.river.x, s.river.y, s.river.z); this.river.gain.setTargetAtTime(s.river.d < 600 ? 0.5 : 0, t, 1); }
     else this.river.gain.setTargetAtTime(0, t, 1);
+    if (s.fall) { this.a.setPannerPos(this.fallPan, s.fall.x, s.fall.y, s.fall.z); this.fall.gain.setTargetAtTime(s.fall.d < 900 ? 0.9 : 0, t, 1); }
+    else this.fall.gain.setTargetAtTime(0, t, 1);
     if (s.station) { this.a.setPannerPos(this.crowdPan, s.station.x, s.station.y, s.station.z); this.crowd.gain.setTargetAtTime(s.station.d < 400 ? 0.035 : 0, t, 1); }
     else this.crowd.gain.setTargetAtTime(0, t, 1);
 

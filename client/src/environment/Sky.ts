@@ -81,7 +81,8 @@ export class Sky {
     this.group.add(this.clouds);
   }
 
-  update(dt: number, cam: THREE.Vector3, time: TimeOfDay, w: Weather) {
+  /** extraClouds: the region's cloud cover on top of the weather's (monsoon ghats) */
+  update(dt: number, cam: THREE.Vector3, time: TimeOfDay, w: Weather, extraClouds = 0) {
     this.group.position.copy(cam);
     const el = (time.elevation * 180) / Math.PI;
     let i = 0;
@@ -123,7 +124,7 @@ export class Sky {
     this.cloudOffset += dt * 0.0015 * (0.3 + w.p.wind);
     const cm = this.clouds.material as THREE.MeshBasicMaterial;
     cm.map!.offset.set(this.cloudOffset, this.cloudOffset * 0.3);
-    cm.opacity = lerp(0.15, 0.9, w.p.cloud);
+    cm.opacity = lerp(0.15, 0.9, Math.min(1, w.p.cloud + extraClouds));
     cm.color.copy(this.horizon).lerp(new THREE.Color(1, 1, 1), time.day * (1 - oc * 0.6)).multiplyScalar(0.3 + time.day * 0.8);
   }
 }

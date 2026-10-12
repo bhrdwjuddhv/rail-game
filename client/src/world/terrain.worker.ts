@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { hash2, lerp } from '@rail/shared/util';
+import { hash2, lerp, smoothstep } from '@rail/shared/util';
 import { biomeOf, Route, RegionData, RouteData } from '@rail/shared/track/Route';
 import { GroundSample, TerrainField } from './TerrainField';
 import { placeScenery, TileInfo } from './scenery/Placement';
@@ -12,7 +12,7 @@ export interface TileRequest { type: 'tile'; id: number; x0: number; z0: number;
 
 let field: TerrainField;
 let route: Route;
-const S: GroundSample = { h: 0, hole: false, nt: null, river: 0, road: 0, pond: 0, natural: 0 };
+const S: GroundSample = { h: 0, hole: false, nt: null, river: 0, waterY: 0, road: 0, pond: 0, natural: 0 };
 
 const hex = (s: string): [number, number, number] => {
   const n = parseInt(s.slice(1), 16);
@@ -61,9 +61,11 @@ function buildTile(req: TileRequest) {
       riverD[k] = S.river;
       pondD[k] = S.pond;
       nat[k] = S.natural;
-      hole[k] = S.hole ? 1 : 0;
+      // portal holes only on fine tiles: a coarse cell (12.5-33 m, far away) would open a slit of sky in the hillside
+      hole[k] = S.hole && cell <= 10 ? 1 : 0;
       let wet = S.pond < 1;
-      for (const r of route.rivers) if (S.river < r.width / 2 + 2) wet = true;
+      // under the river's water (its low banks too), not just inside its channel
+      if (S.river < 2 || (S.river < 200 && S.h < S.waterY + 0.3)) wet = true;
       info.water[k] = wet ? 1 : 0;
     }
   }
@@ -78,6 +80,8 @@ function buildTile(req: TileRequest) {
   // texture splat: per-vertex weights of the terrain layers (terrainLayers.ts) and a road/dirt tint
   const lw = new Float32Array(N * LAYER_COUNT);
   const tint = new Float32Array(vCount);
+  // snow cover 0..1 (snow regions): whitens the ground in the shader and the vertex colour
+  const snow = new Float32Array(vCount);
   // UVs continuous across tiles (wrapped every 6 km to keep float precision), so
   // the large-scale anti-tiling mask in the terrain shader has no seams at tile edges
   const uo = ((x0 / 6) % 1000 + 1000) % 1000, vo = ((z0 / 6) % 1000 + 1000) % 1000;
@@ -92,8 +96,10 @@ function buildTile(req: TileRequest) {
     info.slope[k] = 1 - ny / L;
     uv[k * 2] = uo + (i * cell) / 6; uv[k * 2 + 1] = vo + (j * cell) / 6;
     const c = colourAt(x0 + i * cell, z0 + j * cell, info, k, nat[k], riverD[k], pondD[k], ny / L, lw.subarray(k * LAYER_COUNT, (k + 1) * LAYER_COUNT));
-    col[k * 3] = c[0]; col[k * 3 + 1] = c[1]; col[k * 3 + 2] = c[2];
     tint[k] = info.road[k] < 4.2 ? 0.62 : 1;
+    snow[k] = snowAt(x0 + i * cell, z0 + j * cell, info, k, ny / L, nz / L, riverD[k], pondD[k]);
+    const sw = snow[k] * 0.9;
+    col[k * 3] = lerp(c[0], 0.93, sw); col[k * 3 + 1] = lerp(c[1], 0.95, sw); col[k * 3 + 2] = lerp(c[2], 0.98, sw);
   }
   const { ids, weights } = splat(lw, N, vCount);
 
@@ -110,7 +116,7 @@ function buildTile(req: TileRequest) {
     for (const k of list) {
       pos[v * 3] = pos[k * 3]; pos[v * 3 + 1] = pos[k * 3 + 1] - 12; pos[v * 3 + 2] = pos[k * 3 + 2];
       nor[v * 3 + 1] = 1; col.set(col.subarray(k * 3, k * 3 + 3), v * 3); uv[v * 2] = uv[k * 2]; uv[v * 2 + 1] = uv[k * 2 + 1];
-      weights.set(weights.subarray(k * 4, k * 4 + 4), v * 4); tint[v] = tint[k];
+      weights.set(weights.subarray(k * 4, k * 4 + 4), v * 4); tint[v] = tint[k]; snow[v] = snow[k];
       v++;
     }
     for (let n = 0; n < list.length - 1; n++) {
@@ -133,9 +139,9 @@ function buildTile(req: TileRequest) {
     }
 
   const indices = new Uint32Array(idx);
-  const transfer: Transferable[] = [pos.buffer, nor.buffer, col.buffer, uv.buffer, indices.buffer, weights.buffer, tint.buffer];
+  const transfer: Transferable[] = [pos.buffer, nor.buffer, col.buffer, uv.buffer, indices.buffer, weights.buffer, tint.buffer, snow.buffer];
   for (const a of Object.values(props)) transfer.push((a as Float32Array).buffer);
-  (self as any).postMessage({ type: 'tile', id: req.id, pos, nor, col, uv, indices, props, ponds, vCount: v, splatIds: ids, splatW: weights, tint }, transfer);
+  (self as any).postMessage({ type: 'tile', id: req.id, pos, nor, col, uv, indices, props, ponds, vCount: v, splatIds: ids, splatW: weights, tint, snow }, transfer);
 }
 
 /**
@@ -155,6 +161,27 @@ function splat(lw: Float32Array, n: number, vCount: number) {
     for (let s = 0; s < 4; s++) weights[k * 4 + s] /= sum;
   }
   return { ids: new Float32Array(ids), weights };
+}
+
+/**
+ * Snow cover at a vertex: the region's share, thinner on steep rock faces (where
+ * it does not lie) and on sun-facing slopes, melted along water, cleared off the
+ * roads and the railway formation (ploughed), with drifts in hollows.
+ */
+function snowAt(x: number, z: number, info: TileInfo, k: number, ny: number, nz: number, river: number, pond: number) {
+  const km = info.km[k];
+  let s = 0;
+  for (const { r, w } of route.regionWeights(km)) s += (r.snow ?? 0) * w;
+  if (s <= 0) return 0;
+  s *= smoothstep(0.5, 0.72, ny);                        // steeper than ~55 degrees: bare rock
+  s *= 0.8 + 0.2 * Math.max(-1, Math.min(1, -nz * 4));  // north-facing (-z) slopes keep more
+  s *= 0.85 + 0.3 * hash2(Math.floor(x / 17), Math.floor(z / 17), 31);
+  const W = info.dist[k] < 300 ? route.formationHalfWidth(km) : 0;
+  if (!route.overTunnel(km)) s *= smoothstep(W + 0.5, W + 4, info.dist[k]);
+  s *= smoothstep(1, 5, info.road[k]);
+  s *= smoothstep(0, 6, river);
+  if (pond < 3) s *= Math.max(0, pond / 3);
+  return Math.max(0, Math.min(1, s));
 }
 
 const GRAVEL = hex('#7b7266');
@@ -179,10 +206,13 @@ const CROP_LAYER: Record<string, number> = { wheat: LAYER.wheat, mustard: LAYER.
 /** Base ground layers of each landscape type (weights, before fields, roads and the railway). */
 function baseLayers(b: string, dry: number, w: Float32Array, k: number) {
   switch (b) {
-    case 'ghats': w[LAYER.grass] += 0.45 * k; w[LAYER.forest] += 0.55 * k; break;
+    // monsoon ghats: green under the jungle, leaf litter in patches
+    case 'ghats': w[LAYER.grass] += 0.7 * k; w[LAYER.forest] += 0.3 * k; break;
     case 'desert': w[LAYER.sand] += (0.8 - dry * 0.2) * k; w[LAYER.soil] += (0.2 + dry * 0.2) * k; break;
     case 'hills': w[LAYER.soil] += 0.45 * k; w[LAYER.rock] += 0.18 * k; w[LAYER.laterite] += 0.17 * k; w[LAYER.grass] += 0.2 * k; break;
     case 'coast': w[LAYER.sand] += 0.45 * k; w[LAYER.grass] += 0.35 * k; w[LAYER.mud] += 0.2 * k; break;
+    // under the snow: alpine grass, rock and scree (what shows where the snow is thin)
+    case 'snow': w[LAYER.grass] += 0.45 * k; w[LAYER.rock] += 0.3 * k; w[LAYER.soil] += 0.25 * k; break;
     default: w[LAYER.grass] += (1 - dry * 0.7) * k; w[LAYER.soil] += dry * 0.7 * k;
   }
 }
@@ -247,7 +277,7 @@ function colourAt(x: number, z: number, info: TileInfo, k: number, natural: numb
   }
   // steep ground: the vertex colour greys toward rock; the texture shader adds triplanar rock by slope
   if (ny < 0.72) mix(ROCK, Math.min(1, (0.72 - ny) * 4));
-  for (const r of route.rivers) if (river < r.width / 2 + 25) mix(SAND, river < r.width / 2 ? 0.95 : 0.6, LAYER.sand);
+  if (river < 25) mix(SAND, river < 0 ? 0.95 : 0.6, LAYER.sand);
   if (pond < 4) mix(MUD, 0.8, LAYER.mud);
   if (info.road[k] < 4.2) mix(ROAD, 0.9, LAYER.soil);
   return c;

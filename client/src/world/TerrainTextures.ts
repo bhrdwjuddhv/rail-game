@@ -101,10 +101,10 @@ export class TerrainTextures {
     const n = quality === 0 ? 2 : 4;
     return {
       defines: `#define SPLAT_N ${n}\n#define SPLAT_Q ${quality}\n#define ROCK_L ${LAYER.rock}\n`,
-      vertexHead: `attribute vec4 splatW;\nattribute vec4 splatIds;\nattribute float tint;\nvarying vec4 vSplatW;\nflat varying vec4 vSplatIds;\nvarying float vTint;\nvarying vec3 vTerrPos;\nvarying vec3 vTerrN;\n`,
+      vertexHead: `attribute vec4 splatW;\nattribute vec4 splatIds;\nattribute float tint;\nattribute float snow;\nvarying vec4 vSplatW;\nflat varying vec4 vSplatIds;\nvarying float vTint;\nvarying float vSnow;\nvarying vec3 vTerrPos;\nvarying vec3 vTerrN;\n`,
       // world metres from the tile UVs (continuous, wrapped every 6 km), height from the position
-      vertexBody: `vSplatW = splatW; vSplatIds = splatIds; vTint = tint; vTerrPos = vec3(uv.x * 6.0, position.y, uv.y * 6.0); vTerrN = normal;\n`,
-      fragmentHead: `uniform highp sampler2DArray uSplat;\nuniform float uSplatReady;\nuniform float uLayerScale[${LAYER_COUNT}];\nuniform float uLayerRot[${LAYER_COUNT}];\nvarying vec4 vSplatW;\nflat varying vec4 vSplatIds;\nvarying float vTint;\nvarying vec3 vTerrPos;\nvarying vec3 vTerrN;\n`,
+      vertexBody: `vSplatW = splatW; vSplatIds = splatIds; vTint = tint; vSnow = snow; vTerrPos = vec3(uv.x * 6.0, position.y, uv.y * 6.0); vTerrN = normal;\n`,
+      fragmentHead: `uniform highp sampler2DArray uSplat;\nuniform float uSplatReady;\nuniform float uLayerScale[${LAYER_COUNT}];\nuniform float uLayerRot[${LAYER_COUNT}];\nvarying vec4 vSplatW;\nflat varying vec4 vSplatIds;\nvarying float vTint;\nvarying float vSnow;\nvarying vec3 vTerrPos;\nvarying vec3 vTerrN;\n`,
       /**
        * Blend the tile's layers by weight, with a height-based edge (the
        * brighter, raised parts of a layer win where layers meet: stones show
@@ -147,6 +147,8 @@ export class TerrainTextures {
     #endif
     ground = mix(ground, rock, rockW);
   }
+  // snow (snow regions): white, keeping a little of the ground's texture as its relief
+  if (vSnow > 0.01) ground = mix(ground, vec3(0.86, 0.89, 0.93) * (0.88 + 0.3 * dot(ground, vec3(0.333))), vSnow);
   diffuseColor.rgb *= ground * vTint;
 `,
     };

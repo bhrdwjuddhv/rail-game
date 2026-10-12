@@ -3,9 +3,14 @@ import { hash2 } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
 import { lookAtQuat, type CameraContext, type CameraMode, type Pose } from '../CameraManager';
 
-interface Poi { km: number; kind: string }
+/** postcard: a curated view from the route data (lat / up: where the camera stands) */
+interface Poi { km: number; kind: string; lat?: number; up?: number }
 
-/** 6: Auto-placed trackside cameras at bridges, curves, stations and crossings; cuts as the train passes. */
+/**
+ * 6: Trackside cameras at the route's postcard views (route data: the best
+ * spots, chosen by hand) and, between them, auto-placed at bridges, curves,
+ * stations and crossings; cuts as the train passes.
+ */
 export class CinematicCamera implements CameraMode {
   readonly name = 'Cinematic';
   readonly near = 0.3;
@@ -23,6 +28,8 @@ export class CinematicCamera implements CameraMode {
     for (const l of r.data.levelCrossings) p.push({ km: l.km, kind: 'lc' });
     for (let km = 0.5; km < r.lengthKm; km += 0.25) if (r.alignment.radiusAt(km) < 800) { p.push({ km, kind: 'curve' }); km += 1; }
     for (let km = 1; km < r.lengthKm; km += 2.2) p.push({ km, kind: 'line' });
+    // postcards are in surveyed km / offsets: seen from the far end (Up view) they mirror
+    for (const pc of r.data.postcards ?? []) p.push({ km: r.viewKm(pc.km), kind: 'postcard', lat: (r.mirrored ? -1 : 1) * pc.offsetM, up: pc.heightM });
     this.pois = p.sort((a, b) => a.km - b.km);
   }
 
@@ -30,7 +37,14 @@ export class CinematicCamera implements CameraMode {
     if (!this.pois) this.build(ctx);
     const dir = ctx.speed >= 0 ? 1 : -1;
     const cands = this.pois!.filter(p => (p.km - ctx.headKm) * dir > 0.18 && (p.km - ctx.headKm) * dir < 3);
-    this.current = cands.sort((a, b) => Math.abs(a.km - ctx.headKm) - Math.abs(b.km - ctx.headKm))[0] ?? { km: ctx.headKm + dir * 0.35, kind: 'line' };
+    // a postcard ahead wins over the auto-placed spots
+    const byDist = (a: Poi, b: Poi) => Math.abs(a.km - ctx.headKm) - Math.abs(b.km - ctx.headKm);
+    this.current = cands.filter(p => p.kind === 'postcard').sort(byDist)[0] ?? cands.sort(byDist)[0] ?? { km: ctx.headKm + dir * 0.35, kind: 'line' };
+    if (this.current.kind === 'postcard') {
+      ctx.route.alignment.sampleOffset(this.current.km * 1000, this.current.lat!, this.f);
+      this.spot.set(this.f.x, ctx.field.height(this.f.x, this.f.z) + this.current.up!, this.f.z);
+      return;
+    }
     const h = hash2(Math.round(this.current.km * 100), 3);
     const side = h < 0.5 ? -1 : 1;
     const kind = this.current.kind;

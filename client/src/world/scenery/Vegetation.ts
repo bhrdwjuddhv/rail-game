@@ -174,11 +174,11 @@ function crown(b: GeoBatch, centre: THREE.Vector3, rx: number, ry: number, n: nu
   }
 }
 
-export type TreeKind = 'mango' | 'neem' | 'forest' | 'palm' | 'bush';
+export type TreeKind = 'mango' | 'neem' | 'forest' | 'palm' | 'bush' | 'pine';
 
 /** Build one tree type into a batch: 'bark' and 'leaves' parts, base at y = 0 (sunk 5 cm). */
 export function buildTree(kind: TreeKind, b: GeoBatch) {
-  const r = rng({ mango: 51, neem: 52, forest: 53, palm: 54, bush: 55 }[kind]);
+  const r = rng({ mango: 51, neem: 52, forest: 53, palm: 54, bush: 55, pine: 56 }[kind]);
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   switch (kind) {
     case 'mango': {
@@ -204,6 +204,16 @@ export function buildTree(kind: TreeKind, b: GeoBatch) {
     case 'bush':
       crown(b, V(0, 0.9, 0), 1.4, 0.9, 16, [1.0, 1.5], LEAF_CELL.forest, r);
       return;
+    case 'pine': {
+      // Himalayan conifer: straight trunk, flat tiers of needles narrowing to a spire
+      limb(b, V(0, -0.05, 0), V(0, 12.6, 0), 0.34, 0.08);
+      for (let i = 0; i < 7; i++) {
+        const k = i / 7;
+        crown(b, V(0, 2.4 + i * 1.5, 0), 0.4 + 2.5 * (1 - k), 0.5, 13 - i, [1.1, 1.7], LEAF_CELL.forest, r);
+      }
+      crown(b, V(0, 12.6, 0), 0.5, 0.8, 4, [0.8, 1.1], LEAF_CELL.forest, r);
+      return;
+    }
     case 'palm': {
       // curved trunk: 9 segments leaning out and back up
       const pts: THREE.Vector3[] = [];

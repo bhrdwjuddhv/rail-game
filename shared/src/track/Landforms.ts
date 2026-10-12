@@ -24,6 +24,8 @@ export interface LandformData {
 export interface Landform {
   type: LandformData['type'];
   height: number; half: number;
+  /** along the line (m); 0 for a hill */
+  length: number;
   /** centreline (or cliff foot) in world x / z, every 40 m; one point for a hill */
   pts: { x: number; z: number }[];
   /** +1: "away from the line" is to the right of the polyline's direction */
@@ -39,18 +41,27 @@ export function compileLandforms(list: LandformData[] | undefined, a: Alignment)
   return (list ?? []).map((d, i) => {
     const pts: { x: number; z: number }[] = [];
     const s0 = d.km * 1000, s1 = d.type === 'hill' ? s0 : (d.toKm ?? d.km) * 1000;
-    for (let s = s0; s <= s1 + 1e-6; s += STEP_M) {
-      a.sampleOffset(clamp(s, 0, a.length), d.offsetM, f);
-      pts.push({ x: f.x, z: f.z });
-      if (s1 === s0) break;
+    // every STEP_M and always the end itself (a short shape is still a line, not a point)
+    // offset square to the line's general direction (a chord as long as the offset), not its
+    // local heading: far out on the inside of tight curves the local normals cross over and
+    // would fold the shape back across the railway
+    const g = newFrame(), span = Math.max(40, Math.abs(d.offsetM));
+    for (let s = s0; ; s = Math.min(s + STEP_M, s1)) {
+      a.sample(clamp(s, 0, a.length), f);
+      const cx = f.x, cz = f.z;
+      a.sample(clamp(s + span, 0, a.length), g); const ex = g.x, ez = g.z;
+      a.sample(clamp(s - span, 0, a.length), g);
+      const L = Math.hypot(ex - g.x, ez - g.z) || 1, tx = (ex - g.x) / L, tz = (ez - g.z) / L;
+      pts.push({ x: cx - tz * d.offsetM, z: cz + tx * d.offsetM });
+      if (s >= s1) break;
     }
     const half = d.widthM / 2;
     // reach: the shape's extent plus its soft edges (a cliff's top runs on outward)
-    const reach = d.type === 'cliff' ? d.widthM + 900 : d.type === 'hill' ? half : half * 1.4;
+    const reach = d.type === 'cliff' ? d.widthM + 900 + Math.abs(d.heightM) * 3 : d.type === 'hill' ? half : half * 1.4;
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
     return {
-      type: d.type, height: d.heightM, half, pts, away: Math.sign(d.offsetM) || 1,
+      type: d.type, height: d.heightM, half, pts, away: Math.sign(d.offsetM) || 1, length: (pts.length - 1) * STEP_M,
       minX: minX - reach, maxX: maxX + reach, minZ: minZ - reach, maxZ: maxZ + reach, seed: 17 + i * 13,
     };
   });
@@ -90,8 +101,8 @@ export function landformHeight(list: Landform[], x: number, z: number) {
     if (x < l.minX || x > l.maxX || z < l.minZ || z > l.maxZ) continue;
     const { lat, end } = project(l, x, z);
     const H = l.height, W = l.half;
-    // the ends of long shapes round off over half their width
-    const taper = 1 - smoothstep(0, Math.max(60, W), end);
+    // the ends of long shapes round off over half their width (a tall cliff over three times its height)
+    const taper = 1 - smoothstep(0, Math.max(60, W, l.type === 'cliff' ? Math.abs(H) * 3 : 0), end);
     if (taper <= 0) continue;
     const a = Math.abs(lat);
     switch (l.type) {
@@ -114,11 +125,13 @@ export function landformHeight(list: Landform[], x: number, z: number) {
         break;
       }
       case 'cliff': {
-        // flat toward the line, a steep face over widthM, then the higher ground rolling on
+        // flat toward the line, a steep face over widthM, then the higher ground rolling on and,
+        // behind a short cliff (a waterfall's), falling back to the hillside: a step, not a block
         if (lat <= 0) break;
-        const k = smoothstep(0, l.half * 2, lat);
-        const top = 1 + 0.15 * fbm(x * 0.003, z * 0.003, 3, l.seed) * smoothstep(l.half * 2, l.half * 2 + 300, lat);
-        h += H * k * top * taper * (1 - smoothstep(600, 900, lat - l.half * 2) * 0.35);
+        const face = l.half * 2, k = smoothstep(0, face, lat);
+        const back = Math.min(900, Math.max(150, l.length * 1.5));
+        const top = 1 + 0.15 * fbm(x * 0.003, z * 0.003, 3, l.seed) * smoothstep(face, face + 300, lat);
+        h += H * k * top * taper * (1 - smoothstep(back * 0.5, back, lat - face) * (back < 900 ? 1 : 0.35));
         break;
       }
       case 'valley': {

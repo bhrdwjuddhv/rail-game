@@ -1,0 +1,142 @@
+{
+  "id": "himalayan-line",
+  "name": "Himalayan Snow Line",
+  "operator": "Bharat Rail Network",
+  "lengthKm": 35.94,
+  "startElevationM": 1800,
+  "lines": ["UP", "DOWN"],
+  "lineSpacingM": 5.3,
+  "regions": [
+    {"fromKm": 0, "toKm": 14, "region": "alpine-meadow"},
+    {"fromKm": 14, "toKm": 36, "region": "himalaya"}
+  ],
+  "segments": [
+    {"type": "straight", "lengthM": 2200},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 700, "radiusM": 900, "direction": "left", "cantMm": 60},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 1800},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 600, "radiusM": 700, "direction": "right", "cantMm": 70},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 1400},
+    {"type": "transition", "lengthM": 60},
+    {"type": "curve", "lengthM": 500, "radiusM": 800, "direction": "left", "cantMm": 60},
+    {"type": "transition", "lengthM": 60},
+    {"type": "straight", "lengthM": 2400},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 900, "radiusM": 600, "direction": "right", "cantMm": 80},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 900},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 700, "radiusM": 500, "direction": "left", "cantMm": 90},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 1600},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 800, "radiusM": 650, "direction": "right", "cantMm": 80},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 3200},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 600, "radiusM": 450, "direction": "left", "cantMm": 100},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 700},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 700, "radiusM": 450, "direction": "right", "cantMm": 100},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 1200},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 900, "radiusM": 500, "direction": "left", "cantMm": 90},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 600},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 600, "radiusM": 450, "direction": "right", "cantMm": 100},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 2400},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 800, "radiusM": 500, "direction": "left", "cantMm": 90},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 900},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 700, "radiusM": 550, "direction": "right", "cantMm": 90},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 1300},
+    {"type": "transition", "lengthM": 80},
+    {"type": "curve", "lengthM": 600, "radiusM": 600, "direction": "left", "cantMm": 80},
+    {"type": "transition", "lengthM": 80},
+    {"type": "straight", "lengthM": 4200}
+  ],
+  "profile": [
+    {"km": 0, "gradient": "level"},
+    {"km": 1.5, "gradient": "1 in 150 up"},
+    {"km": 8.4, "gradient": "level"},
+    {"km": 9.6, "gradient": "1 in 100 up"},
+    {"km": 16.2, "gradient": "level"},
+    {"km": 17.8, "gradient": "1 in 60 up"},
+    {"km": 25.4, "gradient": "level"},
+    {"km": 26.6, "gradient": "1 in 70 up"},
+    {"km": 34.4, "gradient": "level"}
+  ],
+  "stations": [
+    {"name": "Devghati", "nameHi": "देवघाटी", "nameRegional": "देवघाटी", "code": "DVGT", "km": 1, "type": "wayside", "platformLengthM": 600, "buildingSide": 1, "lines": [], "platforms": [{"num": "1", "from": 4.4, "to": 10.4, "lines": ["UP"]},{"num": "2", "from": -4.4, "to": -10.4, "lines": ["DOWN"]}], "crossovers": [{"km": 1.35, "fromLine": "DOWN", "toLine": "UP"}]},
+    {"name": "Chinar Bagh", "nameHi": "चिनार बाग", "nameRegional": "चिनार बाग", "code": "CNRB", "km": 9, "type": "halt", "platformLengthM": 420, "buildingSide": 1, "lines": [], "platforms": [{"num": "1", "from": 4.4, "to": 9.4, "lines": ["UP"]},{"num": "2", "from": -4.4, "to": -9.4, "lines": ["DOWN"]}]},
+    {"name": "Barafpur Junction", "nameHi": "बर्फपुर जंक्शन", "nameRegional": "बर्फपुर जंक्शन", "code": "BRFJ", "km": 17, "type": "junction", "platformLengthM": 600, "buildingSide": 1, "lines": [{"id": "DL", "offset": -12.15},{"id": "UL", "offset": 12.15}], "platforms": [{"num": "1", "from": 13.9, "to": 19.9, "lines": ["UL"]},{"num": "2/3", "from": 4.4, "to": 10.4, "lines": ["UP", "UL"]},{"num": "4/5", "from": -4.4, "to": -10.4, "lines": ["DOWN", "DL"]}], "crossovers": [{"km": 17.6, "fromLine": "DOWN", "toLine": "UP"}]},
+    {"name": "Deodar Ghati", "nameHi": "देवदार घाटी", "nameRegional": "देवदार घाटी", "code": "DDGT", "km": 26, "type": "wayside", "platformLengthM": 600, "buildingSide": -1, "lines": [], "platforms": [{"num": "1", "from": -4.4, "to": -10.4, "lines": ["DOWN"]},{"num": "2", "from": 4.4, "to": 10.4, "lines": ["UP"]}], "crossovers": [{"km": 26.35, "fromLine": "DOWN", "toLine": "UP"}]},
+    {"name": "Himshikhar", "nameHi": "हिमशिखर", "nameRegional": "हिमशिखर", "code": "HMSK", "km": 35, "type": "terminal", "platformLengthM": 600, "buildingSide": -1, "lines": [], "platforms": [{"num": "1", "from": -4.4, "to": -10.4, "lines": ["DOWN"]},{"num": "2", "from": 4.4, "to": 10.4, "lines": ["UP"]}], "crossovers": [{"km": 35.35, "fromLine": "DOWN", "toLine": "UP"}]}
+  ],
+  "autoSignalSpacingKm": 1.7,
+  "signals": [],
+  "speedLimits": [
+    {"fromKm": 0, "toKm": 1.6, "kmph": 30},
+    {"fromKm": 1.6, "toKm": 12, "kmph": 100},
+    {"fromKm": 12, "toKm": 18.6, "kmph": 80},
+    {"fromKm": 18.6, "toKm": 34.2, "kmph": 60},
+    {"fromKm": 34.2, "toKm": 36, "kmph": 30}
+  ],
+  "structures": [
+    {"type": "bridge", "style": "girder", "fromKm": 6.1, "toKm": 6.2, "name": "Pahadi Nala Bridge", "river": {"width": 20, "depth": 6}},
+    {"type": "bridge", "style": "steel-truss", "fromKm": 13.2, "toKm": 13.5, "name": "Neelganga Bridge", "river": {"width": 120, "depth": 24}},
+    {"type": "tunnel", "fromKm": 20.3, "toKm": 21.1, "name": "Barf Tunnel"},
+    {"type": "bridge", "style": "arch-viaduct", "fromKm": 21.4, "toKm": 21.7, "name": "Deodar Viaduct", "river": {"width": 30, "depth": 45}},
+    {"type": "tunnel", "fromKm": 28.2, "toKm": 29, "name": "Shikhar Tunnel"}
+  ],
+  "levelCrossings": [
+    {"km": 5.2, "manned": true},
+    {"km": 12.6, "manned": false}
+  ],
+  "scenery": [
+    {"fromKm": 0, "toKm": 2.4, "zone": "town", "roadOffset": 55},
+    {"fromKm": 2.4, "toKm": 8.5, "zone": "fields"},
+    {"fromKm": 8.5, "toKm": 9.6, "zone": "village"},
+    {"fromKm": 9.6, "toKm": 16, "zone": "fields"},
+    {"fromKm": 16, "toKm": 18, "zone": "village"},
+    {"fromKm": 18, "toKm": 25.5, "zone": "snow"},
+    {"fromKm": 25.5, "toKm": 26.6, "zone": "village"},
+    {"fromKm": 26.6, "toKm": 34, "zone": "snow"},
+    {"fromKm": 34, "toKm": 36, "zone": "town", "roadOffset": -55}
+  ],
+  "crossovers": [],
+  "features": [
+    {"type": "waterfall", "km": 22.6, "offsetM": -70, "heightM": 40},
+    {"type": "hillstation", "km": 26.4, "offsetM": -240}
+  ],
+  "landforms": [
+    {"type": "ridge", "km": 1, "toKm": 13, "offsetM": 1500, "widthM": 1000, "heightM": 260},
+    {"type": "ridge", "km": 1, "toKm": 13, "offsetM": -1700, "widthM": 1200, "heightM": 300},
+    {"type": "cliff", "km": 18.8, "toKm": 20.2, "offsetM": 16, "widthM": 22, "heightM": 50},
+    {"type": "valley", "km": 18.8, "toKm": 20.3, "offsetM": -200, "widthM": 260, "heightM": 60},
+    {"type": "ridge", "km": 14, "toKm": 34, "offsetM": 1300, "widthM": 1100, "heightM": 380},
+    {"type": "ridge", "km": 14, "toKm": 34, "offsetM": -1400, "widthM": 1200, "heightM": 420},
+    {"type": "hill", "km": 30, "offsetM": 900, "widthM": 900, "heightM": 350}
+  ],
+  "riversAlong": [
+    {"name": "Neelganga", "fromKm": 2, "toKm": 12.8, "offsetM": -90, "width": 50, "depthM": 4}
+  ],
+  "postcards": [
+    {"name": "Meadow and peaks", "km": 4.5, "offsetM": -60, "heightM": 5},
+    {"name": "Neelganga bridge", "km": 13, "offsetM": -160, "heightM": 12},
+    {"name": "Snow ledge", "km": 19.4, "offsetM": -120, "heightM": 15},
+    {"name": "Deodar viaduct", "km": 21.2, "offsetM": -150, "heightM": 20},
+    {"name": "Deodar Ghati", "km": 26.8, "offsetM": 250, "heightM": 30},
+    {"name": "Himshikhar summit", "km": 34, "offsetM": 60, "heightM": 6}
+  ]
+}

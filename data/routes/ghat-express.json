@@ -210,9 +210,37 @@
     { "km": 47.0, "fromLine": "DOWN", "toLine": "UP" }
   ],
   "features": [
-    { "type": "waterfall", "km": 33.1 },
+    { "type": "waterfall", "km": 33.1, "offsetM": 75, "heightM": 40 },
+    { "type": "waterfall", "km": 37.05, "offsetM": 95, "heightM": 32 },
     { "type": "waterfall", "km": 39.3 },
-    { "type": "waterfall", "km": 44.7 },
-    { "type": "waterfall", "km": 47.6 }
+    { "type": "waterfall", "km": 44.7, "offsetM": -80, "heightM": 45 },
+    { "type": "waterfall", "km": 47.6, "offsetM": -75, "heightM": 35 },
+    { "type": "hillstation", "km": 40.7, "offsetM": 240 }
+  ],
+  "landforms": [
+    { "type": "hill", "km": 2.5, "offsetM": 1600, "widthM": 1400, "heightM": 70 },
+    { "type": "hill", "km": 6, "offsetM": -1900, "widthM": 1800, "heightM": 90 },
+    { "type": "ridge", "km": 8, "toKm": 14, "offsetM": 2400, "widthM": 1200, "heightM": 110 },
+    { "type": "hill", "km": 13, "offsetM": -1500, "widthM": 1100, "heightM": 60 },
+    { "type": "ridge", "km": 15.5, "toKm": 19, "offsetM": -2600, "widthM": 1500, "heightM": 120 },
+    { "type": "ridge", "km": 22, "toKm": 26, "offsetM": 1800, "widthM": 1100, "heightM": 140 },
+    { "type": "cliff", "km": 29.6, "toKm": 31.2, "offsetM": 14, "widthM": 24, "heightM": 45 },
+    { "type": "valley", "km": 29.4, "toKm": 31, "offsetM": -120, "widthM": 220, "heightM": 10 },
+    { "type": "valley", "km": 32.4, "toKm": 34.6, "offsetM": -260, "widthM": 300, "heightM": 70 },
+    { "type": "valley", "km": 43.8, "toKm": 45.6, "offsetM": 280, "widthM": 320, "heightM": 80 },
+    { "type": "ridge", "km": 33, "toKm": 48, "offsetM": 1800, "widthM": 1400, "heightM": 220 },
+    { "type": "ridge", "km": 33, "toKm": 48, "offsetM": -1700, "widthM": 1300, "heightM": 180 }
+  ],
+  "riversAlong": [
+    { "name": "Ratna", "fromKm": 29.4, "toKm": 31.2, "offsetM": -60, "width": 160, "depthM": 12 },
+    { "name": "Megha", "fromKm": 50.6, "toKm": 53.9, "offsetM": 130, "width": 90, "depthM": 6 }
+  ],
+  "postcards": [
+    { "name": "Sonagarh plains", "km": 4, "offsetM": -40, "heightM": 4 },
+    { "name": "Ratna river ledge", "km": 30.2, "offsetM": -90, "heightM": 6 },
+    { "name": "Kalikhind viaduct", "km": 36.7, "offsetM": -180, "heightM": 10 },
+    { "name": "Ghatmatha hill station", "km": 40.3, "offsetM": 300, "heightM": 30 },
+    { "name": "Waterfall gorge", "km": 44.4, "offsetM": 160, "heightM": 25 },
+    { "name": "Meghavan valley", "km": 51, "offsetM": 90, "heightM": 8 }
   ]
 }

@@ -125,7 +125,7 @@ export class ChunkManager {
     let n = 0;
     for (const t of this.tiles.values()) {
       const d = Math.hypot((t.tx + 0.5) * TILE - x, (t.tz + 0.5) * TILE - z);
-      if (d < radius && (!t.group || t.res !== t.wantRes)) n++;
+      if (d < radius && (!t.group || t.res !== t.wantRes || t.pendingId)) n++;
     }
     return n;
   }
@@ -144,6 +144,7 @@ export class ChunkManager {
       tile.preparing = undefined;
       if (tile.group) this.disposeGroup(tile.group);
       tile.group = g;
+      if (!this.propsVisible) this.showProps(g, false);
       this.root.add(g);
       this.count(g, 1);
       if (g.userData.billboards) this.onBillboards?.(tile.key, g.userData.billboards);
@@ -176,9 +177,11 @@ export class ChunkManager {
     geo.setAttribute('splatIds', new THREE.BufferAttribute(ids, 4));
     geo.setAttribute('splatW', new THREE.BufferAttribute((m.splatW as Float32Array).subarray(0, vc * 4), 4));
     geo.setAttribute('tint', new THREE.BufferAttribute((m.tint as Float32Array).subarray(0, vc), 1));
+    geo.setAttribute('snow', new THREE.BufferAttribute((m.snow as Float32Array).subarray(0, vc), 1));
     geo.setIndex(new THREE.BufferAttribute(m.indices as Uint32Array, 1));
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, this.terrainMaterial);
+    mesh.userData.ground = true;
     mesh.receiveShadow = true;
     mesh.castShadow = tile.res >= 40;
     group.add(mesh);
@@ -318,6 +321,27 @@ export class ChunkManager {
       const req: TileRequest = { type: 'tile', id, x0: tile.tx * TILE, z0: tile.tz * TILE, size: TILE, res: tile.wantRes, scenery: tile.wantScenery, grass: p.grassDensity };
       this.workers[this.rr++ % this.workers.length].postMessage(req);
     }
+  }
+
+  /** trees, buildings and grass on the tiles (off deep inside a tunnel: see Game) */
+  private propsVisible = true;
+  setPropsVisible(v: boolean) {
+    if (v === this.propsVisible) return;
+    this.propsVisible = v;
+    for (const t of this.tiles.values()) if (t.group) this.showProps(t.group, v);
+  }
+  private showProps(g: THREE.Group, v: boolean) { for (const c of g.children) if (!c.userData.ground) c.visible = v; }
+
+  /**
+   * The route's landscape changed (God Mode scenery preview): the workers start
+   * over with it and every tile is rebuilt. Tiles stay on show until their new
+   * ones arrive; answers to earlier requests are dropped (their ids are gone).
+   */
+  reinit(route: Route) {
+    this.ready = 0;
+    for (const w of this.workers) w.postMessage({ type: 'init', route: route.data, regions: REGIONS });
+    this.inFlight.clear();
+    for (const t of this.tiles.values()) { t.pendingId = 0; t.res = 0; t.scenery = 'none'; }
   }
 
   dispose() {

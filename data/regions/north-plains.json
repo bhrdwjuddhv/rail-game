@@ -19,5 +19,7 @@
   "kilnsPerKm2": 0.25,
   "villagesPerKm2": 0.9,
   "stationStyle": "brick",
-  "regionalScript": "gujarati"
+  "regionalScript": "gujarati",
+  "horizon": { "deg": 3.2, "jagged": 0.3, "color": "#4c6049" },
+  "air": { "haze": 1.05, "tint": "#d4dbd6" }
 }
