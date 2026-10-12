@@ -1,4 +1,6 @@
+import { clamp } from '../util';
 import { Alignment, newFrame } from './Chainage';
+import { compileLandforms, Landform, LandformData } from './Landforms';
 import { formatGradient, parseGradient, ProfilePoint } from './Gradient';
 import { SegmentDef } from './TrackSegment';
 import { RAMP_M, RunningLine, TrackGraph } from './TrackGraph';
@@ -26,6 +28,8 @@ export interface StructureData {
   fromKm: number; toKm: number; name: string;
   river?: { width: number; depth: number; straight?: boolean };
 }
+export interface FeatureData { type: string; km: number; offsetM?: number; heightM?: number }
+export interface PostcardData { name: string; km: number; offsetM: number; heightM: number; lookKm?: number }
 export interface ZoneData { fromKm: number; toKm: number; zone: string; roadOffset?: number }
 export interface RouteData {
   id: string; name: string; operator: string; lengthKm: number; startElevationM: number;
@@ -47,7 +51,17 @@ export interface RouteData {
   structures: StructureData[];
   levelCrossings: { km: number; manned: boolean }[];
   scenery: ZoneData[];
-  features: { type: string; km: number }[];
+  /**
+   * Landmarks and features by km: waterfall, fort, stepwell, hillstation, depot, port.
+   * offsetM: lateral position (+ right); heightM: a waterfall's drop.
+   */
+  features: FeatureData[];
+  /** big landscape shapes: hills, ridges, cliffs, valleys (see Landforms.ts) */
+  landforms?: LandformData[];
+  /** rivers running beside the line (not under it): the near bank offsetM from the centreline */
+  riversAlong?: { name: string; fromKm: number; toKm: number; offsetM: number; width: number; depthM: number }[];
+  /** best trackside views (cinematic camera): eye at km / offsetM / heightM above ground, looking at lookKm */
+  postcards?: PostcardData[];
   /** crossovers between running lines away from stations */
   crossovers?: CrossoverData[];
   /** contact wire height above rail (m): 5.55 standard, about 7.4 high-rise for double-stack containers */
@@ -67,13 +81,23 @@ export interface RegionData {
    * sand dunes away from the line, scrub; hills: rocky ridges and scrub;
    * coast: flat salt pans and sand by the sea.
    */
-  biome?: 'plains' | 'ghats' | 'desert' | 'hills' | 'coast';
+  biome?: 'plains' | 'ghats' | 'desert' | 'hills' | 'coast' | 'snow';
   /** height (m) of sand dunes away from the line */
   dunes?: number;
   /** share of ridged mountain crests in the distant hills (ghats default 0.9) */
   ridges?: number;
   /** wind turbines on high ground, per km2 */
   windTurbinesPerKm2?: number;
+  /** snow: share of the ground under snow (0..1); less on steep rock, none on the formation */
+  snow?: number;
+  /**
+   * The far horizon (a ring of mountain silhouettes beyond the terrain): crest
+   * height as an angle above the horizon (degrees), how jagged, rock colour, and
+   * the share of the height that is snow-capped (0 = none).
+   */
+  horizon?: { deg: number; jagged: number; color: string; snowCap?: number };
+  /** sky and air: haze (1 = normal), haze tint, cloud cover added to the weather's */
+  air?: { haze?: number; tint?: string; clouds?: number };
 }
 
 export const biomeOf = (r: RegionData) => r.biome ?? (r.sideSlope > 0 ? 'ghats' : 'plains');
@@ -138,6 +162,8 @@ export class Route {
   readonly boards: BoardDef[] = [];
   readonly rivers: RiverDef[] = [];
   readonly roads: RoadDef[] = [];
+  /** landforms in world coordinates (surveyed view only, like rivers) */
+  landforms: Landform[] = [];
   readonly tunnels: StructureData[];
   readonly bridges: StructureData[];
   /** container depot / port yards, from the route's features (surveyed km) */
@@ -173,7 +199,7 @@ export class Route {
     (data.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `XO${i}`, undefined, []));
     this.compileSignals();
     this.compileBoards();
-    if (!this.mirrored) { this.compileRivers(); this.compileRoads(); }
+    if (!this.mirrored) { this.compileRivers(); this.compileRoads(); this.landforms = compileLandforms(data.landforms, this.alignment); }
   }
 
   /** Surveyed km (as on the km posts) of a km in this view, and back. */
@@ -353,6 +379,23 @@ export class Route {
       let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
       for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
       this.rivers.push({ id: b.name, points: pts, width: b.river.width, floor, water: floor + (big ? 3 : 1.2), bridgeKm: mid, minX, maxX, minZ, maxZ });
+    }
+    // rivers beside the line: one level (the lowest bed along the reach), the near bank offsetM out
+    for (const r of this.data.riversAlong ?? []) {
+      const pts: { x: number; z: number }[] = [];
+      let lowest = Infinity;
+      const lat = r.offsetM + Math.sign(r.offsetM) * r.width / 2;
+      // running on 1.2 km past each end, bending away from the line
+      for (let s = r.fromKm * 1000 - 1200; s <= r.toKm * 1000 + 1200; s += 25) {
+        const inside = clamp(s, r.fromKm * 1000, r.toKm * 1000), over = s - inside;
+        this.alignment.sampleOffset(clamp(inside, 0, this.alignment.length), lat + Math.sign(r.offsetM) * over * over / 2400, f);
+        pts.push({ x: f.x + Math.cos(f.heading) * over, z: f.z + Math.sin(f.heading) * over });
+        if (!over) lowest = Math.min(lowest, f.y);
+      }
+      const floor = lowest - r.depthM;
+      let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+      this.rivers.push({ id: r.name, points: pts, width: r.width, floor, water: floor + 2.5, bridgeKm: -1, minX, maxX, minZ, maxZ });
     }
     const sea = this.data.sea;
     if (sea) {

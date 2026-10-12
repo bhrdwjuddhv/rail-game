@@ -664,8 +664,7 @@ export class Game {
     this.minimap.canvas.style.display = e.hideHud ? 'none' : '';
     this.scoring.enabled = !g.usedThisRun && !this.tutorialPractice;
     if (g.active && e.weather && e.weather !== this.weather.id) this.weather.set(e.weather, true);
-    if (e.autoDrive) this.dispatcher.departNow.add('player');
-    else if (!this.tutorialPractice) this.dispatcher.departNow.delete('player');
+    this.syncStops();
     // manual points: the player's routes are not set automatically (existing ones are cancelled)
     const manual = this.dispatcher.manual.has('player');
     if (e.manualPoints && !manual) { this.dispatcher.manual.add('player'); this.interlocking.releaseTrain('player'); }
@@ -952,7 +951,6 @@ export class Game {
     this.setTutorialHighlight(null);
     this.touch?.highlight(null);
     this.tutorialPractice = false;
-    if (!this.god.eff.autoDrive) this.dispatcher.departNow.delete('player');
     this.applyGod();
   }
 
@@ -1304,6 +1302,8 @@ export class Game {
         decel: e.instantBrakes ? Math.max(0.45, brake * 0.8) : undefined,
         nextStop: e.obeySignals ? this.block.nextSignal(d.headKm, this.path.offsetAt(d.headKm), true, this.pathOffset) : null,
         stationStopKm: this.nextBookedStopKm(),
+        hold: this.stop.holding,
+        endKm: this.line.lengthKm - 0.04,
       };
       if (e.autoDrive) this.autoDriver.drive(dt, d, s, targets);
       else this.autoDriver.autoStop(d, s, targets);
@@ -1624,6 +1624,36 @@ export class Game {
     if (h.has('signals')) for (const v of this.signalViews.values()) v.group.visible = false;
     if (h.has('sky')) this.sky.group.visible = false;
     if (h.has('scenery')) for (const it of this.streamed) if (it.obj) it.obj.visible = false;
+  }
+
+  /** Free Roam stations made stops for auto-drive (God Mode "Must stop at stations"), with what the plan had before. */
+  private autoStops = new Map<string, boolean | null>();
+
+  /**
+   * Which stops the player's train must make, from God Mode:
+   *  - "Must stop at stations" off: booked stops are not required (the starter is not held for them)
+   *  - Free Roam has no timetable: with auto-drive and "Must stop" on, every station on the line
+   *    becomes a stop, so the auto-driver stops, boards and departs like at a booked stop
+   * Auto-drive itself never skips a required stop: it boards, waits or skips the wait, then departs.
+   */
+  private syncStops() {
+    const g = this.god, e = g.eff;
+    if (this.tutorialPractice || (g.active && !e.mustStop)) this.dispatcher.departNow.add('player');
+    else this.dispatcher.departNow.delete('player');
+    const want = !this.scenario.timetable.length && g.active && e.autoDrive && e.mustStop;
+    for (const st of this.line.stations) {
+      const had = this.autoStops.has(st.code);
+      if (want && !had) {
+        const p = this.plan.get(st.code);
+        this.autoStops.set(st.code, p ? p.stop : null);
+        if (p) p.stop = true; else this.plan.set(st.code, { station: st.code, line: '', stop: true });
+      } else if (!want && had) {
+        const prev = this.autoStops.get(st.code)!;
+        const p = this.plan.get(st.code);
+        if (prev === null) this.plan.delete(st.code); else if (p) p.stop = prev;
+        this.autoStops.delete(st.code);
+      }
+    }
   }
 
   /** Head km of the next booked stop marker ahead that has not been served yet (null if none). */

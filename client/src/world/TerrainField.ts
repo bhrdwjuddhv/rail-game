@@ -1,12 +1,14 @@
 import { clamp, fbm, hash2, lerp, ridged, smoothstep } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
 import { biomeOf, RegionData, RiverDef, RoadDef, Route } from '@rail/shared/track/Route';
+import { landformHeight } from '@rail/shared/track/Landforms';
 
 /**
  * The ground height function, shared by the terrain worker and the main
  * thread. Pure TS (no three.js). Built in layers:
  *   base grid (track elevation + ghat side slopes + tunnel hills, 100 m cells)
  *   + region noise (small near the line, mountains far away)
+ *   + the route's landforms (hills, ridges, cliffs, valleys: Landforms.ts)
  *   - river valleys, ponds
  *   -> track formation carved as embankment or cutting (1 : 1.5 slopes)
  *   -> road beds flattened
@@ -207,7 +209,7 @@ export class TerrainField {
     const p = this.params(km);
     const dist = nt ? nt.dist : NEAR_MAX;
     const amp = p.near + (p.far - p.near) * smoothstep(30, 240, dist);
-    let h = this.bilinear(this.base, x, z);
+    let h = this.bilinear(this.base, x, z) + landformHeight(this.route.landforms, x, z);
     h += fbm(x * p.freq, z * p.freq, 5, 3) * amp;
     if (p.ridges > 0) h += p.ridges * ridged(x * p.freq * 0.6, z * p.freq * 0.6, 4, 5) * amp * smoothstep(60, 240, dist);
     if (p.dunes > 0) {
@@ -336,7 +338,10 @@ export class TerrainField {
     const W = R.formationHalfWidth(km);
     const top = bed - 0.05;
     if (nt.dist <= W) return top;
-    const s = (nt.dist - W) / 1.5;
+    // banks at 1 : 1.5; cuttings in hill country are blasted through rock, near vertical
+    const b = biomeOf(R.regionAt(km));
+    const rockCut = b === 'ghats' || b === 'hills' || b === 'snow';
+    const s = (nt.dist - W) / (h > top && rockCut ? 0.45 : 1.5);
     return h < top ? Math.max(h, top - s) : Math.min(h, top + s);
   }
 

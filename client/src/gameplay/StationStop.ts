@@ -76,6 +76,21 @@ export class StationStop {
   get freightTrain() { return this.work.wagons > 0; }
   /** traction interlock: no power with doors open */
   get blocksTraction() { return this.work.doorsOpen; }
+  /** a stop in progress that the train must stand for: doors to open, boarding or loading, doors open, a wait */
+  get holding() {
+    const w = this.work;
+    return !!this.st && (w.doorsOpen || w.phase === 'ready' || w.phase === 'working' || !!this.waiting());
+  }
+
+  /** What the train is waiting for once the work is done: another train to pass, or the booked time. */
+  private waiting(): { kind: 'train'; name: string; km: number } | { kind: 'clock'; dep: number } | null {
+    const st = this.st, p = st && this.h.plan.get(st.code), w = this.work;
+    if (!st || w.doorsOpen || w.phase === 'ready' || w.phase === 'working' || this.h.endStation === st.code) return null;
+    const clock = this.h.clock(), a = this.h.approaching(st);
+    if (a && (p?.dep === undefined || clock < p.dep - 10 || a.km < 2.5)) return { kind: 'train', name: a.name, km: a.km };
+    if (p?.dep !== undefined && clock < p.dep - 10) return { kind: 'clock', dep: p.dep };
+    return null;
+  }
 
   /** Stopped at a booked stop (or standing there at the start). */
   arrive(st: StationInfo, origin: boolean) {
@@ -135,9 +150,10 @@ export class StationStop {
     const w = this.work;
     w.update(dt);
     if (this.h.auto() && this.st) {
-      // God Mode auto-drive: the stop works itself
+      // God Mode auto-drive: the stop works itself, and skips its waits as a player would
       if (w.phase === 'ready') this.press('start');
       else if (w.phase === 'done' && w.doorsOpen) this.press('close');
+      else if (!this.warpUntil && this.waiting()) this.skip();
     }
     // the train left the platform: the stop is over
     if (this.st && Math.abs(this.h.speed()) > 0.5 && w.phase !== 'working') this.leave();
@@ -188,10 +204,10 @@ export class StationStop {
     }
     if (ph === 'done' && w.doorsOpen) v.action = { id: 'close', label: 'Close doors' };
     if (ph === 'closed' || ph === 'none' || (ph === 'done' && !w.doorsOpen)) {
-      const clock = this.h.clock(), a = this.h.approaching(st);
+      const clock = this.h.clock(), wait = this.waiting();
       if (this.st && this.h.endStation === st.code) return v.accuracy ? v : null;
-      if (a && (p?.dep === undefined || clock < p.dep - 10 || a.km < 2.5)) v.wait = { text: `Waiting for ${a.name} to pass (${a.km.toFixed(1)} km)`, skip: this.warpUntil ? 'Skipping...' : 'Skip wait' };
-      else if (p?.dep !== undefined && clock < p.dep - 10) v.wait = { text: `Scheduled departure ${formatClock(p.dep)}`, skip: 'Skip to departure' };
+      if (wait?.kind === 'train') v.wait = { text: `Waiting for ${wait.name} to pass (${wait.km.toFixed(1)} km)`, skip: this.warpUntil ? 'Skipping...' : 'Skip wait' };
+      else if (wait?.kind === 'clock') v.wait = { text: `Scheduled departure ${formatClock(wait.dep)}`, skip: 'Skip to departure' };
       else {
         const asp = this.h.signalAhead();
         if (asp && asp !== 'R') {
