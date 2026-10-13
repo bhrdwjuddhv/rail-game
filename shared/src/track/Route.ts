@@ -72,6 +72,8 @@ export interface RouteData {
   landforms?: LandformData[];
   /** rivers running beside the line (not under it): the near bank offsetM from the centreline */
   riversAlong?: { name: string; fromKm: number; toKm: number; offsetM: number; width: number; depthM: number }[];
+  /** zones where billboards may stand although they are wild country (gorges, forest): none by default */
+  billboardZones?: string[];
   /** best trackside views (cinematic camera): eye at km / offsetM / heightM above ground, looking at lookKm */
   postcards?: PostcardData[];
   /** crossovers between running lines away from stations */

@@ -8,6 +8,7 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 PERF_LOG.md
+ADS_GUIDE.md
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
@@ -172,7 +173,6 @@ client/public/assets/models/_processed/
 # Cloudflare Wrangler local state and local secrets (real secrets go in `wrangler secret put`)
 .wrangler/
 .dev.vars
-CREDITS.md
 .dev.vars.*
 
 # Editors / OS

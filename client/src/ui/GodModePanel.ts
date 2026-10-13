@@ -25,6 +25,15 @@ export interface GodPanelHooks {
   /** fixed views of reported visual bugs on this route */
   bugCameras: { id: string; label: string }[];
   bugCamera(id: string): void;
+  /** billboard debug (Billboards) */
+  billboards: {
+    routeName: string;
+    stats: { slots: number; ok: number; moved: number; dropped: number; byType: Record<string, number> };
+    report(): { id: string; frequency: number; share: number; count: number; expected: number }[];
+    markers(): boolean; setMarkers(on: boolean): void;
+    reload(): Promise<boolean>;
+    jumpNext(): void;
+  };
 }
 
 type BoolKey = { [K in keyof GodSettings]: GodSettings[K] extends boolean ? K : never }[keyof GodSettings];
@@ -93,6 +102,11 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
         ${tog('hideHud', 'Hide HUD (screenshots)', 'Esc still opens the menu')}
         <h3>Debug</h3>
         <div class="buttons left"><button data-a="texture-test" title="Every texture at real size, UV / mip / seam views, source list">Texture Test</button></div>
+        <h3>Billboards</h3>
+        <p class="note" data-k="bb-stats"></p>
+        <label class="tog" title="Every slot on the minimap and as markers in the world: green in sight, yellow moved, red dropped"><input type="checkbox" data-b="markers" ${h.billboards.markers() ? 'checked' : ''}><span>Show billboard slots (and blocked ones)</span></label>
+        <div class="buttons left"><button data-a="bb-jump">Jump to next billboard</button><button data-a="bb-reload" title="Read data/ads.json again (no restart)">Reload ads file</button></div>
+        <div class="bb-ads" data-k="bb-ads"></div>
         ${h.bugCameras.length ? `<label>Bug check cameras <select data-t="bugcam">${h.bugCameras.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></label>
         <div class="buttons left"><button data-a="bugcam">Go to view</button></div>` : ''}
       </section>
@@ -101,6 +115,15 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     <div class="buttons"><button data-a="back">Back</button><button data-a="resume">Resume</button></div>`;
 
   const sections = el.querySelector<HTMLElement>('.god-sections')!;
+  // billboards: counts per type and each ad's frequency, expected share and actual billboards on this route
+  const bbStats = el.querySelector<HTMLElement>('[data-k="bb-stats"]')!, bbAds = el.querySelector<HTMLElement>('[data-k="bb-ads"]')!;
+  const showAds = () => {
+    const b = h.billboards, st = b.stats;
+    bbStats.textContent = `${st.slots} billboards on ${b.routeName} (${st.ok} in place, ${st.moved} moved, ${st.dropped} dropped): ${Object.entries(st.byType).map(([k, n]) => `${n} ${k}`).join(', ')}`;
+    bbAds.innerHTML = `<table><tr><th>Ad</th><th>Freq.</th><th>Share</th><th>Billboards</th></tr>${b.report().map(r =>
+      `<tr><td>${esc(r.id)}</td><td>${r.frequency.toFixed(2)}</td><td>${r.share ? `about ${Math.round(r.share * 100)}% &asymp; ${r.expected}` : 'not shown here'}</td><td>${r.count}</td></tr>`).join('')}</table>`;
+  };
+  showAds();
   const scoringNote = el.querySelector<HTMLElement>('[data-k="scoring"]')!;
   el.addEventListener('change', e => {
     const t = e.target as HTMLInputElement | HTMLSelectElement;
@@ -113,6 +136,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     else if (g) god.set(g as BoolKey, (t as HTMLInputElement).checked);
     if ((t as HTMLElement).dataset.w === 'weather') { god.set('weather', t.value as WeatherId); h.setWeather(t.value as WeatherId); }
     if ((t as HTMLElement).dataset.w === 'scenery') h.setSceneryPreview(t.value || null);
+    if ((t as HTMLElement).dataset.b === 'markers') h.billboards.setMarkers((t as HTMLInputElement).checked);
   });
   el.addEventListener('input', e => {
     const t = e.target as HTMLInputElement;
@@ -129,6 +153,8 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     if (a === 'back') h.back();
     if (a === 'resume') h.resume();
     if (a === 'texture-test') h.textureTest();
+    if (a === 'bb-jump') h.billboards.jumpNext();
+    if (a === 'bb-reload') void h.billboards.reload().then(ok => { showAds(); bbStats.textContent += ok ? ' - ads file reloaded' : ' - could not reload the ads file'; });
     if (a === 'bugcam') h.bugCamera((el.querySelector('[data-t="bugcam"]') as HTMLSelectElement).value);
     if (a === 'teleport') {
       const station = (el.querySelector('[data-t="station"]') as HTMLSelectElement).value;

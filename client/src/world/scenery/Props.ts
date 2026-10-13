@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { float, instanceIndex, positionLocal, sin, uniform, vec3 } from 'three/tsl';
 import { GeoBatch, mat } from '../../core/GeoBatch';
-import { canvasTexture, tex } from '../../core/Textures';
+import { tex } from '../../core/Textures';
 import { materials } from '../../core/Materials';
 import { renderFlags } from '../../core/Renderer';
 import { textures } from '../../core/TextureLibrary';
@@ -86,29 +86,8 @@ export function propMaterials() {
   const impostor = sway({ alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1 }, 0.006);
   textures.bind(impostor as THREE.MeshStandardMaterial, 'impostor', () => baked?.broadleaf ?? tex.treeImpostor(), 1, { resident: true });
   const impostorPalm = sway({ alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, map: baked?.palm ?? tex.treeImpostor() }, 0.006);
-  const billboard = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 });
-  textures.bind(billboard, 'billboard', adAtlas, 1, { resident: true });
-  mats = { std: m.std, leaves, bark, grass, impostor, impostorPalm, facade: m.facade, billboard, roof: m.roof, metal: m.metal, brick: m.brick };
+  mats = { std: m.std, leaves, bark, grass, impostor, impostorPalm, facade: m.facade, roof: m.roof, metal: m.metal, brick: m.brick };
   return mats;
-}
-
-/** Fictional ads, four in an atlas. */
-function adAtlas() {
-  return canvasTexture('ads', 512, 256, (g) => {
-    const ads = [
-      ['#c0392b', '#fff', 'CHAI SUPREME', 'Fresh every morning'],
-      ['#1f6f8b', '#fff', 'GANGA CEMENT', 'Strong like a bridge'],
-      ['#f1c40f', '#222', 'RAJA MOBILES', '5G phones from Rs 6999'],
-      ['#27ae60', '#fff', 'KISAN TRACTORS', 'Built for every field'],
-    ];
-    ads.forEach(([bg, fg, title, sub], i) => {
-      const x = (i % 2) * 256, y = Math.floor(i / 2) * 128;
-      g.fillStyle = bg; g.fillRect(x, y, 256, 128);
-      g.fillStyle = fg; g.textAlign = 'center';
-      g.font = 'bold 34px Arial'; g.fillText(title, x + 128, y + 58);
-      g.font = '20px Arial'; g.fillText(sub, x + 128, y + 95);
-    });
-  }, { repeat: false });
 }
 
 interface Template { geometry: THREE.BufferGeometry; material: string; shadow: boolean }
@@ -215,18 +194,6 @@ function build(t: PropType): Template[] {
     case 'rock':
       b.add(new THREE.DodecahedronGeometry(1, 0), mat(0, 0.5, 0, 0, 0, 0, 1, 0.7, 1), '#ffffff');
       return one('std');
-    case 'billboard': {
-      for (const s of [-1, 1]) b.cyl(0.12, 0.12, 6, 6, mat(s * 2.5, 3, 0), '#555', 'std');
-      const plane = new THREE.BoxGeometry(6.4, 3.2, 0.15);
-      const uvA = plane.attributes.uv as THREE.BufferAttribute;
-      // pick one atlas quadrant per template variant, set below by cloning
-      for (let i = 0; i < uvA.count; i++) uvA.setXY(i, uvA.getX(i) * 0.5, 0.5 + uvA.getY(i) * 0.5);
-      b.add(plane, mat(0, 6.5, 0), '#ffffff', 'billboard');
-      return [
-        { geometry: b.geometry('billboard')!, material: 'billboard', shadow: true },
-        { geometry: b.geometry('std')!, material: 'std', shadow: true },
-      ];
-    }
     case 'quarter':
       b.box(13, 3.2, 7, mat(0, 1.6, 0), '#ffffff');
       b.add(new THREE.CylinderGeometry(0, 5.2, 1.8, 4, 1), mat(0, 4.1, 0, Math.PI / 4, 0, 0, 1.85, 1, 0.98), '#9b4a32');

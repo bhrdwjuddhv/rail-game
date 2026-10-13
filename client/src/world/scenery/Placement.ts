@@ -2,11 +2,34 @@ import { hash2, rng } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
 import { biomeOf, Route } from '@rail/shared/track/Route';
 import type { TerrainField } from '../TerrainField';
+import { inZone } from './BillboardSlots';
+
+/**
+ * Billboard clear zones (BillboardSlots): nothing tall stands between the line
+ * and a billboard's face, so it stays readable from the cab. Indexed by 100 m cell.
+ */
+const zoneCells = new Map<number, number[][]>();
+const cellOf = (x: number, z: number) => (Math.floor(x / 100) + 50000) * 100000 + (Math.floor(z / 100) + 50000);
+export function setBillboardZones(zones: number[][]) {
+  zoneCells.clear();
+  for (const p of zones) {
+    if (p.length < 6) continue;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0; i < p.length; i += 2) { x0 = Math.min(x0, p[i]); x1 = Math.max(x1, p[i]); z0 = Math.min(z0, p[i + 1]); z1 = Math.max(z1, p[i + 1]); }
+    for (let cx = Math.floor(x0 / 100); cx <= Math.floor(x1 / 100); cx++) for (let cz = Math.floor(z0 / 100); cz <= Math.floor(z1 / 100); cz++) {
+      const k = cellOf(cx * 100, cz * 100);
+      (zoneCells.get(k) ?? zoneCells.set(k, []).get(k)!).push(p);
+    }
+  }
+}
+const inBillboardZone = (x: number, z: number) => zoneCells.get(cellOf(x, z))?.some(p => inZone(p, x, z)) ?? false;
+/** low things (grass, bushes, rocks, animals) never hide a billboard */
+const LOW = new Set<PropType>(['grass', 'bush', 'rock', 'cow', 'buffalo', 'camel', 'tubewell']);
 
 /** Instanced prop types. Order matters only for stable ids. */
 export const PROP_TYPES = [
   'mango', 'neem', 'palm', 'forest', 'bush', 'hut', 'house', 'building2', 'building4', 'building7', 'tank',
-  'temple', 'mosque', 'church', 'kiln', 'buffalo', 'cow', 'rock', 'billboard', 'quarter', 'haystack', 'tubewell',
+  'temple', 'mosque', 'church', 'kiln', 'buffalo', 'cow', 'rock', 'quarter', 'haystack', 'tubewell',
   'hospital', 'school', 'grass', 'treeImp', 'palmImp', 'camel', 'shed', 'warehouse', 'turbine', 'pine', 'pineImp',
 ] as const;
 export type PropType = typeof PROP_TYPES[number];
@@ -37,6 +60,7 @@ class Out {
   lists = new Map<PropType, number[]>();
   constructor(private ground: (x: number, z: number) => number) {}
   push(t: PropType, x: number, y: number, z: number, ry: number, sx: number, sy: number, sz: number, c: [number, number, number]) {
+    if (!LOW.has(t) && inBillboardZone(x, z)) return NaN;
     const fp = FOOTPRINT[t];
     if (fp) {
       // corners of the rotated, scaled footprint on the rendered terrain
@@ -153,7 +177,6 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
           continue;
         }
         if (near && r > 0.997) { const t: PropType = rand() < 0.5 ? 'temple' : rand() < 0.6 ? 'mosque' : 'church'; out.push(t, x, y, z, -heading, 1, 1, 1, [1, 1, 1]); continue; }
-        if (near && dist > 18 + route.halfSpacing && dist < 45 && r > 0.985) { out.push('billboard', x, y, z, -heading - Math.PI / 2 * Math.sign(info.d[k]), 1, 1, 1, [1, 1, 1]); continue; }
         if (r > 0.94) tree(x, y, z, g, near, rand);
         continue;
       }

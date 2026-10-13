@@ -14,6 +14,17 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 #app, #ui { position: fixed; inset: 0; }
 #ui { pointer-events: none; }
 #ui > * { pointer-events: none; }
+/* billboard card (Billboards / AdCard): over everything, the game paused behind it */
+.ad-card { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(4, 8, 12, 0.55); }
+.ad-card[hidden] { display: none; }
+.ad-card-box { width: min(420px, calc(100vw - 32px)); background: rgba(12, 20, 30, 0.97); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 12px; padding: 14px; color: #e8eef4; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+.ad-card-pic { aspect-ratio: 2 / 1; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; font: bold 28px Arial, sans-serif; text-align: center; }
+.ad-card-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ad-card-box h3 { margin: 12px 0 2px; font-size: 18px; }
+.ad-card-box p { margin: 0 0 6px; opacity: 0.8; }
+.ad-card-box .buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+.ad-card-box button { min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); color: inherit; font-size: 15px; cursor: pointer; }
+.ad-card-box button.primary { background: #2f7de1; border-color: #2f7de1; color: #fff; }
 #ui > .tutorial-card, #ui .pause-btn, #ui > .vig-pop, #ui > .stop-card { pointer-events: auto; }
 /* touch: the gauges panel and map open as pop-ups that close on a tap */
 html.touch #ui > .minimap.shown, html.touch #hud.details .hud-panel { pointer-events: auto; }
@@ -281,3 +292,6 @@ pre.err { white-space: pre-wrap; font-size: 12px; color: #ffb3ad; max-height: 50
 html.touch .stop-card { bottom: calc(var(--sb) + var(--edge) + var(--btn) + 14px); font-size: 12px; }
 html.touch .stop-card button { min-height: 44px; }
 .stop-card [hidden] { display: none !important; }
+/* God Mode: billboard ads table */
+.god .bb-ads table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.god .bb-ads th, .god .bb-ads td { padding: 2px 6px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }

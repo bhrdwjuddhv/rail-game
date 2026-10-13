@@ -96,7 +96,8 @@ export class ChunkManager {
   private queueLimit: number;
   ponds = new Map<string, THREE.Mesh>();
 
-  constructor(route: Route, private preset: () => QualityPreset) {
+  /** billboardZones: clear zones the scenery keeps out of (BillboardSlots) */
+  constructor(route: Route, private preset: () => QualityPreset, private billboardZones: number[][] = []) {
     this.root.name = 'terrain';
     // vertex colours + procedural grain (terrain UVs: 1 unit = 6 m) until the texture layers load
     this.terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: tex.ground() });
@@ -108,7 +109,7 @@ export class ChunkManager {
       const w = new Worker(new URL('./terrain.worker.ts', import.meta.url), { type: 'module' });
       w.onmessage = e => this.onMessage(e.data);
       w.onerror = e => console.error('terrain worker error', e.message);
-      w.postMessage({ type: 'init', route: route.data, regions: REGIONS });
+      w.postMessage({ type: 'init', route: route.data, regions: REGIONS, billboardZones });
       this.workers.push(w);
     }
   }
@@ -147,7 +148,6 @@ export class ChunkManager {
       if (!this.propsVisible) this.showProps(g, false);
       this.root.add(g);
       this.count(g, 1);
-      if (g.userData.billboards) this.onBillboards?.(tile.key, g.userData.billboards);
     };
     tile.preparing = g;
     // the old group stays on show until the new one's shaders are ready
@@ -159,8 +159,6 @@ export class ChunkManager {
    * shown (Game: renderer.compileAsync). During loading tiles go straight in.
    */
   prepare: ((g: THREE.Group) => Promise<unknown>) | null = null;
-  /** a shown tile's billboards (PROP_STRIDE floats each, world coordinates), or null when it goes */
-  onBillboards: ((tileKey: string, arr: Float32Array | null) => void) | null = null;
 
   private buildTileGroup(tile: Tile, m: any) {
     const group = new THREE.Group();
@@ -196,8 +194,6 @@ export class ChunkManager {
     for (const t of PROP_TYPES) {
       const arr = (m.props as Record<string, Float32Array>)[t];
       if (!arr || !arr.length) continue;
-      // billboards are drawn by Billboards (each shows its own ad), handed over when the tile is shown
-      if (t === 'billboard' && this.onBillboards) { group.userData.billboards = arr; group.userData.tileKey = tile.key; continue; }
       const count = arr.length / PROP_STRIDE;
       if (t === 'grass') group.userData.grass = count; else group.userData.props = (group.userData.props ?? 0) + count;
       for (const part of propTemplate(t)) {
@@ -264,7 +260,7 @@ export class ChunkManager {
   }
 
   private disposeGroup(g: THREE.Group) {
-    if (g.parent) { this.count(g, -1); if (g.userData.billboards) this.onBillboards?.(g.userData.tileKey, null); }
+    if (g.parent) this.count(g, -1);
     g.removeFromParent();
     g.traverse(o => {
       const mesh = o as THREE.Mesh;
@@ -339,7 +335,7 @@ export class ChunkManager {
    */
   reinit(route: Route) {
     this.ready = 0;
-    for (const w of this.workers) w.postMessage({ type: 'init', route: route.data, regions: REGIONS });
+    for (const w of this.workers) w.postMessage({ type: 'init', route: route.data, regions: REGIONS, billboardZones: this.billboardZones });
     this.inFlight.clear();
     for (const t of this.tiles.values()) { t.pendingId = 0; t.res = 0; t.scenery = 'none'; }
   }

@@ -20,6 +20,8 @@ export class Minimap {
   private pts: { x: number; z: number }[] = [];
   private bounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
   large = false;
+  /** extra dots (God Mode billboard slots), world x / z */
+  markers: { x: number; z: number; color: string }[] | null = null;
 
   constructor(parent: HTMLElement, private route: Route, private playerLine = () => route.running.id) {
     this.canvas.className = 'minimap';
@@ -96,6 +98,7 @@ export class Minimap {
       g.fillStyle = '#ddd'; g.font = `${this.large ? 12 : 10}px sans-serif`;
       g.fillText(`On ${this.playerLine()} line`, 6, S - 6);
     }
+    if (this.markers) for (const m of this.markers) { g.fillStyle = m.color; g.fillRect(X(m.x) - 1.5, Z(m.z) - 1.5, 3, 3); }
     g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 1;
     g.beginPath(); g.arc(X(camera.x), Z(camera.z), 6, 0, Math.PI * 2); g.stroke();
   }

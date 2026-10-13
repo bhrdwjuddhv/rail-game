@@ -31,6 +31,10 @@ export interface GameEvents {
   'needs-engine': { action: 'throttle' | 'start' };
   'announcement': { stationCode: string };
   'ui-toggle': { what: 'hud' | 'map' | 'perf' | 'help' | 'pause' };
+  /** a billboard was clicked or tapped (its card shown); nothing listens yet (impressions come with a backend) */
+  'billboard:clicked': { adId: string; slot: number };
+  /** "Visit website" on a billboard card */
+  'billboard:visitWebsite': { adId: string };
 }
 
 type Handler<T> = (payload: T) => void;

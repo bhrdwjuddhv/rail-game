@@ -39,7 +39,8 @@ import { RoofCover, underRoof } from './infrastructure/Station';
 import { VigilancePopup } from './ui/VigilancePopup';
 import { PantoIndicator } from './ui/PantoIndicator';
 import { Door, PeopleSystem } from './world/people/People';
-import { Billboards } from './world/scenery/Billboards';
+import { Billboards, ClickedAd } from './world/scenery/Billboards';
+import { AdCard } from './ui/AdCard';
 import { StationStop } from './gameplay/StationStop';
 import { Wag12Cab } from './train/cab/Wag12Cab';
 import { PanelCab } from './train/cab/PanelCab';
@@ -260,13 +261,17 @@ export class Game {
     this.scene.background = new THREE.Color(0x000000);
 
     // ---- terrain & world ----
-    this.chunks = new ChunkManager(this.route, () => effective());
+    // billboards first: their clear zones go to the terrain workers (no trees or buildings in front of them)
+    let adSeed = 7;
+    for (const ch of `${this.scenarioId}|${this.route.data.id}|${new Date().toDateString()}`) adSeed = (adSeed * 31 + ch.charCodeAt(0)) >>> 0;
+    this.billboards = new Billboards(rs.renderer.domElement, () => this.rcam, this.railway, this.field, adSeed, isTouch || settings.get().quality === 'low');
+    this.billboards.onClick = c => this.showAd(c);
+    this.adCard = new AdCard(document.body, ad => bus.emit('billboard:visitWebsite', { adId: ad.id }), () => { if (this.adPaused) { this.adPaused = false; this.resume(); } });
+    this.chunks = new ChunkManager(this.route, () => effective(), this.billboards.zones);
     this.world.add(this.chunks.root);
     // roadside hoardings with the ads of data/ads.json (click / tap opens the advertiser's site)
-    this.billboards = new Billboards(rs.renderer.domElement, () => this.rcam);
     this.world.add(this.billboards.group);
-    this.chunks.onBillboards = (key, arr) => this.billboards.setTile(key, arr);
-    this.offs.push(() => this.billboards.dispose());
+    this.offs.push(() => { this.billboards.dispose(); this.adCard.el.remove(); });
     this.world.add(buildRivers(this.route));
     for (const r of this.route.roads) this.world.add(r.kind === 'lc' ? buildLcRoad(this.field, r) : buildParallelRoad(this.route, r));
     this.route.roads.forEach(r => {
@@ -573,6 +578,8 @@ export class Game {
     // freight corridor: road over-bridges, container depot / port, hill forts
     for (const r of this.route.data.structures) if (r.type === 'rob') add(r.fromKm, r.toKm + 0.4, () => buildRob(this.route, this.field, r));
     for (const y of this.route.yards) add(y.fromKm, y.toKm, () => buildYard(this.route, y), undefined, ['wall']);
+    // billboards: one group per km of line
+    for (const b of this.billboards.buckets) add(b, b + 1, () => this.billboards.build(b), () => this.billboards.release(b));
     for (const ft of this.route.data.features) if (ft.type === 'fort') add(ft.km - 0.9, ft.km + 0.9, () => buildFort(this.route, this.field, ft.km), undefined, ['wall']);
     // landmarks: step-wells near villages, ghat hill stations
     for (const ft of this.route.data.features) {
@@ -812,6 +819,20 @@ export class Game {
       textureTest: () => this.openTextureTest(),
       bugCameras: BUG_CAMERAS[this.route.data.id] ?? [],
       bugCamera: id => { void this.bugCamera(id); },
+      billboards: {
+        routeName: this.route.data.name,
+        stats: this.billboards.stats,
+        report: () => this.billboards.report(),
+        markers: () => !!this.minimap.markers,
+        setMarkers: on => {
+          this.billboards.showMarkers(on);
+          const colour = { ok: '#3ad16b', moved: '#ffc83a', dropped: '#ff4a3a' };
+          this.minimap.markers = on ? [...this.billboards.slots, ...this.billboards.dropped].map(s => ({ x: s.x, z: s.z, color: colour[s.status] })) : null;
+          this.pausedNeedsRender = true;
+        },
+        reload: () => this.billboards.reload(),
+        jumpNext: () => this.jumpToBillboard(),
+      },
     }), back);
   }
 
@@ -869,7 +890,41 @@ export class Game {
   private pantoInd: PantoIndicator | null = null;
   /** platform crowds from the baked people models (null: WebGL only; stations keep their simple crowd until it is ready) */
   private people: PeopleSystem | null = null;
-  private billboards: Billboards;
+  private billboards!: Billboards;
+  private adCard!: AdCard;
+  /** paused for a billboard's card (resumed when it closes) */
+  private adPaused = false;
+
+  /** God Mode: the free camera at a driver's view of the next billboard ahead of the last one looked at (or of the train). */
+  private bbJumpS = -1;
+  private jumpToBillboard() {
+    const slots = this.billboards.slots.filter(s => s.type !== 'platform' && s.type !== 'fob').sort((a, b) => a.s - b.s);
+    if (!slots.length) return;
+    const from = this.bbJumpS >= 0 ? this.bbJumpS : this.line.canonicalKm(this.dyn.headKm) * 1000;
+    const sl = slots.find(s => s.s > from + 1) ?? slots[0];
+    this.bbJumpS = sl.s;
+    // from 150 m before it on the line whose trains it faces, at cab height
+    const a = this.railway.main.alignment, f = newFrame(), dir = sl.side < 0 ? -1 : 1;
+    a.sampleOffset(sl.s + dir * 150, sl.side * this.route.halfSpacing, f);
+    const ctx = this.cameraContext(0.016);
+    this.cameras.select(6, ctx);
+    this.freeCam.place(new THREE.Vector3(f.x, f.y + 3.8, f.z), new THREE.Vector3(sl.x, sl.y + 5, sl.z));
+    this.pausedNeedsRender = true;
+    bus.emit('message', { text: `Billboard ${sl.id}: ${sl.type} at km ${(sl.s / 1000).toFixed(2)} (${sl.status})`, kind: 'info', ms: 4000 });
+  }
+
+  /** A billboard was clicked or tapped: pause and show its card (only its "Visit website" opens the link). */
+  private showAd(c: ClickedAd) {
+    if (this.ended || !this.started || this.adCard.visible) return;
+    if (!this.engine.paused) {
+      this.adPaused = true;
+      this.engine.paused = true;
+      this.keyboard.enabled = false;
+      this.mouse.enabled = false;
+      this.audio?.fadeOut();
+    }
+    this.adCard.show(c.ad, c.image);
+  }
   /** the player's station stops: doors, boarding, loading, and when the train may leave */
   private stop!: StationStop;
   private doorHintAt = -Infinity;
@@ -1603,7 +1658,7 @@ export class Game {
     for (const sv of this.switchViews) sv.update();
     for (const st of this.stations.values()) st.update(this.time.seconds, this.t, st.centre.distanceTo(cam.position) < 600);
     this.traffic.update(dt, cam.position);
-    this.billboards.update(this.lighting.nightLight);
+    this.billboards.update(dt, this.lighting.nightLight);
     this.stop.update(dt);
     if (this.people) { const pc = this.peopleContext(); this.people.update(dt, cam.position, pc.near, pc.player); }
     this.waterfalls.update(dt, this.weather.p.rain > 0.3 || this.route.regionAt(this.cameraKm()).sideSlope > 0);

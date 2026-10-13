@@ -2,7 +2,7 @@
 import { hash2, lerp, smoothstep } from '@rail/shared/util';
 import { biomeOf, Route, RegionData, RouteData } from '@rail/shared/track/Route';
 import { GroundSample, TerrainField } from './TerrainField';
-import { placeScenery, TileInfo } from './scenery/Placement';
+import { placeScenery, setBillboardZones, TileInfo } from './scenery/Placement';
 import { LAYER, LAYER_COUNT } from './terrainLayers';
 
 // Builds terrain tiles (heights, normals, colours, holes) and scenery instance
@@ -24,6 +24,7 @@ self.onmessage = (e: MessageEvent) => {
   if (m.type === 'init') {
     route = new Route(m.route as RouteData, m.regions as Record<string, RegionData>);
     field = new TerrainField(route);
+    setBillboardZones((m.billboardZones as number[][]) ?? []);
     (self as any).postMessage({ type: 'ready' });
     return;
   }
