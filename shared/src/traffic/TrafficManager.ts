@@ -157,6 +157,13 @@ export class TrafficManager {
    */
   private updateSameLine(dt: number, playerKm: number) {
     const c = this.cfg;
+    if (!this.primed) {
+      // a slower train already somewhere ahead to catch up with; the first from behind comes sooner
+      this.primed = true;
+      const slow = c.kinds.filter(k => !this.behind(k));
+      if (slow.length) this.spawn(playerKm + c.aheadKm * (0.45 + this.rand() * 0.4), slow[Math.floor(this.rand() * slow.length)]);
+      this.timer = this.nextGap() * 0.35;
+    }
     for (const t of this.trains) t.update(dt);
     for (const t of [...this.trains]) {
       if (t.gone || t.headKm < playerKm - c.aheadKm - 4 || t.tailKm > playerKm + c.aheadKm + 4) this.remove(t);

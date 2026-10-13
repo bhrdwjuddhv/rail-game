@@ -18,7 +18,7 @@ import { textures } from './core/TextureLibrary';
 import { prof } from './core/Profiler';
 import { bus } from '@rail/shared/events';
 import type { RenderSystem } from './core/Renderer';
-import { Action, effective, recordScore, settings } from './core/Settings';
+import { Action, effective, recordScore, settings, trafficLevel } from './core/Settings';
 import { formatClock, KMPH, parseClock } from '@rail/shared/util';
 import { COACHES, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
 import { Lighting } from './environment/Lighting';
@@ -154,6 +154,16 @@ export class Game {
   private oncoming: TrafficManager | null = null;
   /** Free Roam: trains on the player's own line (overtaking in station loops) */
   private sameLine: TrafficManager | null = null;
+  /** the traffic setting the AI traffic was started with (changed in Settings: restarted) */
+  private trafficSetting = -1;
+
+  /** The rail traffic setting changed: the AI traffic starts over at the new level. */
+  private restartTraffic() {
+    this.trafficSetting = settings.get().traffic;
+    this.oncoming?.reset(); this.oncoming = null;
+    this.sameLine?.reset(); this.sameLine = null;
+    if (this.railway.double) this.startOncoming();
+  }
   /** cab buffeting from a passing train, 0..1 */
   private shake = 0;
   private rules: Rules;
@@ -521,7 +531,8 @@ export class Game {
     let seed = 7;
     const cfg = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
     for (const ch of this.scenarioId + other.route.running.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
-    const tm = new TrafficManager(other, { ...cfg, seed });
+    this.trafficSetting = settings.get().traffic;
+    const tm = new TrafficManager(other, { ...cfg, seed, headwayS: cfg.headwayS * trafficLevel().oncoming });
     tm.onSpawn = t => this.addAI(t, other.route);
     tm.onDespawn = t => this.removeAI(t);
     this.oncoming = tm;
@@ -536,11 +547,13 @@ export class Game {
   private startSameLine() {
     this.sameLine?.reset();
     this.sameLine = null;
-    if (this.scenario.rules || this.bench) return;
+    // own-line traffic: always in Free Roam; in scenarios from Medium traffic up
+    const level = trafficLevel();
+    if (this.bench || (this.scenario.rules && !level.inScenarios)) return;
     let seed = 11;
     for (const ch of this.scenarioId + this.lc.route.running.id + 'same') seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     const base = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
-    const tm = new TrafficManager(this.lc, { ...base, seed, headwayS: base.headwayS * 2, aheadKm: 8, sameLine: { playerKmph: this.player.cruiseKmph ?? 100 } });
+    const tm = new TrafficManager(this.lc, { ...base, seed, headwayS: base.headwayS * level.sameLine, aheadKm: 8, sameLine: { playerKmph: this.player.cruiseKmph ?? 100 } });
     tm.onSpawn = t => this.addAI(t, this.lc.route);
     tm.onDespawn = t => this.removeAI(t);
     this.sameLine = tm;
@@ -1216,6 +1229,8 @@ export class Game {
 
   private applySettings() {
     const s = settings.get(), p = effective();
+    // rail traffic changed in Settings (running game): the AI traffic starts over at the new level
+    if (this.trafficSetting >= 0 && s.traffic !== this.trafficSetting) this.restartTraffic();
     this.rs.setRenderScale(s.renderScale);
     this.rs.setBloom(s.bloom);
     this.lighting.applyQuality(p);

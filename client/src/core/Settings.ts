@@ -77,7 +77,23 @@ export interface SettingsData {
   leverLayout: 'right' | 'split';
   /** control layout: detect, or force touch / keyboard & mouse (applies from the next run) */
   controls: 'auto' | 'touch' | 'desktop';
+  /** rail traffic: 0 low, 1 medium, 2 high, 3 very high (TRAFFIC_LEVELS) */
+  traffic: number;
 }
+
+/**
+ * Rail traffic levels: how often AI trains run on the other line (oncoming)
+ * and on the player's own line (overtaking in station loops and on the middle
+ * line). Multipliers of the route's base headway; null = no own-line traffic.
+ * Low is the old amount (own-line trains in Free Roam only).
+ */
+export const TRAFFIC_LEVELS = [
+  { name: 'Low', oncoming: 1, sameLine: 2, inScenarios: false },
+  { name: 'Medium', oncoming: 0.6, sameLine: 1.2, inScenarios: true },
+  { name: 'High', oncoming: 0.4, sameLine: 0.8, inScenarios: true },
+  { name: 'Very high', oncoming: 0.25, sameLine: 0.5, inScenarios: true },
+] as const;
+export const trafficLevel = () => TRAFFIC_LEVELS[Math.max(0, Math.min(3, Math.round(settings.get().traffic ?? 1)))];
 
 const KEY = 'railbharat.settings.v1';
 
@@ -85,13 +101,14 @@ const defaults = (): SettingsData => ({
   quality: 'high', renderScale: 1, shadows: 'high', drawDistance: 3400, bloom: true, fogMultiplier: 1,
   volumes: { master: 0.8, train: 0.9, horn: 0.8, env: 0.7, ui: 0.6 },
   units: 'kmh', keys: { ...DEFAULT_KEYS }, dayNightSpeed: 10, mouseSensitivity: 1, autoDetected: false, renderer: 'webgl', maxPixelRatio: 1.5, adaptiveQuality: true,
-  touchAutoHide: true, leverLayout: 'right', controls: 'auto',
+  touchAutoHide: true, leverLayout: 'right', controls: 'auto', traffic: 1,
 });
 
 export const settings = new Store<SettingsData>((() => {
   const s = safeStorageGet(KEY, defaults());
   s.keys = { ...DEFAULT_KEYS, ...s.keys };
   s.volumes = { ...defaults().volumes, ...s.volumes };
+  s.traffic ??= 1; // saved before the setting existed: medium
   return s;
 })());
 settings.subscribe(s => safeStorageSet(KEY, s));

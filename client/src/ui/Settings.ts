@@ -1,4 +1,4 @@
-import { ACTIONS, Action, applyPreset, DEFAULT_KEYS, PRESETS, Quality, settings } from '../core/Settings';
+import { ACTIONS, Action, applyPreset, DEFAULT_KEYS, PRESETS, Quality, settings, TRAFFIC_LEVELS } from '../core/Settings';
 import { isTouch } from '../input/Device';
 
 /** Settings panel: graphics, audio, controls (rebinding), units, clock speed. */
@@ -27,6 +27,7 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
         <h3>General</h3>
         <label>Controls <select data-s="controls"><option value="auto" ${s.controls === 'auto' ? 'selected' : ''}>Auto-detect</option><option value="touch" ${s.controls === 'touch' ? 'selected' : ''}>Touch screen</option><option value="desktop" ${s.controls === 'desktop' ? 'selected' : ''}>Keyboard &amp; mouse</option></select></label>
         <p class="note">Controls layout changes apply from the next run (Restart or Main Menu).</p>
+        <label title="How many AI trains run: on the other line, and on your own (they overtake, or wait for you, in station loops and on the middle line)">Rail traffic <input type="range" min="0" max="3" step="1" value="${s.traffic}" data-s="traffic"><output>${TRAFFIC_LEVELS[s.traffic]?.name ?? 'Medium'}</output></label>
         <label>Units <select data-s="units"><option value="kmh" ${s.units === 'kmh' ? 'selected' : ''}>km/h</option><option value="mph" ${s.units === 'mph' ? 'selected' : ''}>mph</option></select></label>
         <label>Free-roam clock speed <input type="range" min="1" max="120" step="1" value="${s.dayNightSpeed}" data-s="dayNightSpeed"><output>${s.dayNightSpeed}x</output></label>
         <label>${isTouch ? 'Look sensitivity' : 'Mouse sensitivity'} <input type="range" min="0.3" max="3" step="0.1" value="${s.mouseSensitivity}" data-s="mouseSensitivity"><output>${s.mouseSensitivity}</output></label>
@@ -50,7 +51,7 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
       if (out) out.textContent = `${Math.round(Number(t.value) * 100)}%`;
     } else if (t.dataset.s && t.type === 'range') {
       settings.set({ [t.dataset.s]: Number(t.value) } as any);
-      if (out) out.textContent = t.value;
+      if (out) out.textContent = t.dataset.s === 'traffic' ? TRAFFIC_LEVELS[Number(t.value)].name : t.value;
     }
   });
   el.addEventListener('change', e => {
