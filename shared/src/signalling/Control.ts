@@ -2,7 +2,7 @@ import { Dispatcher, WorkedTrain } from '../gameplay/Timetable';
 import type { Railway } from '../track/Railway';
 import type { Route } from '../track/Route';
 import { BlockSystem } from './BlockSystem';
-import { Interlocking } from './Interlocking';
+import { Interlocking, type MiddleClaims } from './Interlocking';
 import type { Occupant } from './Signal';
 
 /** Signalling for one running direction: its view of the route, interlocking, block signals and station working. */
@@ -13,8 +13,9 @@ export class LineControl {
   /** trains running in this direction (positions in this view's km) */
   readonly trains: WorkedTrain[] = [];
 
-  constructor(readonly route: Route) {
-    this.interlocking = new Interlocking(route.graph, route.running.offset);
+  /** `middle`: the railway's middle line claims, shared by every direction */
+  constructor(readonly route: Route, middle: MiddleClaims = new Map()) {
+    this.interlocking = new Interlocking(route.graph, route.running.offset, middle);
     this.block = new BlockSystem(route, this.interlocking);
     this.dispatcher = new Dispatcher(route, this.interlocking, this.block);
   }
@@ -42,7 +43,8 @@ export class RailControl {
   readonly lines: LineControl[];
 
   constructor(readonly railway: Railway) {
-    this.lines = railway.views.map(v => new LineControl(v));
+    const middle: MiddleClaims = new Map();
+    this.lines = railway.views.map(v => new LineControl(v, middle));
   }
 
   line(id: string) { return this.lines.find(l => l.route.running.id === id) ?? this.lines[0]; }

@@ -155,6 +155,7 @@ export function validateRoute(file: string, raw: any, regions: Record<string, un
   const double = Array.isArray(raw?.lines) && raw.lines.length > 1;
   if (raw?.lines !== undefined && !Array.isArray(raw.lines)) issues.push({ file, level: 'error', message: '"lines" must be a list like ["UP", "DOWN"]' });
   if (double && (raw.lines.length !== 2 || !raw.lines.includes('UP') || !raw.lines.includes('DOWN'))) issues.push({ file, level: 'error', message: `"lines" ${JSON.stringify(raw.lines)}: a double line must be exactly ["UP", "DOWN"]` });
+  if (raw?.middleLine && !double) issues.push({ file, level: 'error', message: '"middleLine" needs a double line ("lines": ["UP", "DOWN"])' });
   if (raw?.lineSpacingM !== undefined && !(raw.lineSpacingM >= 4 && raw.lineSpacingM <= 8)) issues.push({ file, level: 'error', message: `lineSpacingM ${raw.lineSpacingM} must be between 4 and 8 (broad gauge: about 5.3)` });
   const running: string[] = double ? ['UP', 'DOWN'] : [raw?.lines?.[0] ?? 'main'];
   const checkXo = (c: any, where: string, known: string[]) => {

@@ -1,4 +1,4 @@
-import type { StationInfo } from '../track/Route';
+import { MIDDLE_LINE, type StationInfo } from '../track/Route';
 import type { Switch, TrackGraph } from '../track/TrackGraph';
 import type { Occupant } from './Signal';
 
@@ -13,6 +13,26 @@ import type { Occupant } from './Signal';
  * (crossovers) carry their locks on the shared Points, so a route set by one
  * direction blocks a conflicting route from the other.
  */
+/**
+ * The middle line, shared by both directions, one train at a time: each
+ * station's stretch of it (key: station code) and each section between two
+ * stations (key: sec:CODE|CODE). Value: the train holding it, in the view
+ * (interlocking) that claimed it; `to`: a section's far station, in that view.
+ */
+export type MiddleClaims = Map<string, { trainId: string; st: StationInfo; owner: Interlocking; to?: StationInfo }>;
+
+/** where a route comes from / goes to on the middle line */
+export interface MiddleRoute {
+  /** reception of a train arriving along the middle line (its own home signal) */
+  fromMiddle?: boolean;
+  /** departure onto the middle line toward the next station (the section is claimed) */
+  viaMiddle?: boolean;
+  /** with viaMiddle: the station at the far end of the section */
+  to?: StationInfo;
+}
+
+const sectionKey = (a: StationInfo, b: StationInfo) => `sec:${[a.code, b.code].sort().join('|')}`;
+
 export interface StationRoute {
   trainId: string;
   station: StationInfo;
@@ -23,6 +43,8 @@ export interface StationRoute {
   callingOn: boolean;
   /** lock key on the points: unique per route */
   key: string;
+  fromMiddle?: boolean;
+  viaMiddle?: boolean;
 }
 
 /** Points only move when no train is on them or within this distance (km) of them. */
@@ -31,8 +53,12 @@ export const POINTS_CLEAR_KM = 0.15;
 export class Interlocking {
   readonly routes: StationRoute[] = [];
 
-  /** `runningOffset`: the offset of this direction's running line (0 on a single line). */
-  constructor(private graph: TrackGraph, private runningOffset = 0) {}
+  /**
+   * `runningOffset`: the offset of this direction's running line (0 on a single line).
+   * `middle`: who holds each station's middle line, shared by both directions'
+   * interlockings (either direction can be routed onto it: one train at a time).
+   */
+  constructor(private graph: TrackGraph, private runningOffset = 0, private middle: MiddleClaims = new Map()) {}
 
   private stationSwitches(st: StationInfo) {
     return this.graph.switches.filter(s => s.def.station === st.code);
@@ -44,15 +70,25 @@ export class Interlocking {
    * (the train changes to the other running line); every other crossover must
    * lie normal.
    */
-  requirements(st: StationInfo, lineId: string, kind: 'reception' | 'departure', crossTo?: string) {
+  requirements(st: StationInfo, lineId: string, kind: 'reception' | 'departure', crossTo?: string, m: MiddleRoute = {}) {
     const needs: StationRoute['needs'] = [];
+    const mid = lineId === MIDDLE_LINE;
     for (const sw of this.stationSwitches(st)) {
       const id = sw.def.id;
-      if (sw.def.kind === 'crossover') { needs.push({ sw, state: kind === 'departure' && id === crossTo ? 'reverse' : 'normal' }); continue; }
-      const isEntry = id.endsWith('-E');
-      if ((kind === 'reception') !== isEntry) continue;
-      const forLine = id === `${st.code}-${lineId}-${isEntry ? 'E' : 'X'}`;
-      needs.push({ sw, state: forLine ? 'reverse' : 'normal' });
+      if (sw.def.kind === 'crossover') { needs.push({ sw, state: kind === 'departure' && id === crossTo && !m.viaMiddle ? 'reverse' : 'normal' }); continue; }
+      // <code>-<line>-E / -X: into / out of a station line; <code>-ML-I / -O: in from / out onto the middle line
+      const suffix = id.slice(id.lastIndexOf('-') + 1), line = id.slice(st.code.length + 1, id.lastIndexOf('-'));
+      let reverse: boolean;
+      if (kind === 'reception') {
+        if (suffix === 'E') reverse = line === lineId && !(m.fromMiddle && mid);
+        else if (suffix === 'I') reverse = !!m.fromMiddle && !mid;
+        else continue;
+      } else {
+        if (suffix === 'X') reverse = line === lineId && !(m.viaMiddle && mid);
+        else if (suffix === 'O') reverse = !!m.viaMiddle && !mid;
+        else continue;
+      }
+      needs.push({ sw, state: reverse ? 'reverse' : 'normal' });
     }
     return needs;
   }
@@ -109,18 +145,31 @@ export class Interlocking {
     return this.routes.find(r => r.trainId === trainId && r.station === st && r.kind === kind);
   }
 
-  private establish(trainId: string, st: StationInfo, lineId: string, kind: 'reception' | 'departure', callingOn: boolean, occupants: Occupant[], crossTo?: string) {
-    const needs = this.requirements(st, lineId, kind, crossTo);
+  private establish(trainId: string, st: StationInfo, lineId: string, kind: 'reception' | 'departure', callingOn: boolean, occupants: Occupant[], crossTo?: string, m: MiddleRoute = {}) {
+    const needs = this.requirements(st, lineId, kind, crossTo, m);
     if (this.conflicts(needs, trainId) || !this.pointsMovable(needs, occupants)) return null;
     const key = `${trainId}|${st.code}|${kind}`;
+    // a section of the middle line: one train at a time, whichever direction
+    if (kind === 'departure' && m.viaMiddle) {
+      if (!m.to) return null;
+      const k = sectionKey(st, m.to), holder = this.middle.get(k);
+      if (holder && holder.trainId !== trainId) return null;
+      this.middle.set(k, { trainId, st, owner: this, to: m.to });
+    }
+    // the middle line is shared with the other direction: claimed until this train has left it
+    if (kind === 'reception' && lineId === MIDDLE_LINE) {
+      const holder = this.middle.get(st.code);
+      if (holder && holder.trainId !== trainId) return null;
+      this.middle.set(st.code, { trainId, st, owner: this });
+    }
     for (const n of needs) { n.sw.state = n.state; n.sw.lock(key); }
-    const r: StationRoute = { trainId, station: st, lineId, kind, needs, set: false, callingOn, key };
+    const r: StationRoute = { trainId, station: st, lineId, kind, needs, set: false, callingOn, key, fromMiddle: m.fromMiddle, viaMiddle: m.viaMiddle };
     this.routes.push(r);
     return r;
   }
 
-  /** Try to receive a train, preferring `prefs` lines in order. */
-  requestReception(trainId: string, st: StationInfo, prefs: string[], occupants: Occupant[]) {
+  /** Try to receive a train, preferring `prefs` lines in order; `fromMiddle`: it comes along the middle line. */
+  requestReception(trainId: string, st: StationInfo, prefs: string[], occupants: Occupant[], fromMiddle = false) {
     const existing = this.find(trainId, st, 'reception');
     if (existing) return existing;
     // only one reception at a time per station (single home signal)
@@ -129,21 +178,30 @@ export class Interlocking {
     for (const lineId of order) {
       if (!st.lineInfo.some(l => l.id === lineId)) continue;
       if (!this.lineClear(st, lineId, occupants, trainId)) continue;
-      const r = this.establish(trainId, st, lineId, 'reception', false, occupants);
+      const r = this.establish(trainId, st, lineId, 'reception', false, occupants, undefined, { fromMiddle });
       if (r) return r;
     }
     return null;
   }
 
   /** Calling-on: admit a train into an occupied line at caution. */
-  requestCallingOn(trainId: string, st: StationInfo, lineId: string, occupants: Occupant[] = []) {
+  requestCallingOn(trainId: string, st: StationInfo, lineId: string, occupants: Occupant[] = [], fromMiddle = false) {
     if (this.routes.some(r => r.station === st && r.kind === 'reception')) return null;
-    return this.establish(trainId, st, lineId, 'reception', true, occupants);
+    return this.establish(trainId, st, lineId, 'reception', true, occupants, undefined, { fromMiddle });
   }
 
-  /** Departure route; `crossTo` names a crossover to take onto the other running line. */
-  requestDeparture(trainId: string, st: StationInfo, lineId: string, crossTo?: string, occupants: Occupant[] = []) {
-    return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false, occupants, crossTo);
+  /**
+   * Departure route; `crossTo` names a crossover to take onto the other running
+   * line; `m.viaMiddle`: onto the middle line to the next station (`m.to`).
+   */
+  requestDeparture(trainId: string, st: StationInfo, lineId: string, crossTo?: string, occupants: Occupant[] = [], m: MiddleRoute = {}) {
+    return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false, occupants, crossTo, m);
+  }
+
+  /** Is this section of the middle line (from `st` to `to`) free to claim for `trainId`? */
+  sectionFree(st: StationInfo, to: StationInfo, trainId: string) {
+    const h = this.middle.get(sectionKey(st, to));
+    return !h || h.trainId === trainId;
   }
 
   /** Cancel one route (its points unlock; free points go back to normal). */
@@ -167,8 +225,22 @@ export class Interlocking {
       const occ = occupants.find(o => o.id === r.trainId);
       if (!occ) { this.release(r); continue; }
       // sectional route release once the tail has cleared the switches
-      const clearKm = r.kind === 'reception' ? r.station.entryKm + 0.11 : r.station.exitKm + 0.01;
+      // (a departure onto the middle line holds until the tail is past its O turnout, just beyond the exit)
+      const outEnd = r.needs.find(n => n.state === 'reverse' && n.sw.def.id.endsWith('-O'))?.sw.def.rampEnd;
+      const clearKm = r.kind === 'reception' ? r.station.entryKm + 0.11 : Math.max(r.station.exitKm, outEnd ?? 0) + 0.01;
       if (occ.tailKm > clearKm) this.release(r);
+    }
+    // a middle line claim (this direction's) ends once its train has no route there and is off that stretch of
+    // the middle line (a station's, or a section's between stations)
+    for (const [code, c] of this.middle) {
+      if (c.owner !== this) continue;
+      const occ = occupants.find(o => o.id === c.trainId);
+      if (!occ) { this.middle.delete(code); continue; }
+      if (this.routes.some(r => r.trainId === c.trainId && r.station === c.st)) continue;
+      const a = Math.max(occ.tailKm, c.to ? c.st.exitKm - 0.15 : c.st.entryKm - 0.2), b = Math.min(occ.headKm, c.to ? c.to.entryKm : c.st.exitKm + 0.2);
+      let on = false;
+      for (let km = a; km <= b + 1e-9; km += 0.02) if (Math.abs(occ.offsetAt(km)) < 1) { on = true; break; }
+      if (!on) this.middle.delete(code);
     }
   }
 

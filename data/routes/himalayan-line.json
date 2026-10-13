@@ -6,6 +6,7 @@
   "startElevationM": 1800,
   "lines": ["UP", "DOWN"],
   "lineSpacingM": 5.3,
+  "middleLine": true,
   "regions": [
     {"fromKm": 0, "toKm": 14, "region": "alpine-meadow"},
     {"fromKm": 14, "toKm": 36, "region": "himalaya"}

@@ -25,6 +25,12 @@ export interface TrafficConfig {
   /** keep at least this much clear track between trains at spawn (km) */
   minGapKm: number;
   kinds: TrafficKind[];
+  /**
+   * Traffic on the player's own line (same direction): trains faster than
+   * `playerKmph` start behind the player and catch up (they overtake where the
+   * dispatcher turns the slower train into a loop), slower ones start ahead.
+   */
+  sameLine?: { playerKmph: number };
 }
 
 export const DEFAULT_TRAFFIC: TrafficConfig = {
@@ -90,6 +96,9 @@ export class TrafficManager {
     return km;
   }
 
+  /** Same-line traffic: does this kind start behind the player (it is faster) or ahead? */
+  private behind(kind: TrafficKind) { return kind.maxKmph > (this.cfg.sameLine?.playerKmph ?? 0); }
+
   /** Spawn one train with its head at `headKm` (this line's km). Returns null if there is no room. */
   spawn(headKm: number, kind = this.pickKind()): AITrain | null {
     const cars = kind.cars[0] + Math.floor(this.rand() * (kind.cars[1] - kind.cars[0] + 1));
@@ -97,7 +106,7 @@ export class TrafficManager {
     const km = this.outsideYards(headKm);
     if (km - lengthKm < 0.05 || km > this.route.lengthKm - 0.3 || !this.clear(km, lengthKm)) return null;
     const def: AITrainDef = {
-      id: `${this.route.running.id}-T${++this.seq}`, name: `${kind.kind === 'goods' ? 'Goods' : 'Express'} ${100 + this.seq}`,
+      id: `${this.route.running.id}-${this.cfg.sameLine ? 'S' : 'T'}${++this.seq}`, name: `${kind.kind === 'goods' ? 'Goods' : 'Express'} ${100 + this.seq}`,
       startKm: km, line: this.route.running.id, maxKmph: kind.maxKmph, wagons: cars, stops: [],
       despawnKm: this.route.lengthKm - 0.4, track: this.route.running.id, carLengthM: kind.carLengthM, kind: kind.kind, stock: kind.stock,
     };
@@ -125,6 +134,7 @@ export class TrafficManager {
    */
   update(dt: number, playerKm: number) {
     const c = this.cfg;
+    if (c.sameLine) { this.updateSameLine(dt, playerKm); return; }
     if (!this.primed) {
       // trains already on their way: spread over the out-of-sight part of the approach
       this.primed = true;
@@ -138,5 +148,23 @@ export class TrafficManager {
     this.timer -= dt;
     if (this.timer <= 0 && this.spawn(playerKm - c.aheadKm)) this.timer = this.nextGap();
     else if (this.timer <= 0) this.timer = 20; // no room yet: try again shortly
+  }
+
+  /**
+   * Same-line traffic: a slower train somewhere ahead to catch up with, faster
+   * ones from behind every so often. Trains are dropped once far ahead or far
+   * behind (out of sight).
+   */
+  private updateSameLine(dt: number, playerKm: number) {
+    const c = this.cfg;
+    for (const t of this.trains) t.update(dt);
+    for (const t of [...this.trains]) {
+      if (t.gone || t.headKm < playerKm - c.aheadKm - 4 || t.tailKm > playerKm + c.aheadKm + 4) this.remove(t);
+    }
+    this.timer -= dt;
+    if (this.timer > 0) return;
+    const kind = this.pickKind();
+    const ok = this.spawn(this.behind(kind) ? playerKm - c.aheadKm * 0.7 : playerKm + c.aheadKm, kind);
+    this.timer = ok ? this.nextGap() : 20;
   }
 }

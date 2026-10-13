@@ -41,6 +41,18 @@ export interface RouteData {
    */
   lines?: string[];
   lineSpacingM?: number;
+  /**
+   * A third track the whole length of a double line, between Up and Down (the
+   * running lines then sit lineSpacingM either side of it; station platforms and
+   * loops move out with them). Either direction may use it, one train at a time:
+   * at every station (not halts) turnouts lead onto it inside station limits (to
+   * run through, or stand aside for a faster train) and, just outside, from the
+   * platform lines onto it and back (I / O turnouts), so a train can run on it
+   * from one station to the next to overtake. It has its own home and distant
+   * signals at each station; each section between stations is worked by one
+   * train at a time, whichever direction.
+   */
+  middleLine?: boolean;
   regions: { fromKm: number; toKm: number; region: string }[];
   segments: SegmentDef[];
   profile: ProfilePoint[];
@@ -146,6 +158,9 @@ export interface BoardDef { kind: 'km' | 'whistle' | 'speed' | 'caution' | 'term
 export interface RiverDef { id: string; points: { x: number; z: number }[]; width: number; floor: number; water: number; bridgeKm: number; minX: number; maxX: number; minZ: number; maxZ: number }
 export interface RoadDef { id: string; kind: 'lc' | 'parallel'; km: number; ax: number; az: number; dx: number; dz: number; halfLength: number; railY: number; fromKm?: number; toKm?: number; offset?: number }
 
+/** id of the middle line (RouteData.middleLine) at a station and along the route */
+export const MIDDLE_LINE = 'ML';
+
 export const STOP_MARKER_COACHES = [8, 12, 16, 20, 24];
 export const LOCO_LENGTH_DEFAULT = 20.56;
 export const DEFAULT_LINE_SPACING_M = 5.3;
@@ -161,7 +176,8 @@ export interface RouteOptions {
 /** Running lines of a route in surveyed (+km) coordinates: DOWN on the left of +km travel. */
 export function runningLinesOf(data: RouteData): RunningLine[] {
   if (!data.lines || data.lines.length < 2) return [{ id: data.lines?.[0] ?? 'main', offset: 0 }];
-  const h = (data.lineSpacingM ?? DEFAULT_LINE_SPACING_M) / 2;
+  // with a middle line between them, each running line is a full spacing out from the centre
+  const h = (data.lineSpacingM ?? DEFAULT_LINE_SPACING_M) / (data.middleLine ? 1 : 2);
   return [{ id: 'DOWN', offset: -h }, { id: 'UP', offset: h }];
 }
 
@@ -212,6 +228,7 @@ export class Route {
     const want = opts.running ?? (this.double ? (this.mirrored ? 'UP' : 'DOWN') : this.runningLines[0].id);
     this.running = this.runningLines.find(l => l.id === want) ?? this.runningLines[0];
     this.graph = new TrackGraph(this.lengthKm, this.runningLines);
+    if (this.middle) this.graph.addLine({ id: MIDDLE_LINE, offset: 0, fromKm: 0, toKm: this.lengthKm });
     this.tunnels = data.structures.filter(s => s.type === 'tunnel');
     this.bridges = data.structures.filter(s => s.type === 'bridge');
     this.yards = data.features.filter(f => f.type === 'depot' || f.type === 'port').map(f => {
@@ -230,6 +247,32 @@ export class Route {
   canonicalKm(km: number) { return this.mirrored ? this.lengthKm - km : km; }
   viewKm(canonicalKm: number) { return this.mirrored ? this.lengthKm - canonicalKm : canonicalKm; }
 
+  /** a middle line between the running lines (double line with RouteData.middleLine) */
+  get middle() { return !!this.data.middleLine && this.double; }
+
+  /** Full line speed here (the running line, or the middle line); elsewhere (loops, turnouts, wrong line) 30 km/h. */
+  lineSpeedAt(offset: number) {
+    return Math.abs(offset - this.running.offset) <= 0.3 || (this.middle && Math.abs(offset) <= 0.3);
+  }
+
+  /** The next station after `st` with turnouts onto the middle line: the far end of `st`'s middle section. */
+  middleSectionEnd(st: StationInfo) {
+    if (!this.middle || st.type === 'halt') return undefined;
+    return this.stations.find(x => x.type !== 'halt' && x.entryKm > st.exitKm);
+  }
+
+  /**
+   * Station data drawn for two lines sitting at half the spacing from the centre:
+   * with a middle line every lateral position (platforms, loops) moves out by
+   * the extra distance, on its own side.
+   */
+  private spread(s: StationData): StationData {
+    if (!this.middle) return s;
+    const d = this.halfSpacing - (this.data.lineSpacingM ?? DEFAULT_LINE_SPACING_M) / 2;
+    const out = (x: number) => x + Math.sign(x) * d;
+    return { ...s, lines: s.lines.map(l => ({ ...l, offset: out(l.offset) })), platforms: s.platforms.map(p => ({ ...p, from: out(p.from), to: out(p.to) })) };
+  }
+
   private isRunning(id: string) { return this.runningLines.some(l => l.id === id); }
   /** Running line a loop at `offset` branches from (the nearest one). */
   private parentOf(offset: number) {
@@ -237,16 +280,20 @@ export class Route {
   }
 
   // ---------------- stations & switches ----------------
-  private compileStation(s: StationData) {
+  private compileStation(s0: StationData) {
+    const s = this.spread(s0);
     const half = s.platformLengthM / 2000;
     const run = this.running;
     const loops = s.lines.filter(l => !this.isRunning(l.id));
     const own = loops.filter(l => this.parentOf(l.offset).id === run.id);
+    // the middle line: turnouts into it from this direction's running line (not at halts)
+    const mid = this.middle && s.type !== 'halt';
+    if (mid) own.push({ id: MIDDLE_LINE, offset: 0 });
     const st: StationInfo = {
       ...s,
       platformFromKm: s.km - half, platformToKm: s.km + half,
       entryKm: s.km - half, exitKm: s.km + half,
-      yardFromKm: s.km - half - (loops.length ? 0.25 : 0), yardToKm: s.km + half + (loops.length ? 0.25 : 0),
+      yardFromKm: s.km - half - (loops.length || mid ? 0.25 : 0), yardToKm: s.km + half + (loops.length || mid ? 0.25 : 0),
       lineInfo: [{ id: run.id, offset: run.offset, fromKm: 0, toKm: this.lengthKm }],
       regionId: this.regionIdAt(s.km),
     };
@@ -258,9 +305,15 @@ export class Route {
     for (const l of own) {
       const li = { id: l.id, offset: l.offset, fromKm: st.entryKm + r, toKm: st.exitKm - r };
       st.lineInfo.push(li);
-      this.graph.addLine({ ...li, id: `${s.code}-${l.id}`, station: s.code });
+      // (the middle line itself runs the whole route: only its turnouts are the station's)
+      if (l.id !== MIDDLE_LINE) this.graph.addLine({ ...li, id: `${s.code}-${l.id}`, station: s.code });
       this.graph.addSwitch({ id: `${s.code}-${l.id}-E`, station: s.code, kind: 'facing', from: run.offset, to: l.offset, rampStart: st.entryKm, rampEnd: st.entryKm + r });
       this.graph.addSwitch({ id: `${s.code}-${l.id}-X`, station: s.code, kind: 'trailing', from: l.offset, to: run.offset, rampStart: st.exitKm - r, rampEnd: st.exitKm });
+    }
+    // the middle line's ends of the station: in from it before the station (I), out onto it after (O)
+    if (mid) {
+      if (st.entryKm - r - 0.02 > 0.05) this.graph.addSwitch({ id: `${s.code}-${MIDDLE_LINE}-I`, station: s.code, kind: 'trailing', from: 0, to: run.offset, rampStart: st.entryKm - r - 0.02, rampEnd: st.entryKm - 0.02 });
+      if (st.exitKm + r + 0.02 < this.lengthKm - 0.05) this.graph.addSwitch({ id: `${s.code}-${MIDDLE_LINE}-O`, station: s.code, kind: 'facing', from: run.offset, to: 0, rampStart: st.exitKm + 0.02, rampEnd: st.exitKm + r + 0.02 });
     }
     (s.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `${s.code}-XO${i}`, s.code, own));
     this.stations.push(st);
@@ -305,6 +358,12 @@ export class Route {
       const home = st.entryKm - 0.18;
       if (home - 1.2 > 0.05) sig.push({ id: sid(st.code, 'D'), km: home - 1.2, kind: 'distant', offset: ro, aspects: 4, station: st.code });
       if (home > 0.05) sig.push({ id: sid(st.code, 'H'), km: home, kind: 'home', offset: ro, aspects: 4, station: st.code, callingOn: true, routeIndicator: st.type === 'junction' });
+      // the middle line's own home (and distant) for a train coming along it from the last station
+      if (this.middle && home > 0.05 && this.graph.byId.has(`${st.code}-${MIDDLE_LINE}-I`)) {
+        sig.push({ id: sid(st.code, `H-${MIDDLE_LINE}`), km: home, kind: 'home', offset: 0, aspects: 4, station: st.code, line: MIDDLE_LINE, routeIndicator: true });
+        const prev = [...this.stations].reverse().find(x => x.exitKm < st.entryKm);
+        if (home - 1.2 > (prev ? prev.exitKm + 0.3 : 0.05)) sig.push({ id: sid(st.code, `D-${MIDDLE_LINE}`), km: home - 1.2, kind: 'distant', offset: 0, aspects: 4, station: st.code, line: MIDDLE_LINE });
+      }
       for (const l of st.lineInfo) {
         sig.push({ id: sid(st.code, `S-${l.id}`), km: st.platformToKm + 0.03, kind: 'starter', offset: l.offset, aspects: 4, station: st.code, line: l.id });
       }

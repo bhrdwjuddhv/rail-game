@@ -38,11 +38,17 @@ export class AITrain implements WorkedTrain {
   readonly path: TrackPath;
   readonly plan = new Map<string, StopPlan>();
   gone = false;
+  /** precedence: expresses before goods (Dispatcher.overtaker) */
+  readonly priority: number;
+  readonly cruiseKmph: number;
+  get name() { return this.def.name; }
   private dwellStops = new Set<string>();
 
   constructor(readonly def: AITrainDef, private route: Route, private block: BlockSystem) {
     this.id = def.id;
     this.length = AI_LOCO_LEN + def.wagons * (def.carLengthM ?? AI_WAGON_LEN + 0.6);
+    this.priority = def.kind === 'passenger' ? 3 : 1;
+    this.cruiseKmph = def.maxKmph;
     this.headKm = def.startKm;
     const st = route.stations.find(s => s.lineInfo.some(l => l.id === def.line) && def.startKm > s.entryKm && def.startKm < s.exitKm);
     const off = st?.lineInfo.find(l => l.id === def.line)?.offset ?? route.running.offset;
@@ -61,7 +67,7 @@ export class AITrain implements WorkedTrain {
     const off = this.path.offsetAt(head);
     let limit = this.def.maxKmph;
     for (let km = this.tailKm; km <= head + 0.4; km += 0.1) limit = Math.min(limit, this.route.speedLimitAt(km));
-    if (Math.abs(off - this.route.running.offset) > 0.3) limit = Math.min(limit, 30); // loops, turnouts, wrong line
+    if (!this.route.lineSpeedAt(off)) limit = Math.min(limit, 30); // loops, turnouts, wrong line (the middle line is full speed)
     let target = limit * KMPH;
     const b = 0.35;
     // stop for red signals

@@ -1,7 +1,7 @@
 import type { BlockSystem } from '../signalling/BlockSystem';
 import type { Interlocking } from '../signalling/Interlocking';
 import type { Occupant } from '../signalling/Signal';
-import type { Route, StationInfo } from '../track/Route';
+import { MIDDLE_LINE, type Route, type StationInfo } from '../track/Route';
 import { parseClock } from '../util';
 import type { WorkKind } from './StationWork';
 
@@ -38,16 +38,35 @@ export function planFromTimetable(entries: TimetableEntry[]): Map<string, StopPl
 export interface WorkedTrain extends Occupant {
   speed: number; // m/s
   plan: Map<string, StopPlan>;
+  /** precedence class: 4 high-speed trainset, 3 express / passenger, 1 goods (default 2) */
+  priority?: number;
+  /** the speed it runs at on the open line (km/h), for overtaking decisions */
+  cruiseKmph?: number;
+  name?: string;
 }
 
-interface StationState { arrived: boolean; arrivedAt: number; departed: boolean; waitHome: number; departRequested: boolean }
+interface StationState {
+  arrived: boolean; arrivedAt: number; departed: boolean; waitHome: number; departRequested: boolean;
+  /** giving way here: received into the loop and held until this train has passed */
+  giveWay?: string; giveWaySince?: number; giveWayTold?: boolean;
+  /** sent along the middle line from here to overtake this train (told once) */
+  overtakeTold?: boolean;
+}
 
 export interface DispatchListener {
   arrived?(train: WorkedTrain, st: StationInfo, clock: number): void;
   departed?(train: WorkedTrain, st: StationInfo, clock: number): void;
+  /** `train` was turned into the loop at `st` for `follower` to overtake */
+  givingWay?(train: WorkedTrain, st: StationInfo, follower: WorkedTrain): void;
+  /** `train` leaves `st` along the middle line to overtake `leader`, rejoining its line at `to` (or later) */
+  overtaking?(train: WorkedTrain, st: StationInfo, leader: WorkedTrain, to: StationInfo): void;
 }
 
 const MIN_DWELL = 20;
+/** a train never waits in a loop longer than this for an overtake (s): a stalled follower cannot block it for ever */
+const GIVE_WAY_MAX_S = 360;
+/** a follower is slowed by the leading train's signals within about this distance (m) */
+const HEADWAY_M = 1500;
 
 /**
  * Plays station master for every train: sets reception routes as a train
@@ -79,6 +98,17 @@ export class Dispatcher {
 
   /** Forget a train's station progress (after a teleport). */
   resetTrain(trainId: string) { this.state.delete(trainId); }
+
+  /** Giving way: has the overtaking train gone by (or given up)? Held in the loop until then. */
+  private overtaken(t: WorkedTrain, st: StationInfo, s: StationState, trains: WorkedTrain[], clock: number) {
+    if (!s.giveWay) return true;
+    const f = trains.find(x => x.id === s.giveWay);
+    // the wait is counted from arrival in the loop; until then the departure is simply not given
+    if (t.headKm >= st.entryKm) s.giveWaySince ??= clock;
+    else if (f) return false;
+    if (!f || f.tailKm > st.exitKm || clock - (s.giveWaySince ?? clock) > GIVE_WAY_MAX_S) { s.giveWay = undefined; return true; }
+    return false;
+  }
 
   /** Mark a train as already standing at a platform (scenario start). */
   startAt(train: WorkedTrain, code: string, clock: number) {
@@ -124,6 +154,72 @@ export class Dispatcher {
     return true;
   }
 
+  /**
+   * Where a train of this direction can stand aside at a station: its own loop
+   * (beyond the running line, on its side), else the middle line shared by both
+   * directions; undefined if neither.
+   */
+  loopAt(st: StationInfo) {
+    const run = this.route.running.offset;
+    return st.lineInfo.filter(l => l.id !== this.route.running.id && Math.sign(l.offset) === Math.sign(run) && Math.abs(l.offset) > Math.abs(run))
+      .sort((a, b) => Math.abs(a.offset - run) - Math.abs(b.offset - run))[0] ?? st.lineInfo.find(l => l.id === MIDDLE_LINE);
+  }
+
+  /**
+   * Precedence: should `t` give way at `st` to a train behind it? Yes when a
+   * train of higher priority (or the same, but clearly faster) is following and
+   * would catch up before `t` could clear the next station with a loop. Only
+   * where this direction has a loop long enough for `t`. Returns the follower.
+   */
+  overtaker(t: WorkedTrain, st: StationInfo, trains: WorkedTrain[]): WorkedTrain | null {
+    if (st.type === 'halt' || !this.loopAt(st) || t.headKm - t.tailKm > st.exitKm - st.entryKm - 0.25) return null;
+    const cruise = (x: WorkedTrain) => x.cruiseKmph ?? 80;
+    // the leader: its cruising speed, or slower if it is dawdling (never assumed below half of it)
+    const vt = Math.min(cruise(t), Math.max(Math.abs(t.speed) * 3.6, cruise(t) * 0.5)), pt = t.priority ?? 2;
+    const next = this.route.stations.find(s => s.entryKm > st.exitKm && s.type !== 'halt' && this.loopAt(s));
+    const clearKm = next ? next.exitKm : this.route.lengthKm;
+    let best: WorkedTrain | null = null, soonest = Infinity;
+    for (const f of trains) {
+      if (f === t || f.headKm >= t.tailKm || t.tailKm - f.headKm > 15) continue;
+      // already overtaking along the middle line: nothing to stand aside for
+      if (this.route.middle && Math.abs(f.offsetAt(f.headKm)) < 1) continue;
+      const pf = f.priority ?? 2, vf = cruise(f);
+      if (!(pf > pt || (pf === pt && vf > vt + 15)) || vf <= vt + 5) continue;
+      // where the follower closes up to the leading train's signals, at their cruising speeds
+      const gap = Math.max(0, (t.tailKm - f.headKm) * 1000 - HEADWAY_M);
+      const catchS = gap / ((vf - vt) / 3.6);
+      const atKm = t.headKm + (vt / 3.6) * catchS / 1000;
+      if (atKm < clearKm + 0.5 && catchS < soonest) { soonest = catchS; best = f; }
+    }
+    return best;
+  }
+
+  /**
+   * Overtaking on the open line: should `t` leave `st` along the middle line?
+   * Yes when a slower, less important train (or the same class, clearly slower)
+   * is on the running line ahead, before the next station, and `t` would catch
+   * it up there. Not if `t` is booked to stop at a halt in between (no platform
+   * on the middle line). Returns that train and the section's far station.
+   */
+  middleOvertake(t: WorkedTrain, st: StationInfo, trains: WorkedTrain[]): { leader: WorkedTrain; to: StationInfo } | null {
+    const to = this.route.middleSectionEnd(st);
+    if (!to || to.entryKm - st.exitKm < 1.2) return null;
+    for (const h of this.route.stations) if (h.type === 'halt' && h.km > st.exitKm && h.km < to.entryKm && t.plan.get(h.code)?.stop) return null;
+    const cruise = (x: WorkedTrain) => x.cruiseKmph ?? 80;
+    const vt = cruise(t), pt = t.priority ?? 2, run = this.route.running.offset;
+    let best: WorkedTrain | null = null, nearest = Infinity;
+    for (const l of trains) {
+      if (l === t || l.tailKm <= t.headKm || l.headKm > to.entryKm + 0.3) continue;
+      if (Math.abs(l.offsetAt(l.headKm) - run) > 1) continue; // only a train on the running line is in the way
+      const pl = l.priority ?? 2, vl = Math.min(cruise(l), Math.max(Math.abs(l.speed) * 3.6, cruise(l) * 0.5));
+      if (!(pt > pl || (pt === pl && vt > vl + 15)) || vt <= vl + 5) continue;
+      const gap = Math.max(0, (l.tailKm - t.headKm) * 1000 - HEADWAY_M);
+      const atKm = t.headKm + (vt / 3.6) * (gap / ((vt - vl) / 3.6)) / 1000;
+      if (atKm < to.entryKm && l.tailKm - t.headKm < nearest) { nearest = l.tailKm - t.headKm; best = l; }
+    }
+    return best ? { leader: best, to } : null;
+  }
+
   /** `occupants`: every train on the railway (defaults to `trains`), for line-clear checks. */
   update(dt: number, trains: WorkedTrain[], clock: number, occupants: Occupant[] = trains) {
     for (const t of trains) {
@@ -133,16 +229,35 @@ export class Dispatcher {
         const s = this.st(t.id, st.code);
         if (s.departed) continue;
         const plan = t.plan.get(st.code) ?? { station: st.code, line: '', stop: false };
-        const line = this.planLine(st, plan.line);
+        let line = this.planLine(st, plan.line);
         const interlocked = st.type !== 'halt';
 
+        // precedence (no line booked for this train here): turn it into the loop for a faster, more
+        // important train behind; decided until its reception route is set, then kept
+        if (interlocked && !plan.line && t.headKm < st.entryKm && t.headKm > st.entryKm - 3.5) {
+          const recv = this.interlocking.find(t.id, st, 'reception');
+          if (!recv) {
+            const f = this.overtaker(t, st, trains);
+            if (f?.id !== s.giveWay) { s.giveWay = f?.id; s.giveWaySince = undefined; s.giveWayTold = false; }
+          } else if (s.giveWay && recv.lineId !== this.loopAt(st)?.id) s.giveWay = undefined; // the loop was not free
+          if (s.giveWay) line = this.loopAt(st)!.id;
+        }
+
         if (interlocked && t.headKm < st.entryKm) {
-          const r = this.interlocking.requestReception(t.id, st, [line], occupants);
-          const home = this.block.stationSignals(st.code).find(x => x.def.kind === 'home');
+          // along the middle line (from the last station): its own home; back to the line booked (or the
+          // running line), else straight on along the middle line
+          const fromMiddle = this.route.middle && Math.abs(t.offsetAt(t.headKm)) < 1;
+          const r = this.interlocking.requestReception(t.id, st, fromMiddle ? [line, MIDDLE_LINE] : [line], occupants, fromMiddle);
+          if (r && s.giveWay && !s.giveWayTold && r.lineId === line) {
+            s.giveWayTold = true;
+            const f = trains.find(x => x.id === s.giveWay);
+            if (f) for (const l of this.listeners) l.givingWay?.(t, st, f);
+          }
+          const home = this.block.stationSignals(st.code).find(x => x.def.kind === 'home' && (x.def.line === MIDDLE_LINE) === fromMiddle);
           if (!r && home) {
             const nearHome = home.km - t.headKm < 0.4 && home.km > t.headKm;
             s.waitHome = nearHome && Math.abs(t.speed) < 0.1 ? s.waitHome + dt : 0;
-            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line, occupants);
+            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line, occupants, fromMiddle);
           }
         }
 
@@ -156,13 +271,22 @@ export class Dispatcher {
 
         // departure authority
         const gate = this.gates.get(t.id);
-        const dwellOk = !plan.stop || this.departNow.has(t.id) || (s.arrived && (gate ? gate(st.code) : clock - s.arrivedAt >= (plan.dwellS ?? MIN_DWELL)) && (plan.dep === undefined || clock >= plan.dep - 10));
+        const dwellOk = (!plan.stop || this.departNow.has(t.id) || (s.arrived && (gate ? gate(st.code) : clock - s.arrivedAt >= (plan.dwellS ?? MIN_DWELL)) && (plan.dep === undefined || clock >= plan.dep - 10)))
+          && this.overtaken(t, st, s, trains, clock);
         if (interlocked && dwellOk && t.headKm > st.entryKm - 3) {
           const recv = this.interlocking.reception(st);
           const lineId = recv && recv.trainId === t.id ? recv.lineId : this.lineOf(st, t.offsetAt(Math.max(t.tailKm, Math.min(t.headKm, st.platformToKm))));
-          if (!plan.stop || t.headKm > st.entryKm + 0.1 || recv?.trainId === t.id) {
+          // only once the train is received here (or inside the station): a departure route set ahead of that
+          // could be for the wrong line (a train arriving along the middle line is received onto its own)
+          if (t.headKm > st.entryKm + 0.1 || recv?.trainId === t.id) {
             const crossTo = plan.exitLine ? this.crossoverTo(st, lineId, plan.exitLine) : undefined;
-            this.interlocking.requestDeparture(t.id, st, lineId, crossTo, occupants);
+            // overtaking along the middle line to the next station, when a slower train is in the way and
+            // the section is free; otherwise the normal departure
+            const ov = !crossTo && !this.interlocking.find(t.id, st, 'departure') ? this.middleOvertake(t, st, trains) : null;
+            const viaMiddle = ov && this.interlocking.sectionFree(st, ov.to, t.id)
+              ? this.interlocking.requestDeparture(t.id, st, lineId, undefined, occupants, { viaMiddle: true, to: ov.to }) : null;
+            if (viaMiddle && ov && !s.overtakeTold) { s.overtakeTold = true; for (const l of this.listeners) l.overtaking?.(t, st, ov.leader, ov.to); }
+            if (!viaMiddle) this.interlocking.requestDeparture(t.id, st, lineId, crossTo, occupants);
             s.departRequested = true;
           }
         }

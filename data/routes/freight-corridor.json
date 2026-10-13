@@ -11,6 +11,7 @@
     "DOWN"
   ],
   "lineSpacingM": 5.3,
+  "middleLine": true,
   "regions": [
     {
       "fromKm": 0,

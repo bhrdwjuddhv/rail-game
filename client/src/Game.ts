@@ -151,6 +151,8 @@ export class Game {
   private ai: { train: AITrain; view: TrainView; route: Route; carM: number; side?: number }[] = [];
   /** scheduled trains on the other line of a double track, coming toward the player */
   private oncoming: TrafficManager | null = null;
+  /** Free Roam: trains on the player's own line (overtaking in station loops) */
+  private sameLine: TrafficManager | null = null;
   /** cab buffeting from a passing train, 0..1 */
   private shake = 0;
   private rules: Rules;
@@ -305,8 +307,13 @@ export class Game {
     this.path = new TrackPath(this.line.graph, head, this.dyn.tailKm, startOffset);
     this.plan = planFromTimetable(s.timetable);
     const dyn = this.dyn, plan = this.plan;
+    // precedence (loop working): a high-speed trainset first, then passenger trains, goods last
+    const goods = this.consist.vehicles.some(v => v.kind === 'coach') && this.consist.vehicles.every(v => v.kind !== 'coach' || (COACHES[v.typeId]?.kind ?? 'coach') !== 'coach');
+    const lineMax = Math.max(...routeData.speedLimits.map(l => l.kmph));
     this.player = {
-      id: 'player', plan,
+      id: 'player', plan, name: 'your train',
+      priority: loco.trainset ? 4 : goods ? 1 : 3,
+      cruiseKmph: Math.min(loco.maxSpeedKmph, lineMax),
       get headKm() { return dyn.headKm; }, get tailKm() { return dyn.tailKm; }, get speed() { return dyn.speed; },
       offsetAt: (km: number) => this.path.offsetAt(km),
     };
@@ -369,6 +376,17 @@ export class Game {
       l.dispatcher.listeners.push({
         arrived: (t, st, clock) => { if (t.id === 'player' && l === this.lc) { this.rules.arrived(st, clock, this.dyn.headKm); this.stop.arrive(st, false); } },
         departed: (t, st, clock) => { if (t.id === 'player' && l === this.lc) { this.rules.departed(st, !!this.dispatcher.stationState('player', st.code)?.arrived, clock); this.stop.leave(); } },
+        // loop working: the dispatcher sets the routes; the player is only told why
+        givingWay: (t, st, f) => {
+          if (l !== this.lc) return;
+          if (t.id === 'player') bus.emit('message', { text: `Routed into the loop at ${st.name}: ${f.name ?? 'a faster train'} will overtake. Wait for the starter signal.`, kind: 'info', ms: 9000 });
+          else if (f.id === 'player') bus.emit('message', { text: `${t.name ?? 'A slower train'} is waiting in the loop at ${st.name} for you to pass.`, kind: 'info', ms: 7000 });
+        },
+        overtaking: (t, st, leader, to) => {
+          if (l !== this.lc) return;
+          if (t.id === 'player') bus.emit('message', { text: `Routed onto the middle line at ${st.name} to overtake ${leader.name ?? 'a slower train'}: back on your line at ${to.name}. Line speed applies on the middle line.`, kind: 'info', ms: 9000 });
+          else if (leader.id === 'player') bus.emit('message', { text: `${t.name ?? 'A faster train'} is overtaking you on the middle line.`, kind: 'info', ms: 7000 });
+        },
       });
     }
 
@@ -502,6 +520,25 @@ export class Game {
     tm.onSpawn = t => this.addAI(t, other.route);
     tm.onDespawn = t => this.removeAI(t);
     this.oncoming = tm;
+    this.startSameLine();
+  }
+
+  /**
+   * Free Roam: traffic on the player's own line too (same direction): faster
+   * trains come up from behind and overtake where the dispatcher turns the
+   * slower train (the player's or theirs) into a loop. Scenarios keep their own trains.
+   */
+  private startSameLine() {
+    this.sameLine?.reset();
+    this.sameLine = null;
+    if (this.scenario.rules || this.bench) return;
+    let seed = 11;
+    for (const ch of this.scenarioId + this.lc.route.running.id + 'same') seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    const base = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
+    const tm = new TrafficManager(this.lc, { ...base, seed, headwayS: base.headwayS * 2, aheadKm: 8, sameLine: { playerKmph: this.player.cruiseKmph ?? 100 } });
+    tm.onSpawn = t => this.addAI(t, this.lc.route);
+    tm.onDespawn = t => this.removeAI(t);
+    this.sameLine = tm;
   }
 
   /**
@@ -514,6 +551,7 @@ export class Game {
     this.dispatcher.departNow.delete('player');
     this.lc.remove(this.player);
     if (this.oncoming) { this.oncoming.reset(); this.oncoming = null; }
+    this.sameLine?.reset(); this.sameLine = null;
     this.line = v;
     this.lc = this.ctl.of(v);
     this.lc.add(this.player);
@@ -890,6 +928,7 @@ export class Game {
     if (st) this.dispatcher.startAt(this.player, st.code, this.time.seconds);
     this.path = new TrackPath(L.graph, km, d.tailKm, L.running.offset);
     this.oncoming?.reset();
+    this.sameLine?.reset();
     this.rules.callingOnUntil = -1;
     this.announced.clear();
     this.trainView.update(L, km, x => this.path.offsetAt(x), d.odometer, this.lighting.nightLight);
@@ -1281,7 +1320,7 @@ export class Game {
     const e = this.god.eff;
     let v = Math.min(e.ignoreLineSpeed ? Infinity : this.line.speedLimitAt(km), e.unlimitedSpeed ? Infinity : this.consist.loco.maxSpeedKmph);
     if (e.ignoreLineSpeed) return v; // God Mode test: line, loop and calling-on limits lifted
-    if (Math.abs(this.pathOffset(km) - this.line.running.offset) > 0.3) v = Math.min(v, 30); // loop lines, turnouts, wrong line
+    if (!this.line.lineSpeedAt(this.pathOffset(km))) v = Math.min(v, 30); // loop lines, turnouts, wrong line (the middle line is full speed)
     if (km <= this.rules.callingOnUntil) v = Math.min(v, 15);
     return v;
   };
@@ -1334,10 +1373,11 @@ export class Game {
     if (this.bench) d.speed = this.bench.cfg.speedKmph / 3.6;
     for (const id of this.path.update(d.headKm, d.tailKm)) bus.emit('switch-crossed', { id });
     // scenario AI trains (traffic trains are moved by their manager)
-    const traffic = this.oncoming?.trains;
-    for (const a of this.ai) if (!a.train.gone && !traffic?.includes(a.train)) a.train.update(dt);
-    for (const a of [...this.ai]) if (a.train.gone && !traffic?.includes(a.train)) { this.ctl.of(a.route).remove(a.train); this.removeAI(a.train); }
+    const managed = (t: AITrain) => !!this.oncoming?.trains.includes(t) || !!this.sameLine?.trains.includes(t);
+    for (const a of this.ai) if (!a.train.gone && !managed(a.train)) a.train.update(dt);
+    for (const a of [...this.ai]) if (a.train.gone && !managed(a.train)) { this.ctl.of(a.route).remove(a.train); this.removeAI(a.train); }
     if (this.oncoming && !this.bench) this.oncoming.update(dt, this.oncoming.route.viewKm(this.line.canonicalKm(d.headKm)));
+    if (this.sameLine) this.sameLine.update(dt, d.headKm);
 
     // wheel slip / coupler events
     const slip = d.traction.slipping;

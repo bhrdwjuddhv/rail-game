@@ -1,5 +1,5 @@
 import type { Aspect } from '../events';
-import type { Route } from '../track/Route';
+import { MIDDLE_LINE, type Route } from '../track/Route';
 import { TrackGraph } from '../track/TrackGraph';
 import type { Interlocking } from './Interlocking';
 import { Occupant, Signal } from './Signal';
@@ -79,8 +79,9 @@ export class BlockSystem {
     if (!st) return true;
     switch (s.def.kind) {
       case 'home': {
+        // the running line's home or the middle line's: each clears only for a train coming its way
         const r = this.interlocking.reception(st);
-        return !!r && r.set && !r.callingOn;
+        return !!r && r.set && !r.callingOn && !!r.fromMiddle === (s.def.line === MIDDLE_LINE);
       }
       case 'starter': {
         // a terminal's starters stay at danger only where the line ends (buffer stops); a terminal that
@@ -117,8 +118,9 @@ export class BlockSystem {
       if (s.def.kind === 'home') {
         const st = this.route.station(s.def.station!)!;
         const r = this.interlocking.reception(st);
-        s.callingOn = !!r && r.set && r.callingOn;
-        const pf = r && r.set && r.lineId !== this.route.running.id ? st.platforms.find(p => p.lines.includes(r.lineId)) : undefined;
+        const ours = !!r && !!r.fromMiddle === (s.def.line === MIDDLE_LINE);
+        s.callingOn = ours && !!r && r.set && r.callingOn;
+        const pf = ours && r && r.set && r.lineId !== this.route.running.id ? st.platforms.find(p => p.lines.includes(r.lineId)) : undefined;
         s.routeIndicator = s.def.routeIndicator && pf ? pf.num : null;
       }
     }

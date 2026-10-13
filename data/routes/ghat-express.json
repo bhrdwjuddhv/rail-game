@@ -6,6 +6,7 @@
   "startElevationM": 100,
   "lines": ["UP", "DOWN"],
   "lineSpacingM": 5.3,
+  "middleLine": true,
   "regions": [
     { "fromKm": 0, "toKm": 31, "region": "north-plains" },
     { "fromKm": 31, "toKm": 54.1, "region": "western-ghats" }
@@ -136,14 +137,14 @@
       "name": "Nadikinara", "nameHi": "नदीकिनारा", "nameRegional": "નદીકિનારા", "code": "NDKN", "km": 28.2, "type": "wayside",
       "platformLengthM": 600, "buildingSide": -1,
       "lines": [],
-      "platforms": [ { "num": "1", "from": -4.4, "to": -10.4, "lines": ["DOWN"] }, { "num": "2", "from": 4.4, "to": 10.4, "lines": ["UP"] } ],
+      "platforms": [{"num": "1", "from": -4.4, "to": -10.4, "lines": ["DOWN"]},{"num": "2", "from": 4.4, "to": 10.4, "lines": ["UP"]}],
       "crossovers": [ { "km": 28.55, "fromLine": "DOWN", "toLine": "UP" } ]
     },
     {
       "name": "Ghatmatha", "nameHi": "घाटमाथा", "nameRegional": "ಘಾಟಮಾಥಾ", "code": "GHTM", "km": 40.8, "type": "wayside",
       "platformLengthM": 600, "buildingSide": 1,
       "lines": [],
-      "platforms": [ { "num": "1", "from": 4.4, "to": 9.9, "lines": ["UP"] }, { "num": "2", "from": -4.4, "to": -9.9, "lines": ["DOWN"] } ],
+      "platforms": [{"num": "1", "from": 4.4, "to": 9.9, "lines": ["UP"]},{"num": "2", "from": -4.4, "to": -9.9, "lines": ["DOWN"]}],
       "crossovers": [ { "km": 41.15, "fromLine": "DOWN", "toLine": "UP" } ]
     },
     {
