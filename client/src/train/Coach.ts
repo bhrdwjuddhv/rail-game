@@ -153,6 +153,8 @@ const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0)
  * Each vehicle hangs between its two bogies, so it swings correctly on curves.
  */
 export class TrainView {
+  /** simulation time (s): lamps blink by it, so they stop when the world is frozen */
+  static clock = 0;
   readonly group = new THREE.Group();
   /** the leading loco section (cab, lights, cameras) */
   readonly loco: LocoModel;
@@ -241,6 +243,11 @@ export class TrainView {
   }
 
   /** Position everything for a train whose head is at headKm. */
+  /** coach interior lights (multiplies the night light): Record Mode turns them off per train */
+  interior = 1;
+  /** Its own coach materials, so its interior lights are not shared with other trains of the same stock (Record Mode). */
+  ownMaterials() { for (const s of this.bodies.values()) s.body.material = (s.body.material as THREE.Material).clone(); }
+
   update(route: Route, headKm: number, offsetAt: (km: number) => number, distanceM: number, nightLight: number) {
     const head = this.railFrame(route, headKm, offsetAt, _f1);
     const ox = head.x, oy = head.y, oz = head.z;
@@ -298,14 +305,14 @@ export class TrainView {
           this.wheels.setMatrixAt(wi++, _m.copy(_m2).multiply(_m3));
         }
       }
-      (set.body.material as THREE.MeshStandardMaterial).emissiveIntensity = nightLight;
+      (set.body.material as THREE.MeshStandardMaterial).emissiveIntensity = nightLight * this.interior;
     }
     for (const s of this.bodies.values()) { s.body.instanceMatrix.needsUpdate = true; s.under.instanceMatrix.needsUpdate = true; }
     if (this.tailLamp) {
       // on the rear headstock, left side, about 1.3 m up; 1 flash a second
       const m = this.vehicleMatrices[vs.length - 1], last = vs[vs.length - 1];
       this.tailLamp.position.set(-(last.length / 2) + 0.05, 1.35, -0.9).applyMatrix4(m).sub(this.group.position);
-      this.lampT = (performance.now() / 1000) % 1;
+      this.lampT = TrainView.clock % 1;
       (this.tailLamp.material as THREE.MeshBasicMaterial).color.setRGB(this.lampT < 0.35 ? 4 : 0.25, 0, 0);
     }
     this.bogies.instanceMatrix.needsUpdate = true;

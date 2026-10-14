@@ -125,10 +125,14 @@ export function applyPreset(q: Quality) {
  */
 const MOBILE_CAPS = { drawDistance: 2400, sceneryRange: 300, impostorRange: 1100, grassDensity: 0.5, grassRadius: 55 };
 
+/** Record Mode's "highest quality": a preset for this session only (never saved) */
+export const qualityOverride: { q: Quality | null } = { q: null };
+
 /** Effective preset = chosen quality with user overrides (capped on touch devices). */
 export function effective(): QualityPreset {
   const s = settings.get();
-  const p = { ...PRESETS[s.quality], renderScale: s.renderScale, shadows: s.shadows, drawDistance: s.drawDistance, bloom: s.bloom };
+  const o = qualityOverride.q;
+  const p = o ? { ...PRESETS[o] } : { ...PRESETS[s.quality], renderScale: s.renderScale, shadows: s.shadows, drawDistance: s.drawDistance, bloom: s.bloom };
   if (isTouch) {
     p.drawDistance = Math.min(p.drawDistance, MOBILE_CAPS.drawDistance);
     p.sceneryRange = Math.min(p.sceneryRange, MOBILE_CAPS.sceneryRange);

@@ -61,6 +61,9 @@ export class Weather {
     if (instant) Object.assign(this.p, this.target, { haze: this.target.haze.clone() });
   }
 
+  /** Record Mode: rain strength, wind, cloud cover and a fog multiplier held over the preset */
+  readonly override: { rain?: number; wind?: number; cloud?: number; fog?: number } = {};
+
   /** Adhesion coefficient for the given loco data. */
   adhesion(a: { dry: number; wet: number; damp: number }) { return a[this.p.adhesion]; }
 
@@ -74,6 +77,12 @@ export class Weather {
     P.fog = lerp(P.fog, T.fog, k); P.cloud = lerp(P.cloud, T.cloud, k); P.overcast = lerp(P.overcast, T.overcast, k);
     P.rain = lerp(P.rain, T.rain, k); P.wind = lerp(P.wind, T.wind, k); P.lightning = T.lightning; P.adhesion = T.adhesion;
     P.haze.lerp(T.haze, k);
+    // Record Mode's fine control over the preset
+    const o = this.override;
+    if (o.rain !== undefined) P.rain = o.rain;
+    if (o.wind !== undefined) P.wind = o.wind;
+    if (o.cloud !== undefined) P.cloud = o.cloud;
+    if (o.fog !== undefined) P.fog = T.fog * o.fog;
 
     // lightning: random double flashes
     this.flash = Math.max(0, this.flash - dt * 4);

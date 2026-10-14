@@ -6,6 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import type { Pass } from 'three/addons/postprocessing/Pass.js';
 import type { Quality } from './Settings';
 import { prof } from './Profiler';
 
@@ -105,6 +106,21 @@ export class RenderSystem {
     if (this.bloomPass) this.bloomPass.strength = strength;
   }
 
+  /** Record Mode's film passes (classic renderer only): `pre` on the scene before bloom (focus, outline, motion blur), `post` after the output (grade, letterbox) */
+  private pre: Pass[] = [];
+  private post: Pass[] = [];
+  setFilmPasses(pre: Pass[], post: Pass[]) {
+    const c = this.composer;
+    if (!c || !this.bloomPass) return false;
+    for (const p of [...this.pre, ...this.post]) c.removePass(p);
+    this.pre = pre; this.post = post;
+    const at = c.passes.indexOf(this.bloomPass);
+    pre.forEach((p, i) => c.insertPass(p, at + i));
+    for (const p of post) c.addPass(p);
+    this.resizeComposer();
+    return true;
+  }
+
   setMaxPixelRatio(r: number) { this.maxPixelRatio = r; }
   setRenderScale(scale: number) {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.maxPixelRatio) * scale);
@@ -130,7 +146,8 @@ export class RenderSystem {
     if (this.kind === 'webgl') {
       (this.renderer.info as { reset(): void }).reset();
       const q = this.beginGpuTimer();
-      if (this.bloomOn && this.composer) this.composer.render();
+      const film = this.pre.length + this.post.length > 0;
+      if (this.composer && (this.bloomOn || film)) { this.bloomPass!.enabled = this.bloomOn; this.composer.render(); }
       else this.renderer.render(this.scene, this.camera);
       this.endGpuTimer(q);
       return;

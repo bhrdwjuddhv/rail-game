@@ -18,7 +18,10 @@ import { textures } from './core/TextureLibrary';
 import { prof } from './core/Profiler';
 import { bus } from '@rail/shared/events';
 import type { RenderSystem } from './core/Renderer';
-import { Action, effective, recordScore, settings, trafficLevel } from './core/Settings';
+import { Action, effective, recordScore, settings, trafficLevel, TRAFFIC_LEVELS } from './core/Settings';
+import { NO_OVERRIDES, type RecordHost, type RecordRunner } from './record/host';
+import { qualityOverride } from './core/Settings';
+import type { RecordMode } from './record/RecordMode';
 import { formatClock, KMPH, parseClock } from '@rail/shared/util';
 import { COACHES, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
 import { Lighting } from './environment/Lighting';
@@ -156,6 +159,31 @@ export class Game {
   private sameLine: TrafficManager | null = null;
   /** the traffic setting the AI traffic was started with (changed in Settings: restarted) */
   private trafficSetting = -1;
+  /** Record Mode (loaded on first use, desktop only): what it overrides, the open studio, and its trains' runner */
+  readonly rec = NO_OVERRIDES();
+  private record: RecordMode | null = null;
+  private recordRunner: RecordRunner | null = null;
+  /** Record Mode was used: no scoring for the rest of the run */
+  private recordUsed = false;
+  /** game keys drive the player's train (off in Record Mode unless "Drive this train") */
+  private kbDriving = true;
+  /** Record Mode from the main menu: no train of yours (it stands hidden, outside the signalling) */
+  private playerHidden = false;
+  private setPlayerHidden(on: boolean) {
+    if (on === this.playerHidden) return;
+    this.playerHidden = on;
+    this.trainView.group.visible = !on;
+    if (on) { this.lc.remove(this.player); this.dispatcher.resetTrain('player'); }
+    else { this.lc.add(this.player); this.pausedNeedsRender = true; }
+  }
+  /** time warp asked for by a station stop (skipping a wait); the engine runs at warp x Record Mode's world speed */
+  private warp = 1;
+
+  /** AI traffic level in force: Record Mode's, or the Settings one (null: none) */
+  private trafficLevelNow() {
+    const o = this.rec.traffic;
+    return o === null ? trafficLevel() : o < 0 ? null : TRAFFIC_LEVELS[Math.min(3, o)];
+  }
 
   /** The rail traffic setting changed: the AI traffic starts over at the new level. */
   private restartTraffic() {
@@ -374,12 +402,12 @@ export class Game {
     this.stop = new StationStop({
       route: () => this.line, consist: this.consist, coachTypes: COACHES, trainView: () => this.trainView, plan: this.plan, endStation: s.endStation,
       headKm: () => this.dyn.headKm, speed: () => this.dyn.speed, offsetAt: km => this.path.offsetAt(km),
-      clock: () => this.time.seconds, setClock: v => { this.time.seconds = v; }, setWarp: x => { this.engine.speed = x; },
+      clock: () => this.time.seconds, setClock: v => { this.time.seconds = v; }, setWarp: x => { this.warp = x; this.engine.speed = x * this.rec.scale; },
       signalAhead: () => this.block.nextSignal(this.dyn.headKm, this.path.offsetAt(this.dyn.headKm), true, this.pathOffset)?.aspect ?? null,
       approaching: st => this.trainToPass(st),
       message: (text, kind = 'info') => bus.emit('message', { text, kind, ms: 4000 }),
-      whistle: () => { if (this.audio && this.shots) this.shots.guardWhistle(this.audio.buses.env); },
-      doorSound: () => { if (this.audio && this.shots) this.shots.doors(this.audio.buses.env); },
+      whistle: () => { if (this.audio && this.shots) this.shots.guardWhistle(this.audio.buses.station); },
+      doorSound: () => { if (this.audio && this.shots) this.shots.doors(this.audio.buses.station); },
       auto: () => this.god.eff.autoDrive, scene: this.world,
     }, ui, () => (isTouch ? null : settings.get().keys.doors.replace(/^Key/, '')));
     this.offs.push(() => this.stop.dispose());
@@ -532,7 +560,9 @@ export class Game {
     const cfg = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
     for (const ch of this.scenarioId + other.route.running.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     this.trafficSetting = settings.get().traffic;
-    const tm = new TrafficManager(other, { ...cfg, seed, headwayS: cfg.headwayS * trafficLevel().oncoming });
+    const level = this.trafficLevelNow();
+    if (!level) return; // Record Mode: traffic off
+    const tm = new TrafficManager(other, { ...cfg, seed, headwayS: cfg.headwayS * level.oncoming });
     tm.onSpawn = t => this.addAI(t, other.route);
     tm.onDespawn = t => this.removeAI(t);
     this.oncoming = tm;
@@ -548,8 +578,8 @@ export class Game {
     this.sameLine?.reset();
     this.sameLine = null;
     // own-line traffic: always in Free Roam; in scenarios from Medium traffic up
-    const level = trafficLevel();
-    if (this.bench || (this.scenario.rules && !level.inScenarios)) return;
+    const level = this.trafficLevelNow();
+    if (!level || this.bench || (this.scenario.rules && !level.inScenarios)) return;
     let seed = 11;
     for (const ch of this.scenarioId + this.lc.route.running.id + 'same') seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     const base = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
@@ -681,7 +711,7 @@ export class Game {
     }
   }
 
-  async begin(opts: { tutorial?: boolean } = {}) {
+  async begin(opts: { tutorial?: boolean; record?: boolean } = {}) {
     enterGameScreen(); // phones: fullscreen + landscape lock, inside the Start tap
     if (this.audio) {
       this.audio.resume();
@@ -716,6 +746,8 @@ export class Game {
     bus.emit('message', { text: isTouch ? 'Prepare the loco: raise the pantograph (bottom bar), close the main breaker (\u22ef), reverser F, then the BRAKE lever up and THROTTLE up.' : 'Prepare the loco: P pantograph, O main breaker, ; release brakes, W reverser forward. F1 for help.', kind: 'info', ms: 12000 });
     if (s.timetable[0]?.dep) bus.emit('message', { text: `Departure ${s.timetable[0].dep} from ${this.route.station(s.timetable[0].station)?.name}. Wait for the starter signal.`, kind: 'info', ms: 12000 });
     this.applyGod();
+    // started from the main menu's Record Mode: straight into the studio, no train of yours
+    if (opts.record && !isTouch && !this.bench) { this.setPlayerHidden(true); await this.enterRecord(); return; }
     if (!this.bench && (opts.tutorial || tutorialPrefs.shouldAutoStart())) await this.startTutorial();
   }
 
@@ -729,7 +761,7 @@ export class Game {
     this.touch?.setBare(e.hideHud);
     this.profile.canvas.style.display = e.hideHud || !this.hud.visible ? 'none' : '';
     this.minimap.canvas.style.display = e.hideHud ? 'none' : '';
-    this.scoring.enabled = !g.usedThisRun && !this.tutorialPractice;
+    this.scoring.enabled = !g.usedThisRun && !this.tutorialPractice && !this.recordUsed;
     if (g.active && e.weather && e.weather !== this.weather.id) this.weather.set(e.weather, true);
     this.syncStops();
     // manual points: the player's routes are not set automatically (existing ones are cancelled)
@@ -928,7 +960,7 @@ export class Game {
 
   /** A billboard was clicked or tapped: pause and show its card (only its "Visit website" opens the link). */
   private showAd(c: ClickedAd) {
-    if (this.ended || !this.started || this.adCard.visible) return;
+    if (this.ended || !this.started || this.adCard.visible || this.record) return;
     if (!this.engine.paused) {
       this.adPaused = true;
       this.engine.paused = true;
@@ -1231,25 +1263,28 @@ export class Game {
     const s = settings.get(), p = effective();
     // rail traffic changed in Settings (running game): the AI traffic starts over at the new level
     if (this.trafficSetting >= 0 && s.traffic !== this.trafficSetting) this.restartTraffic();
-    this.rs.setRenderScale(s.renderScale);
     this.rs.setBloom(s.bloom);
     this.lighting.applyQuality(p);
     wind.setGrassFade(p.grassRadius);
-    this.rs.setMaxPixelRatio(s.maxPixelRatio);
-    this.rs.setRenderScale(s.renderScale);
-    this.appliedScale = s.renderScale;
-    this.adaptiveRes.scale = s.renderScale;
+    this.rs.setMaxPixelRatio(this.rec.output ? 1 : s.maxPixelRatio);
+    this.rs.setRenderScale(this.renderScale());
+    this.appliedScale = this.renderScale();
+    this.adaptiveRes.scale = this.appliedScale;
     this.cameras.camera.far = p.drawDistance + 400;
     this.audio?.setVolumes(s.volumes);
     if (!this.scenario.rules) this.time.scale = this.bench ? 0 : s.dayNightSpeed;
   }
 
+  /** render scale in force: a fixed Record Mode output size renders at exactly its pixels */
+  private renderScale() { return this.rec.output ? 1 : this.rec.renderScale ?? settings.get().renderScale; }
+
   private pausedNeedsRender = false;
   private onResize = () => {
     syncViewport();
     this.pausedNeedsRender = true;
-    this.rs.resize(innerWidth, innerHeight);
-    this.cameras.camera.aspect = innerWidth / innerHeight;
+    const w = this.rec.output?.w ?? innerWidth, h = this.rec.output?.h ?? innerHeight;
+    this.rs.resize(w, h);
+    this.cameras.camera.aspect = w / h;
     this.cameras.camera.updateProjectionMatrix();
   };
 
@@ -1325,9 +1360,10 @@ export class Game {
     this.rs.renderer.domElement.classList.remove('paused');
     if (this.tutorialCard) this.tutorialCard.el.hidden = false;
     this.engine.paused = false;
-    this.keyboard.enabled = true;
+    this.keyboard.enabled = this.kbDriving;
     this.mouse.enabled = true;
-    this.audio?.fadeIn(settings.get().volumes.master);
+    if (!this.record) this.audio?.fadeIn(settings.get().volumes.master);
+    else this.record.resumed();
   }
 
   private showPauseMenu() {
@@ -1337,6 +1373,7 @@ export class Game {
       resume: () => this.resume(),
       tutorial: () => this.startTutorial(),
       godMode: () => this.openGodMode(),
+      record: this.record ? () => this.record?.askExit() : undefined,
       restart: () => this.restart(),
       quit: () => Game.quit(),
     });
@@ -1362,7 +1399,7 @@ export class Game {
   }
 
   restart() {
-    try { sessionStorage.setItem('railbharat.autostart', JSON.stringify({ id: this.scenarioId, overrides: this.overrides })); } catch { /* ignore */ }
+    try { sessionStorage.setItem('railbharat.autostart', JSON.stringify({ id: this.scenarioId, overrides: this.overrides, record: !!this.record })); } catch { /* ignore */ }
     location.reload();
   }
   overrides: ScenarioOverrides = {};
@@ -1413,10 +1450,19 @@ export class Game {
     const e = this.god.eff;
     d.massScale = e.massMultiplier; d.powerScale = e.powerMultiplier; d.ignoreMaxSpeed = e.unlimitedSpeed; d.noSlip = e.noWheelSlip;
     d.brakes.instant = e.instantBrakes; d.brakes.infiniteAir = e.infiniteAir;
-    s.vigilanceEnabled = e.vigilance; s.ignoreMaxSpeed = e.unlimitedSpeed;
-    for (const l of this.ctl.lines) l.block.forceGreen = l === this.lc && e.forceGreen;
-    this.time.scale = this.god.active ? (e.freezeTime ? 0 : e.timeSpeed) : this.baseTimeScale;
-    if (e.autoDrive || e.autoStopAtRed) {
+    s.vigilanceEnabled = e.vigilance && !this.record; s.ignoreMaxSpeed = e.unlimitedSpeed;
+    for (const l of this.ctl.lines) l.block.forceGreen = this.rec.forceGreen || (l === this.lc && e.forceGreen);
+    this.time.scale = this.rec.timeScale ?? (this.god.active ? (e.freezeTime ? 0 : e.timeSpeed) : this.baseTimeScale);
+    const pd = this.rec.playerDrive;
+    if (pd) {
+      // Record Mode: the player's train driven to its train settings
+      this.autoDriver.drive(dt, d, s, {
+        limitKmph: Math.min(pd.kmph, pd.obeyLimits ? limit : Infinity, this.consist.loco.maxSpeedKmph),
+        decel: { gentle: 0.35, normal: 0.55, aggressive: 0.85 }[pd.style],
+        nextStop: pd.obeySignals ? this.block.nextSignal(d.headKm, this.path.offsetAt(d.headKm), true, this.pathOffset) : null,
+        stationStopKm: null, hold: this.stop.holding, endKm: this.line.lengthKm - 0.04,
+      });
+    } else if (e.autoDrive || e.autoStopAtRed) {
       // auto-drive follows God Mode's rules: line limits off when they are not enforced, the train's real
       // braking with instant brakes, reds ignored when signals are not obeyed
       const free = !e.speedEnforcement || e.ignoreLineSpeed;
@@ -1448,6 +1494,7 @@ export class Game {
     for (const a of [...this.ai]) if (a.train.gone && !managed(a.train)) { this.ctl.of(a.route).remove(a.train); this.removeAI(a.train); }
     if (this.oncoming && !this.bench) this.oncoming.update(dt, this.oncoming.route.viewKm(this.line.canonicalKm(d.headKm)));
     if (this.sameLine) this.sameLine.update(dt, d.headKm);
+    this.recordRunner?.sim(dt);
 
     // wheel slip / coupler events
     const slip = d.traction.slipping;
@@ -1491,12 +1538,20 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
   private cameraContext(dt: number): CameraContext {
+    const tg = this.rec.cameraTarget?.();
+    if (tg) {
+      return {
+        dt, time: this.t, train: tg.view, route: tg.route, field: this.field, headKm: tg.headKm, speed: tg.speed,
+        lateralAccel: tg.speed * tg.speed * tg.route.alignment.curvatureAt(tg.headKm), slack: 0, jolt: 0, shake: 0,
+        eye: tg.eye, keys: c => this.keyboard.isDown(c), freeRange: Infinity,
+      };
+    }
     const v = this.dyn.speed;
     return {
       dt, time: this.t, train: this.trainView, route: this.line, field: this.field, headKm: this.dyn.headKm, speed: v,
       lateralAccel: v * v * this.line.alignment.curvatureAt(this.dyn.headKm), slack: this.dyn.slack, jolt: this.jolt, shake: this.shake,
       eye: this.cabEye(), keys: c => this.keyboard.isDown(c),
-      freeRange: this.god.eff.unlockFreeCamera ? Infinity : 4000,
+      freeRange: this.god.eff.unlockFreeCamera || this.record ? Infinity : 4000,
     };
   }
 
@@ -1528,6 +1583,10 @@ export class Game {
     this.updatePathLookahead();
     const d = this.dyn, s = this.sys;
     const night = this.lighting.nightLight;
+    // Record Mode: frozen (0) or slow / fast motion; the world's own motion (rain, smoke, wind, people, water) follows
+    this.engine.speed = this.warp * this.rec.scale;
+    const wdt = dt * this.rec.scale;
+    TrainView.clock = this.t;
 
     // trains
     this.trainView.update(this.line, d.headKm, km => this.path.offsetAt(km), d.odometer, night);
@@ -1545,12 +1604,13 @@ export class Game {
       a.view.loco.setPantograph(1);
       a.view.loco.setLights(night > 0.3 || this.weather.p.fog > 0.004 ? 2 : 1, true, false, this.t, 1);
     }
-    this.updatePassing(dt);
-    this.updateSmoke(dt);
+    if (!this.playerHidden) { this.updatePassing(wdt); this.updateSmoke(wdt); }
+    this.recordRunner?.frame(dt, wdt);
 
     // camera
     const ctx = this.cameraContext(dt);
     this.cameras.update(ctx);
+    this.recordRunner?.afterCamera?.(dt);
     this.syncRenderCamera();
     const cam = this.cameras.camera;
     const inCab = !!this.cameras.mode.inCab;
@@ -1601,8 +1661,8 @@ export class Game {
     for (const sv of this.stations.values()) for (const r of sv.roofs) if (Math.hypot(r.x - cam.position.x, r.z - cam.position.z) < r.halfLen + 60) roofs.push(r);
     const covered = roofs.length ? (x: number, y: number, z: number) => underRoof(roofs, x, y, z) : undefined;
     this.sheltered = !!tunnelKm || !!covered?.(cam.position.x, cam.position.y, cam.position.z);
-    this.weather.update(dt, cam.position, inCab ? speedVec : new THREE.Vector3(), inCab ? 3.2 : 0, !!tunnelKm, covered);
-    wind.update(dt, this.weather.p.wind);
+    this.weather.update(wdt, cam.position, inCab ? speedVec : new THREE.Vector3(), inCab ? 3.2 : 0, !!tunnelKm, covered);
+    wind.update(wdt, this.weather.p.wind);
     this.sky.group.scale.setScalar((cam.far * 0.85) / 2000);
     // the region around the camera: its air (haze, tint, clouds) and its far horizon
     const regions = this.route.regionWeights(this.cameraKm());
@@ -1613,7 +1673,7 @@ export class Game {
       if (r.air?.tint) { air.tint.add(this.tmpColor.set(r.air.tint).multiplyScalar(w)); air.tintW += w; }
     }
     if (air.tintW > 0) air.tint.multiplyScalar(1 / air.tintW);
-    this.sky.update(dt, this.rcam.position, this.time, this.weather, air.clouds);
+    this.sky.update(wdt, this.rcam.position, this.time, this.weather, air.clouds);
     const lampSpots: THREE.Vector3[] = [];
     for (const st of this.stations.values()) lampSpots.push(...st.lampSpots);
     this.lighting.update(inCab ? cam.position : this.trainView.group.position, this.time, this.weather, this.sky, settings.get().fogMultiplier, lampSpots, cam.position, { haze: air.haze, tint: air.tintW > 0 ? air.tint : null });
@@ -1624,14 +1684,14 @@ export class Game {
     // bloom only where it shows (lamps at night, glow in fog, tunnel mouths): in daylight it costs a full-screen
     // blur chain for almost nothing
     const glow = night > 0.12 || this.weather.p.fog > 0.004 || this.lighting.tunnel > 0.05;
-    this.rs.setBloom(settings.get().bloom && glow, 0.25 + night * 0.35 + Math.min(0.4, this.weather.p.fog * 20));
+    this.rs.setBloom(settings.get().bloom && glow, (0.25 + night * 0.35 + Math.min(0.4, this.weather.p.fog * 20)) * this.rec.glow);
     this.rs.renderer.toneMappingExposure = 1.0 + night * 0.35;
     const headlightOn = s.headlight > 0;
-    lm.setBeam(headlightOn ? Math.min(0.12, (night * 0.06 + this.weather.p.fog * 3)) * (s.headlight === 2 ? 1 : 0.5) : 0);
+    lm.setBeam(headlightOn ? Math.min(0.12, (night * 0.06 + this.weather.p.fog * 3)) * (s.headlight === 2 ? 1 : 0.5) * this.rec.beam : 0);
 
     // cab
     if (inCab) {
-      this.cab.update(dt, this.sheltered ? 0 : this.weather.p.rain, d.speed, s.wipers);
+      this.cab.update(wdt, this.sheltered ? 0 : this.weather.p.rain, d.speed, s.wipers);
       this.cab.setCabLight(s.cabLight);
       const ns = this.nextSignal();
       const units = settings.get().units;
@@ -1667,16 +1727,16 @@ export class Game {
         this.addCompiled(v.group, () => true, !this.started); // built 3 km ahead: shaders compile in the background
       }
       const dist = v.position.distanceTo(cam.position);
-      v.group.visible = dist < drawD;
+      v.group.visible = dist < drawD && !this.rec.hideSignals;
       if (v.group.visible) v.update(cam.position, night, this.lighting.fog.density, blink);
     }
     for (const sv of this.switchViews) sv.update();
     for (const st of this.stations.values()) st.update(this.time.seconds, this.t, st.centre.distanceTo(cam.position) < 600);
-    this.traffic.update(dt, cam.position);
-    this.billboards.update(dt, this.lighting.nightLight);
-    this.stop.update(dt);
-    if (this.people) { const pc = this.peopleContext(); this.people.update(dt, cam.position, pc.near, pc.player); }
-    this.waterfalls.update(dt, this.weather.p.rain > 0.3 || this.route.regionAt(this.cameraKm()).sideSlope > 0);
+    this.traffic.update(wdt, cam.position);
+    this.billboards.update(wdt, this.lighting.nightLight);
+    this.stop.update(wdt);
+    if (this.people) { const pc = this.peopleContext(); this.people.update(wdt, cam.position, pc.near, pc.player); }
+    this.waterfalls.update(wdt, this.weather.p.rain > 0.3 || this.route.regionAt(this.cameraKm()).sideSlope > 0);
 
     prof.end('scenery');
     // station announcements as the train approaches
@@ -1690,7 +1750,7 @@ export class Game {
     }
 
     // audio
-    this.updateAudio(dt);
+    this.updateAudio(wdt);
 
     // UI
     if (this.tutorial) {
@@ -1719,13 +1779,14 @@ export class Game {
     // dynamic resolution, from the last frame's time (not in benchmarks: they measure a fixed setup).
     // Changed before rendering: resizing clears the canvas, so a change after it showed a blank frame.
     const st = settings.get();
-    if (st.adaptiveQuality && !this.bench) {
+    if (st.adaptiveQuality && !this.bench && !this.rec.noAdaptive) {
       const sc = this.adaptiveRes.update(this.engine.rawMs, this.rs.gpuMs, st.renderScale, dt);
       if (Math.abs(sc - this.appliedScale) > 1e-3) { this.appliedScale = sc; this.rs.setRenderScale(sc); }
-    } else if (Math.abs(st.renderScale - this.appliedScale) > 1e-3) { this.appliedScale = st.renderScale; this.rs.setRenderScale(st.renderScale); }
+    } else if (Math.abs(this.renderScale() - this.appliedScale) > 1e-3) { this.appliedScale = this.renderScale(); this.rs.setRenderScale(this.appliedScale); }
     prof.begin('render');
     this.rs.render();
     prof.end('render');
+    this.recordRunner?.afterRender?.();
     const c = prof.counters;
     c.km = this.line.canonicalKm(d.headKm); c.tiles = this.chunks.tileCount; c.trackChunks = this.trackChunks.size; c.grass = this.chunks.grassCount; c.props = this.chunks.propCount;
     prof.frame(this.engine.rawMs);
@@ -1949,7 +2010,8 @@ export class Game {
     if (!this.audio || !this.trainAudio) return;
     const cam = this.cameras.camera;
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
-    this.audio.setListener(cam.position.x, cam.position.y, cam.position.z, fwd.x, fwd.y, fwd.z);
+    const lp = this.rec.listener?.() ?? cam.position;
+    this.audio.setListener(lp.x, lp.y, lp.z, fwd.x, fwd.y, fwd.z);
     const d = this.dyn;
     const head = d.headKm;
     const st = this.line.structureAt(head);
@@ -1967,9 +2029,10 @@ export class Game {
       }
     }
     bogies.sort((a, b) => Math.hypot(a.x - cam.position.x, a.z - cam.position.z) - Math.hypot(b.x - cam.position.x, b.z - cam.position.z));
+    const quiet = this.playerHidden; // no train of yours in the studio: nothing of it is heard
     this.trainAudio.update({
-      speedKmph: d.speedKmph, amps: d.traction.motorCurrent, vcb: this.sys.isDiesel ? this.sys.engine === 'running' : this.sys.vcb, compressor: d.brakes.compressorOn,
-      engine: this.sys.isDiesel ? { rpm: this.sys.engineRpm, load: (d.traction as DieselTraction).load, cranking: this.sys.engine === 'cranking' } : undefined,
+      speedKmph: quiet ? 0 : d.speedKmph, amps: quiet ? 0 : d.traction.motorCurrent, vcb: !quiet && (this.sys.isDiesel ? this.sys.engine === 'running' : this.sys.vcb), compressor: !quiet && d.brakes.compressorOn,
+      engine: this.sys.isDiesel && !quiet ? { rpm: this.sys.engineRpm, load: (d.traction as DieselTraction).load, cranking: this.sys.engine === 'cranking' } : undefined,
       curvature: this.line.alignment.curvatureAt(head), steelBridge: st?.type === 'bridge' && st.style !== 'arch-viaduct', tunnel: st?.type === 'tunnel',
       slipping: d.traction.slipping, bpRate: this.bpRate, bc: d.brakes.locoBC, overspeed: this.sys.overspeed,
       loco: locoPos, bogies: bogies.slice(0, 10), dt,
@@ -2068,7 +2131,7 @@ export class Game {
   }
 
   private onEnd(success: boolean, reason: string) {
-    if (this.ended) return;
+    if (this.ended || this.record) return;
     this.ended = true;
     if (this.scenario.rules && this.scoring.enabled) recordScore(this.scenarioId, this.scoring.total, this.scoring.grade);
     setTimeout(() => {
@@ -2079,6 +2142,86 @@ export class Game {
         name: this.scenario.name, distanceKm: this.dyn.odometer / 1000, durationS: this.time.seconds - this.startClock,
       }, { restart: () => this.restart(), quit: () => Game.quit() });
     }, success ? 2500 : 1500);
+  }
+
+  // ------------------------------------------------------------------ Record Mode
+  /** Open Record Mode (pause menu, desktop): its code loads now, the first time. */
+  private async enterRecord() {
+    if (isTouch || this.record || this.ended) return;
+    this.menus.loading('Opening Record Mode', 0.6);
+    const { RecordMode } = await import('./record/RecordMode');
+    this.recordUsed = true;
+    this.scoring.enabled = false;
+    // trains kept from an earlier session come back under the studio's control
+    const kept = this.recordRunner;
+    this.record = new RecordMode(this.recordHost(), this.menus, kept);
+    this.recordRunner = this.record;
+    this.resume();
+  }
+
+  /** What Record Mode may read and change. */
+  private recordHost(): RecordHost {
+    const g = this;
+    return {
+      scene: this.scene, world: this.world, origin: this.origin, rcam: this.rcam, cameras: this.cameras, canvas: this.rs.renderer.domElement, rs: this.rs,
+      field: this.field, railway: this.railway, route: this.route, ctl: this.ctl, time: this.time, weather: this.weather, lighting: this.lighting,
+      audio: this.audio, trainAudio: () => this.trainAudio, rec: this.rec, scenarioId: this.scenarioId,
+      keys: c => this.keyboard.isDown(c),
+      cameraContext: dt => this.cameraContext(dt),
+      addCamera: m => this.cameras.register(m),
+      player: {
+        view: this.trainView, consist: this.consist, sys: this.sys,
+        route: () => g.line, headKm: () => g.dyn.headKm, speed: () => g.dyn.speed, offsetAt: km => g.path.offsetAt(km),
+        setSpeedNow: kmph => {
+          g.dyn.speed = kmph / 3.6;
+          // brakes off at once (the auto-driver holds the speed from here)
+          const b = g.dyn.brakes; b.handle = 1; b.er = 5; b.bp.fill(5); b.bc.fill(0);
+        },
+        toggleDoors: () => g.stop.toggle(),
+        hidden: () => g.playerHidden,
+        setHidden: on => g.setPlayerHidden(on),
+        startStation: () => g.scenario.start.atPlatform ?? null,
+        teleport: target => g.teleportTo(target),
+      },
+      ai: () => this.ai.filter(a => !a.train.gone),
+      addCompiled: (o, wanted) => this.addCompiled(o, wanted, false),
+      people: () => this.people,
+      roadTraffic: this.traffic.group, billboards: this.billboards.group,
+      stationCrowds: on => { if (this.people) this.people.group.visible = on; else for (const v of this.stations.values()) v.crowd.mesh.visible = on; },
+      setHours: h => { this.time.seconds = h * 3600; this.time.update(0); },
+      setWeather: id => this.weather.set(id, true),
+      restartTraffic: () => this.restartTraffic(),
+      setGameUi: visible => {
+        const hide = !visible || this.god.eff.hideHud;
+        this.hud.setHidden(hide);
+        this.profile.canvas.style.display = hide || !this.hud.visible ? 'none' : '';
+        this.minimap.canvas.style.display = hide ? 'none' : '';
+        this.vigPopup.el.hidden = !visible;
+        if (this.tutorialCard) this.tutorialCard.el.hidden = !visible;
+      },
+      setKeyboardDriving: on => { this.kbDriving = on; this.keyboard.enabled = on && !this.engine.paused; },
+      keep: r => { this.recordRunner = r; },
+      resize: () => this.onResize(),
+      applySettings: () => this.applySettings(),
+      setFpsCap: fps => { this.engine.minFrameMs = fps > 0 ? 1000 / fps : 0; },
+      frameMs: () => this.engine.rawMs,
+      requestRender: () => { this.pausedNeedsRender = true; },
+      paused: () => this.engine.paused,
+      pauseMenu: () => this.showPauseMenu(),
+      resume: () => this.resume(),
+      quit: () => Game.quit(),
+      exit: () => {
+        this.record = null;
+        Object.assign(this.rec, NO_OVERRIDES());
+        qualityOverride.q = null;
+        this.engine.minFrameMs = 0;
+        this.kbDriving = true;
+        this.keyboard.enabled = !this.engine.paused;
+        this.applySettings();
+        this.onResize();
+        this.restartTraffic();
+      },
+    };
   }
 
   /** Debug/test hook: lets automated checks read state. */

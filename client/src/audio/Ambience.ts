@@ -48,7 +48,7 @@ export class Ambience {
     this.fall.connect(this.fallPan);
     mk(a.noiseSource('brown'), 'lowpass', 420, 0.7, this.fall).gain.value = 1;
     mk(a.noiseSource('white'), 'bandpass', 1400, 0.6, this.fall).gain.value = 0.35;
-    this.crowdPan = a.panner('env', 25, 1.3);
+    this.crowdPan = a.panner('station', 25, 1.3);
     const babble = c.createGain(); babble.gain.value = 1;
     for (let i = 0; i < 4; i++) {
       const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 120 + i * 37;

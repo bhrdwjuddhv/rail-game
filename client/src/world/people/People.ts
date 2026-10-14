@@ -200,9 +200,11 @@ export class PeopleSystem {
     this.draw(cam);
   }
 
+  /** crowd size 0..1 of the budget (Record Mode) */
+  amount = 1;
   private wanted(st: StationInfo) {
-    if (st.servicePlatformM) return Math.max(2, Math.round(this.budget * 0.05)); // freight crossing: a few staff
-    return Math.round(this.budget * (st.type === 'halt' ? 0.35 : st.type === 'wayside' ? 0.7 : 1));
+    if (st.servicePlatformM) return Math.max(2, Math.round(this.budget * 0.05 * this.amount)); // freight crossing: a few staff
+    return Math.round(this.budget * this.amount * (st.type === 'halt' ? 0.35 : st.type === 'wayside' ? 0.7 : 1));
   }
 
   private platformsOf(st: StationInfo) {

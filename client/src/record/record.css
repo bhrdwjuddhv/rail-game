@@ -1,0 +1,88 @@
+/* Record Mode (loaded with it). Compact controls in a side panel; nothing here touches the game's own screens. */
+.rec-panel {
+  position: fixed; top: 10px; right: 10px; bottom: 10px; width: 380px; z-index: 30;
+  display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  font-size: 12.5px; line-height: 1.4; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.45);
+}
+.rec-panel[hidden] { display: none; }
+.rec-panel header { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-size: 14px; }
+.rec-panel header b { flex: 1; white-space: nowrap; font-size: 13.5px; }
+.rec-panel button { padding: 4px 9px; font-size: 12px; border-radius: 5px; background: #26303a; border-color: rgba(255, 255, 255, 0.16); }
+.rec-panel button:hover { background: #33404c; }
+.rec-panel button.on { background: #6b4c10; border-color: var(--accent); color: #fff; }
+.rec-panel button.primary { background: #1e5a8c; border-color: #3a8bd0; }
+.rec-panel .buttons { margin-top: 6px; gap: 6px; }
+.rec-panel .buttons:not(.vertical) button:last-child:not(:only-child) { background: #26303a; border-color: rgba(255, 255, 255, 0.16); }
+.rec-panel .buttons button.primary:last-child { background: #1e5a8c; }
+.rec-panel label { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.rec-panel label > input[type="range"] { flex: 1; min-width: 60px; }
+.rec-panel label output { min-width: 48px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.rec-panel select, .rec-panel input[type="number"], .rec-panel input:not([type]), .rec-panel input[type="text"] {
+  background: #1b232b; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px; font: inherit; max-width: 100%;
+}
+.rec-panel input[type="number"] { width: 70px; }
+.rec-panel .tog { display: grid; margin: 4px 0; }
+.rec-panel .note { color: var(--dim); margin: 4px 0; }
+.rec-panel .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 3px 0; }
+.rec-panel details { border-top: 1px solid var(--line); padding: 4px 0; }
+.rec-panel summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.rec-panel h4 { margin: 4px 0 6px; font-size: 14px; }
+.rec-panel h4 input { width: 100%; font-weight: 600; font-size: 13px; }
+.rec-panel h5 { margin: 10px 0 2px; font-size: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+.rec-time { display: flex; align-items: center; gap: 6px; padding: 0 12px; flex-wrap: wrap; }
+.rec-time label { flex: 1; margin: 0; }
+.rec-freeze.on { background: #1e6b3c !important; border-color: var(--green) !important; }
+.rec-presets { display: flex; gap: 3px; }
+.rec-keys { margin: 4px 12px 6px; color: var(--dim); font-size: 11px; }
+.rec-fps { color: #ffcf6a; font-size: 11px; }
+.rec-panel nav { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+.rec-panel nav button { flex: 1; border-radius: 6px 6px 0 0; border-bottom: none; background: transparent; }
+.rec-panel nav button.on { background: #26303a; color: var(--accent); border-color: var(--line); }
+.rec-body { flex: 1; overflow: auto; padding: 8px 12px 14px; }
+.rec-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 6px 0; }
+.rec-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px !important; text-align: left; border-left: 3px solid var(--liv) !important; }
+.rec-pick img { width: 100%; height: 44px; object-fit: cover; border-radius: 3px; }
+.rec-pick b { font-size: 11.5px; }
+.rec-pick small { color: var(--dim); font-size: 10px; }
+.rec-builder { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.rec-builder label { justify-content: space-between; }
+.rec-map { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--line); cursor: crosshair; margin-top: 6px; }
+.rec-list { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.rec-list th { text-align: left; color: var(--dim); font-weight: 500; font-size: 11px; }
+.rec-list td { padding: 3px 4px; border-top: 1px solid var(--line); vertical-align: middle; }
+.rec-list tr[data-i] { cursor: pointer; }
+.rec-list tr.sel td { background: rgba(232, 178, 58, 0.12); }
+.rec-list .dim { color: var(--dim); font-size: 11px; }
+.rec-list .acts { white-space: nowrap; text-align: right; }
+.rec-list .acts button { padding: 2px 5px; margin-left: 2px; }
+.rec-list .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.rec-card { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--c, var(--accent)); border-radius: 8px; background: rgba(255, 255, 255, 0.03); }
+.rec-path { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: rgba(0, 0, 0, 0.25); }
+.rec-modes { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.rec-modes.small button { font-size: 11px; padding: 3px 7px; }
+.rec-marks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.rec-marks .mark { border: 1px solid var(--line); border-radius: 5px; padding: 3px; text-align: center; }
+.rec-marks .mark img, .rec-marks .mark > span { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 3px; }
+.rec-marks .mark > span { background: #11161b; color: var(--dim); line-height: 3.4; font-size: 15px; }
+.rec-marks .mark button { padding: 1px 4px; font-size: 10.5px; margin: 2px 1px 0; }
+.rec-show { position: fixed; top: 12px; right: 12px; z-index: 30; padding: 6px 12px; font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.rec-show[hidden] { display: none; }
+.rec-toasts { position: fixed; left: 14px; bottom: 14px; z-index: 31; display: flex; flex-direction: column; gap: 6px; max-width: 460px; pointer-events: none; }
+.rec-toasts[hidden] { display: none; }
+.rec-toast { padding: 7px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 7px; font-size: 13px; transition: opacity 0.5s; }
+.rec-toast.warn { border-color: var(--accent); }
+.rec-toast.fade { opacity: 0; }
+.rec-hint { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 31; padding: 6px 14px; background: rgba(0, 0, 0, 0.6); border-radius: 20px; font-size: 13px; pointer-events: none; }
+.rec-banner { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 32; padding: 8px 16px; background: #6b4c10; border: 1px solid var(--accent); border-radius: 8px; font-size: 13.5px; pointer-events: none; }
+.rec-hint[hidden], .rec-banner[hidden], .rec-help[hidden], .rec-guides[hidden] { display: none; }
+.rec-help { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 33; width: min(560px, 92vw); padding: 16px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font-size: 13px; }
+.rec-help td { padding: 3px 10px 3px 0; vertical-align: top; }
+.rec-help td:first-child { white-space: nowrap; color: var(--accent); }
+.rec-guides { position: fixed; z-index: 20; pointer-events: none; }
+.rec-guides i { position: absolute; background: rgba(255, 255, 255, 0.35); }
+.rec-guides i.v { top: 0; bottom: 0; width: 1px; }
+.rec-guides i.h { left: 0; right: 0; height: 1px; }
+.rec-guides .box { position: absolute; top: 0; bottom: 0; border: 1px dashed rgba(255, 220, 120, 0.7); }
+body.rec-picking #game-canvas { cursor: crosshair; }
+body.rec-clean, body.rec-clean #game-canvas { cursor: none; }
+body.rec-fixed { background: #000; }

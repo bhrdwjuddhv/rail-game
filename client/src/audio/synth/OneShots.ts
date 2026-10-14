@@ -31,6 +31,8 @@ export class OneShots {
     return o;
   }
 
+  /** One two-tone horn blast of `len` seconds. */
+  blast(dest: AudioNode, len: number, vol = 0.3) { const t = this.a.now; this.tone(dest, t, 415, len, vol, 'square', 0.03); this.tone(dest, t, 520, len, vol * 0.7, 'square', 0.03); }
   click(dest: AudioNode, vol = 0.3) { const t = this.a.now; this.noiseBurst(dest, t, 0.012, 'highpass', 2500, 0.7, vol); this.tone(dest, t, 2200, 0.01, vol * 0.3, 'square'); }
   clunk(dest: AudioNode, vol = 0.5) { const t = this.a.now; this.noiseBurst(dest, t, 0.06, 'lowpass', 700, 0.7, vol); this.tone(dest, t, 110, 0.08, vol * 0.8); }
 

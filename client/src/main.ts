@@ -94,7 +94,7 @@ async function boot() {
   addEventListener('unhandledrejection', e => onFatal(e.reason));
 
   let running = false;
-  async function start(id: string, overrides: ScenarioOverrides, auto: boolean, opts: { tutorial?: boolean } = {}) {
+  async function start(id: string, overrides: ScenarioOverrides, auto: boolean, opts: { tutorial?: boolean; record?: boolean } = {}) {
     if (running) return;
     running = true;
     lockControlMode();
@@ -120,12 +120,12 @@ async function boot() {
   const rotate = new RotateScreen(document.body);
   rotate.onChange = portrait => { if (portrait) (window as any).__rail?.game?.pause(); };
 
-  let auto: { id: string; overrides: ScenarioOverrides } | null = null;
+  let auto: { id: string; overrides: ScenarioOverrides; record?: boolean } | null = null;
   try { auto = JSON.parse(sessionStorage.getItem('railbharat.autostart') ?? 'null'); } catch { /* ignore */ }
   const q = params.get('scenario');
   if (q && SCENARIOS[q]) auto = { id: q, overrides: params.get('loco') ? { loco: params.get('loco')! } : {} };
   if (benchCfg) auto = { id: benchAt.scenario, overrides: { time: '12:00', weather: 'clear', timeScale: 1, consist: { loco: 'ep-7', coaches: [{ type: 'general', count: 6 }, { type: 'sleeper', count: 6 }], loaded: true }, ...benchAt.overrides } };
-  if (auto && SCENARIOS[auto.id]) start(auto.id, auto.overrides, true);
+  if (auto && SCENARIOS[auto.id]) start(auto.id, auto.overrides, true, { record: !!auto.record });
   else menus.main();
 }
 

@@ -1,6 +1,7 @@
 import { makeImpulse, makeNoise } from './synth/Noise';
 
-export type Bus = 'train' | 'horn' | 'env' | 'ui';
+/** station: announcements, platform crowds, guard's whistle, doors (follows the Environment volume unless Record Mode mixes it) */
+export type Bus = 'train' | 'horn' | 'env' | 'station' | 'ui';
 
 /**
  * Web Audio mixer: per-category buses -> master, an "exterior" low-pass that
@@ -26,13 +27,24 @@ export class AudioEngine {
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -12; comp.ratio.value = 6;
     this.master.connect(comp).connect(c.destination);
-    this.buses = { train: c.createGain(), horn: c.createGain(), env: c.createGain(), ui: c.createGain() };
+    this.buses = { train: c.createGain(), horn: c.createGain(), env: c.createGain(), station: c.createGain(), ui: c.createGain() };
+    // every source is tracked (weakly) so Record Mode's slow motion can lower the pitch of what is playing
+    const track = <T extends AudioBufferSourceNode | OscillatorNode>(n: T) => {
+      if (this.cents) n.detune.value += this.cents;
+      const ref = new WeakRef(n);
+      this.sources.add(ref);
+      n.addEventListener('ended', () => this.sources.delete(ref));
+      return n;
+    };
+    const buf = c.createBufferSource.bind(c), osc = c.createOscillator.bind(c);
+    c.createBufferSource = () => track(buf());
+    c.createOscillator = () => track(osc());
     this.exterior = c.createBiquadFilter();
     this.exterior.type = 'lowpass';
     this.exterior.frequency.value = 20000;
     this.exteriorGain = c.createGain();
     this.exterior.connect(this.exteriorGain).connect(this.master);
-    for (const k of ['train', 'horn', 'env'] as Bus[]) this.buses[k].connect(this.exterior);
+    for (const k of ['train', 'horn', 'env', 'station'] as Bus[]) this.buses[k].connect(this.exterior);
     this.buses.ui.connect(this.master);
     this.white = makeNoise(c, 'white');
     this.brown = makeNoise(c, 'brown');
@@ -61,12 +73,23 @@ export class AudioEngine {
   }
   get now() { return this.ctx.currentTime; }
 
-  setVolumes(v: { master: number; train: number; horn: number; env: number; ui: number }) {
+  private sources = new Set<WeakRef<AudioBufferSourceNode | OscillatorNode>>();
+  private cents = 0;
+  /** Playback rate of everything (Record Mode slow motion): 0.5 = an octave down. */
+  setRate(rate: number) {
+    const cents = 1200 * Math.log2(Math.max(0.05, rate)), d = cents - this.cents;
+    this.cents = cents;
+    if (Math.abs(d) < 1e-3) return;
+    for (const ref of this.sources) { const n = ref.deref(); if (n) n.detune.value += d; else this.sources.delete(ref); }
+  }
+
+  setVolumes(v: { master: number; train: number; horn: number; env: number; ui: number; station?: number }) {
     const t = this.now;
     this.master.gain.setTargetAtTime(v.master, t, 0.05);
     this.buses.train.gain.setTargetAtTime(v.train, t, 0.05);
     this.buses.horn.gain.setTargetAtTime(v.horn, t, 0.05);
     this.buses.env.gain.setTargetAtTime(v.env, t, 0.05);
+    this.buses.station.gain.setTargetAtTime(v.station ?? v.env, t, 0.05);
     this.buses.ui.gain.setTargetAtTime(v.ui, t, 0.05);
   }
 

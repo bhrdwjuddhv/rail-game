@@ -12,10 +12,12 @@ import CREDITS from '../../../data/credits.json';
 export interface PauseCallbacks {
   title: string; godActive: boolean;
   resume(): void; tutorial(): void; godMode(): void; restart(): void; quit(): void;
+  /** leave Record Mode (shown only while it is open; it starts from the main menu) */
+  record?: () => void;
 }
 
 export interface MenuCallbacks {
-  start(scenarioId: string, o: ScenarioOverrides, opts?: { tutorial?: boolean }): void;
+  start(scenarioId: string, o: ScenarioOverrides, opts?: { tutorial?: boolean; record?: boolean }): void;
   captureKey(cb: (code: string) => void): void;
 }
 
@@ -157,6 +159,7 @@ export class Menus {
       <div class="title"><h1>Rail Bharat</h1><p>Indian broad-gauge electric locomotive simulator</p></div>
       <div class="buttons vertical">
         <button data-a="scenarios">Scenarios</button><button data-a="free">Free roam</button>
+        ${isTouch ? '' : '<button data-a="record">&#127916;&nbsp; Record Mode <small>studio for making videos</small></button>'}
         <button data-a="tutorial">Tutorial: how to start the train</button>
         <button data-a="tutorial-diesel">Tutorial: start a diesel loco</button>
         <button data-a="online" class="soon" aria-disabled="true" title="Multiplayer is on its way">Play Online <small>Coming soon</small></button>
@@ -167,6 +170,7 @@ export class Menus {
       const a = (e.target as HTMLElement).closest('button')?.dataset.a;
       if (a === 'scenarios') this.scenarios();
       if (a === 'free') this.freeRoam();
+      if (a === 'record') this.recordSetup();
       if (a === 'tutorial') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear' }, { tutorial: true });
       if (a === 'settings') this.show(settingsPanel(() => this.main(), this.cb.captureKey), () => this.main());
       if (a === 'help') this.help(() => this.main());
@@ -209,6 +213,30 @@ export class Menus {
       }
     });
     this.show(el);
+  }
+
+  /** Record Mode setup: only where and when. The studio opens in a free camera over that station, no train of your own. */
+  recordSetup(routeId = SCENARIOS['free-roam'].route) {
+    const fr = SCENARIOS['free-roam'];
+    const route = ROUTES[routeId] ?? ROUTES[fr.route];
+    const el = html(`<div class="menu free rec-setup"><h2>&#127916; Record Mode</h2>
+      <p class="sub">Pick the place and the light. You start in a free camera above the station; spawn trains, set cameras and film looks inside.</p>
+      <div class="cols"><section>
+        <label>Route <select data-f="route">${Object.values(ROUTES).map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
+        <label>Station <select data-f="station">${route.stations.map(s => `<option value="${s.code}">${esc(s.name)} (${s.code}, km ${s.km})</option>`).join('')}</select></label>
+        <label>Time <input type="time" value="${fr.time}" data-f="time"></label>
+        <label>Weather <select data-f="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}">${WEATHER[w].name}</option>`).join('')}</select></label>
+      </section></div>
+      <div class="buttons"><button data-a="back">Back</button><button data-a="go">Start</button></div></div>`);
+    el.querySelector<HTMLSelectElement>('[data-f="route"]')!.addEventListener('change', e => this.recordSetup((e.target as HTMLSelectElement).value));
+    el.addEventListener('click', e => {
+      const a = (e.target as HTMLElement).closest('button')?.dataset.a;
+      const v = (k: string) => (el.querySelector(`[data-f="${k}"]`) as HTMLInputElement).value;
+      if (a === 'back') this.main();
+      // the game still needs a train of yours: a light engine, kept out of sight and out of the signalling
+      if (a === 'go') this.cb.start('free-roam', { route: route.id, startStation: v('station'), time: v('time'), weather: v('weather') as WeatherId, consist: { loco: fr.consist.loco, coaches: [], loaded: true } }, { record: true });
+    });
+    this.show(el, () => this.main());
   }
 
   freeRoam(routeId = SCENARIOS['free-roam'].route) {
@@ -278,6 +306,7 @@ export class Menus {
       <button data-a="resume">&#9654;&nbsp; Resume</button>
       <button data-a="tutorial">&#127891;&nbsp; Tutorial &mdash; how to start the train</button>
       <button data-a="god">&#9889;&nbsp; God Mode${cb.godActive ? ' <span class="pill">ON</span>' : ''}</button>
+      ${cb.record ? '<button data-a="record">&#127916;&nbsp; Exit Record Mode</button>' : ''}
       <button data-a="controls">&#9000;&nbsp; Controls</button>
       <button data-a="settings">&#9881;&nbsp; Settings</button>
       <button data-a="restart">&#8635;&nbsp; Restart scenario</button>
@@ -289,6 +318,7 @@ export class Menus {
       if (a === 'resume') cb.resume();
       if (a === 'tutorial') cb.tutorial();
       if (a === 'god') cb.godMode();
+      if (a === 'record') cb.record?.();
       if (a === 'controls') this.help(again);
       if (a === 'settings') this.show(settingsPanel(again, this.cb.captureKey), again);
       if (a === 'restart') this.confirm('Restart this scenario?', 'Your current progress will be lost.', 'Restart', cb.restart, again);

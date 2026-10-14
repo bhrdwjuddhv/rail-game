@@ -108,6 +108,14 @@ export class TrainAudio {
     setTimeout(() => p.disconnect(), 3000);
   }
 
+  /** Another train's horn at (x, y, z): one blast of `seconds` (Record Mode trains, whistle boards). */
+  horn(x: number, y: number, z: number, seconds: number) {
+    const p = this.a.panner('horn', 25, 1);
+    this.a.setPannerPos(p, x, y, z);
+    this.shots.blast(p, seconds, 0.35);
+    setTimeout(() => p.disconnect(), (seconds + 2) * 1000);
+  }
+
   /** A train passing on the other line at relative speed `relMs`; louder in the cab with the window, and the faster it is. */
   passBy(x: number, y: number, z: number, relMs: number, lengthM: number, carM: number) {
     const p = this.a.panner('env', 8, 1.1);
@@ -118,7 +126,7 @@ export class TrainAudio {
   }
 
   announce(x: number, y: number, z: number) {
-    const p = this.a.panner('env', 30, 1.1);
+    const p = this.a.panner('station', 30, 1.1);
     this.a.setPannerPos(p, x, y + 6, z);
     this.shots.announcement(p, 0.45);
     setTimeout(() => p.disconnect(), 12000);

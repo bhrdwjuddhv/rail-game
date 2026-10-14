@@ -32,6 +32,8 @@ export interface CameraMode {
   readonly near: number;
   /** true if this mode is inside the cab (shows the interior, hides exterior glass) */
   readonly inCab?: boolean;
+  /** metres kept above the ground (default 0.6; -Infinity: none, for cameras on a train's underside) */
+  readonly groundClearance?: number;
   enter(ctx: CameraContext, from: Pose): void;
   update(ctx: CameraContext, out: Pose): void;
   exit?(): void;
@@ -57,10 +59,21 @@ export class CameraManager {
     this.camera = new THREE.PerspectiveCamera(60, aspect, 0.05, far);
   }
 
-  register(m: CameraMode) { this.modes.push(m); }
+  /** add a mode; returns its index */
+  register(m: CameraMode) { return this.modes.push(m) - 1; }
+  /** take a mode out again (Record Mode's cameras when it closes); the current one moves to `fallback` first */
+  remove(m: CameraMode, fallback: number, ctx: CameraContext) {
+    const i = this.modes.indexOf(m);
+    if (i < 0) return;
+    if (this.index === i) this.select(fallback, ctx);
+    this.modes.splice(i, 1);
+    if (this.index > i) this.index--;
+  }
+  get count() { return this.modes.length; }
   get mode() { return this.modes[this.index]; }
 
-  select(i: number, ctx: CameraContext) {
+  /** cut: no blend from the last view (Record Mode's director, bookmarks) */
+  select(i: number, ctx: CameraContext, cut = false) {
     if (i < 0 || i >= this.modes.length) return;
     if (i === this.index && this.started) { this.mode.again?.(); return; }
     if (this.gate && !this.gate(i)) return;
@@ -70,7 +83,7 @@ export class CameraManager {
     this.from.fov = this.camera.fov;
     this.index = i;
     this.mode.enter(ctx, this.from);
-    this.blend = this.started ? 0 : 1;
+    this.blend = this.started && !cut ? 0 : 1;
     this.started = true;
     bus.emit('camera', { mode: i + 1 });
   }
@@ -91,9 +104,10 @@ export class CameraManager {
       this.camera.fov = this.pose.fov;
     }
     // keep out of the ground for outside cameras
-    if (!m.inCab) {
+    const clear = m.groundClearance ?? 0.6;
+    if (!m.inCab && clear > -1) {
       const g = ctx.field.height(this.camera.position.x, this.camera.position.z);
-      if (this.camera.position.y < g + 0.6) this.camera.position.y = g + 0.6;
+      if (this.camera.position.y < g + clear) this.camera.position.y = g + clear;
     }
     this.camera.near = t < 1 ? Math.min(m.near, 0.1) : m.near;
     this.camera.updateProjectionMatrix();
