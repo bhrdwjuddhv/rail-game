@@ -7,6 +7,8 @@ import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import { Strip } from '../track/TrackMeshBuilder';
 import type { Route, StationInfo } from '@rail/shared/track/Route';
 import { Crowd } from '../world/people/Crowd';
+import { buildJunction, ClockSpot } from './JunctionArchitecture';
+import type { LineDef, Switch } from '@rail/shared/track/TrackGraph';
 
 /** Platform surface above formation level (high-level platform, 760 mm above rail). */
 export const PLATFORM_H = RAIL_TOP + 0.76;
@@ -59,7 +61,8 @@ export class StationView {
   private clockTex: THREE.CanvasTexture;
   private lastMinute = -1;
 
-  constructor(readonly route: Route, readonly st: StationInfo) {
+  /** `layout`: every track as surveyed (a big junction's sidings, which only one direction's view has) */
+  constructor(readonly route: Route, readonly st: StationInfo, layout?: { lines: LineDef[]; switches: Switch[] }) {
     const f = newFrame();
     route.alignment.sample(st.km * 1000, f);
     const ox = f.x, oz = f.z;
@@ -112,26 +115,54 @@ export class StationView {
 
     const top = (km: number, lat: number) => { const o = at(km, lat); o.y += PLATFORM_H; return o; };
     const big = st.type !== 'halt' && !freight;
-    const shelterHalf = big ? 0.13 : 0.05;
+    // a big junction: its own architecture; platform canopies only where no great roof or train shed covers them
+    const jn = st.junction?.style;
+    const canopies = !jn || jn === 'rajasthani';
+    // Dravidian: granite slab platforms
+    if (jn === 'dravidian') tint(pm.geometry, new THREE.Color(0xc4beb4));
+    const shelterHalf = jn ? 0.2 : big ? 0.13 : 0.05;
 
     // ---- shelters, benches, lamps, crowd spots ----
     const spots: { x: number; y: number; z: number; heading: number }[] = [];
     const solar = big && r() < 0.5;
     for (const p of st.platforms) {
       const mid = (p.from + p.to) / 2, w = Math.abs(p.to - p.from);
-      this.canopy(route, st.km - shelterHalf - 0.003, st.km + shelterHalf + 0.003, mid, w * 0.9, ox, oz, solar);
+      if (canopies) this.canopy(route, st.km - shelterHalf - 0.003, st.km + shelterHalf + 0.003, mid, w * 0.9, ox, oz, solar);
       for (let km = st.km - shelterHalf; km <= st.km + shelterHalf; km += 0.006) {
         const o = top(km, mid);
-        for (const dl of [-w * 0.18, w * 0.18]) {
-          const q = top(km, mid + dl);
-          b.box(0.12, 3.6, 0.12, mat(q.x, q.y + 1.8, q.z, q.ry), '#4d6b7a', 'metal');
+        if (canopies) {
+          // a gabled truss under each pair of posts, following the roof: tie beam at the eaves,
+          // rafters under both slopes, a king post to the ridge and two struts
+          const hw = w * 0.45, rise = canopyRise(w * 0.9), eave = CANOPY_EAVE - 0.1 - 0.09, ridge = eave + rise;
+          const under = (l: number) => eave + rise * (1 - Math.abs(l) / hw);
+          const bar = (la: number, ya: number, lb: number, yb: number, t: number) => {
+            const L = Math.hypot(lb - la, yb - ya);
+            b.box(t, t, L, mat(o.x, o.y + (ya + yb) / 2, o.z, o.ry).multiply(mat(0, 0, (la + lb) / 2, 0, Math.atan2(-(yb - ya), lb - la))), '#4d6b7a', 'metal');
+          };
+          for (const dl of [-w * 0.18, w * 0.18]) {
+            const q = top(km, mid + dl), ph = under(dl);
+            b.box(0.14, ph, 0.14, mat(q.x, q.y + ph / 2, q.z, q.ry), '#4d6b7a', 'metal');
+          }
+          bar(-hw + 0.1, eave - 0.08, hw - 0.1, eave - 0.08, 0.15);
+          bar(-hw, eave, 0, ridge, 0.17);
+          bar(0, ridge, hw, eave, 0.17);
+          bar(0, eave - 0.08, 0, ridge, 0.1);
+          for (const e of [-1, 1]) bar(e * hw * 0.55, eave - 0.08, e * hw * 0.2, under(hw * 0.2), 0.08);
+          // hanging from the tie beam: a digital clock near the middle, horn speakers every 30 m
+          const k = Math.round((km - st.km) / 0.006);
+          if (k === 8 || k === -14) this.ledClock(top(km, mid), eave - 0.08, b);
+          else if (k % 5 === 0) this.speaker(top(km, mid + (k % 10 === 0 ? 1 : -1) * w * 0.12), eave - 0.08, k % 10 === 0 ? 1 : -1, b);
         }
-        // cross beam under the roof on each pair of posts
-        b.box(0.14, 0.18, w * 0.5, mat(o.x, o.y + 3.62, o.z, o.ry), '#4d6b7a', 'metal');
         if (r() < 0.5) {
-          const q = top(km + 0.002, mid + (r() - 0.5) * w * 0.3);
-          b.box(1.8, 0.08, 0.45, mat(q.x, q.y + 0.45, q.z, q.ry), '#5b4636');
-          b.box(1.8, 0.4, 0.06, mat(q.x, q.y + 0.75, q.z, q.ry).multiply(mat(0, 0, -0.2)), '#5b4636');
+          // bench: slatted seat and back on two cast-iron end frames
+          const q = top(km + 0.002, mid + (r() - 0.5) * w * 0.3), base = mat(q.x, q.y, q.z, q.ry);
+          b.box(1.8, 0.06, 0.45, base.clone().multiply(mat(0, 0.45, 0)), '#5b4636');
+          b.box(1.8, 0.4, 0.05, base.clone().multiply(mat(0, 0.75, -0.21, 0, -0.12)), '#5b4636');
+          for (const e of [-0.78, 0.78]) {
+            b.box(0.05, 0.45, 0.05, base.clone().multiply(mat(e, 0.225, 0.17)), '#2e2e2e', 'metal');
+            b.box(0.05, 0.92, 0.05, base.clone().multiply(mat(e, 0.46, -0.2, 0, -0.12)), '#2e2e2e', 'metal');
+            b.box(0.05, 0.04, 0.45, base.clone().multiply(mat(e, 0.41, 0)), '#2e2e2e', 'metal');
+          }
         }
       }
       for (let km = pfFrom + 0.01; km < pfTo; km += 0.025) {
@@ -165,31 +196,45 @@ export class StationView {
       }
     }
 
-    // ---- station building, clock, tea stall, water tank, FOB ----
+    // ---- station building (a big junction: its architecture), clock, tea stall, water tank, FOB ----
     const side = st.buildingSide;
     const outer = st.platforms.filter(p => Math.sign(p.to) === side).reduce((m, p) => Math.max(m, Math.abs(p.to)), 0) || Math.abs(st.platforms[0].to);
     const bl = side * (outer + (big ? 6 : 3.5));
-    const bb = at(st.km, bl);
-    const stone = region.stationStyle === 'stone';
-    // plains stations: rendered wall with a dado band (station-wall texture, band at the bottom); ghats: stone
-    const wallKey = stone ? 'stone' : 'wall';
-    const wallTint = stone ? '#c9c2b3' : '#ffffff';
-    // heights in whole 3 m storeys, the height of one station-wall texture copy (dado band per floor)
-    const len = big ? 38 : 10, dep = big ? 9 : 5, hgt = big ? 6 : 3;
-    b.box(len, hgt, dep, mat(bb.x, bb.y + PLATFORM_H + hgt / 2 - 0.2, bb.z, bb.ry), wallTint, wallKey);
-    // arched verandah facing the platform
-    const vl = bl - side * (dep / 2 + 1.6);
-    for (let i = -len / 2 + 1.5; i <= len / 2 - 1.5; i += 3) {
-      const q = at(st.km + i / 1000, vl);
-      b.box(0.5, 3.4, 0.5, mat(q.x, q.y + PLATFORM_H + 1.7, q.z, q.ry), '#f0e6d6');
-    }
-    const vq = at(st.km, vl);
-    b.box(len, 0.35, 3.6, mat(vq.x, vq.y + PLATFORM_H + 3.55, vq.z, vq.ry), '#c94f3d');
-    if (stone || !big) b.add(new THREE.CylinderGeometry(0, 1, 1, 4, 1), mat(bb.x, bb.y + PLATFORM_H + hgt + 1.0, bb.z, bb.ry + Math.PI / 4, 0, 0, (len * 0.78), 2.2, (dep * 0.85)), '#ffffff', 'roof');
-    else b.box(len + 0.4, 0.8, dep + 0.4, mat(bb.x, bb.y + PLATFORM_H + hgt + 0.2, bb.z, bb.ry), '#d9c7b0', 'stone');
-    for (let i = -len / 2 + 2; i < len / 2 - 1; i += 3.2) {
-      const q = at(st.km + i / 1000, bl - side * (dep / 2 + 0.03));
-      b.box(1.2, 1.6, 0.06, mat(q.x, q.y + PLATFORM_H + 1.6, q.z, q.ry), '#2b3640');
+    let clockSpot: ClockSpot;
+    if (jn) clockSpot = buildJunction(jn, { route, st, b, group: this.group, roofs: this.roofs, at, ox, oz, pfH: PLATFORM_H, layout,
+      fit: { clock: (q, ceil) => this.ledClock(q, ceil, b), speaker: (q, ceil, dir) => this.speaker(q, ceil, dir, b), board: (m, w, h) => this.departureBoard(m, w, h, b) },
+      lamps: this.lampSpots });
+    else {
+      const bb = at(st.km, bl);
+      const stone = region.stationStyle === 'stone';
+      // plains stations: rendered wall with a dado band (station-wall texture, band at the bottom); ghats: stone
+      const wallKey = stone ? 'stone' : 'wall';
+      const wallTint = stone ? '#c9c2b3' : '#ffffff';
+      // heights in whole 3 m storeys, the height of one station-wall texture copy (dado band per floor)
+      const len = big ? 38 : 10, dep = big ? 9 : 5, hgt = big ? 6 : 3;
+      b.box(len, hgt, dep, mat(bb.x, bb.y + PLATFORM_H + hgt / 2 - 0.2, bb.z, bb.ry), wallTint, wallKey);
+      // arched verandah facing the platform
+      const vl = bl - side * (dep / 2 + 1.6);
+      for (let i = -len / 2 + 1.5; i <= len / 2 - 1.5; i += 3) {
+        const q = at(st.km + i / 1000, vl);
+        b.box(0.5, 3.4, 0.5, mat(q.x, q.y + PLATFORM_H + 1.7, q.z, q.ry), '#f0e6d6');
+      }
+      const vq = at(st.km, vl);
+      b.box(len, 0.35, 3.6, mat(vq.x, vq.y + PLATFORM_H + 3.55, vq.z, vq.ry), '#c94f3d');
+      if (stone || !big) b.add(new THREE.CylinderGeometry(0, 1, 1, 4, 1), mat(bb.x, bb.y + PLATFORM_H + hgt + 1.0, bb.z, bb.ry + Math.PI / 4, 0, 0, (len * 0.78), 2.2, (dep * 0.85)), '#ffffff', 'roof');
+      else b.box(len + 0.4, 0.8, dep + 0.4, mat(bb.x, bb.y + PLATFORM_H + hgt + 0.2, bb.z, bb.ry), '#d9c7b0', 'stone');
+      for (let i = -len / 2 + 2; i < len / 2 - 1; i += 3.2) {
+        const q = at(st.km + i / 1000, bl - side * (dep / 2 + 0.03));
+        b.box(1.2, 1.6, 0.06, mat(q.x, q.y + PLATFORM_H + 1.6, q.z, q.ry), '#2b3640');
+      }
+      const cq = at(st.km, bl - side * (dep / 2 + 0.05));
+      clockSpot = { x: cq.x, y: cq.y + PLATFORM_H + hgt - 1.2, z: cq.z, ry: cq.ry + (side > 0 ? Math.PI : 0), scale: 1 };
+      // station name on the building
+      const nameT = labelTexture(`${st.name}|bld`, { bg: '#1d3557', fg: '#fff', w: 1024, h: 128, lines: [`${st.nameHi}   ${st.name.toUpperCase()}   ${st.nameRegional}`] });
+      const nb = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(len - 2, 16), 2), labelMaterial2(nameT));
+      nb.position.set(cq.x, cq.y + PLATFORM_H + hgt - 2.6, cq.z);
+      nb.rotation.y = clockSpot.ry;
+      this.group.add(nb);
     }
     // clock (canvas redrawn each game minute)
     this.clockCanvas = document.createElement('canvas');
@@ -197,17 +242,11 @@ export class StationView {
     this.clockTex = new THREE.CanvasTexture(this.clockCanvas);
     this.clockTex.colorSpace = THREE.SRGBColorSpace;
     const clock = new THREE.Mesh(new THREE.CircleGeometry(0.75, 24), new THREE.MeshBasicMaterial({ map: this.clockTex }));
-    const cq = at(st.km, bl - side * (dep / 2 + 0.05));
-    clock.position.set(cq.x, cq.y + PLATFORM_H + hgt - 1.2, cq.z);
-    clock.rotation.y = cq.ry + (side > 0 ? Math.PI : 0);
+    clock.position.set(clockSpot.x, clockSpot.y, clockSpot.z);
+    clock.rotation.y = clockSpot.ry;
+    clock.scale.setScalar(clockSpot.scale);
     this.group.add(clock);
     this.drawClock(0);
-    // station name on the building
-    const nameT = labelTexture(`${st.name}|bld`, { bg: '#1d3557', fg: '#fff', w: 1024, h: 128, lines: [`${st.nameHi}   ${st.name.toUpperCase()}   ${st.nameRegional}`] });
-    const nb = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(len - 2, 16), 2), labelMaterial2(nameT));
-    nb.position.set(cq.x, cq.y + PLATFORM_H + hgt - 2.6, cq.z);
-    nb.rotation.y = clock.rotation.y;
-    this.group.add(nb);
 
     if (big) {
       // tea stall on the main platform
@@ -217,16 +256,18 @@ export class StationView {
       b.box(3.2, 0.1, 2.4, mat(ts.x, ts.y + 2.35, ts.z, ts.ry, 0, 0.1), '#c0392b');
       b.box(2.6, 0.1, 0.5, mat(ts.x, ts.y + 1.0, ts.z, ts.ry).multiply(mat(0, 0, 1.1)), '#8e5b33');
       // water tank behind the building
-      const wt = at(st.km - 0.09, bl + side * 20);
-      const gy = wt.y;
-      for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) b.box(0.4, 10, 0.4, mat(wt.x + dx, gy + 5, wt.z + dz), '#bfb8aa', 'concrete');
-      b.cyl(3.2, 3.2, 3.5, 16, mat(wt.x, gy + 11.7, wt.z), '#d8d2c4', 'concrete');
-      b.add(new THREE.ConeGeometry(3.4, 1.2, 16), mat(wt.x, gy + 14.05, wt.z), '#bdb5a6', 'concrete');
-      // foot over bridge across all tracks
-      if (st.platforms.length > 1) {
+      if (!jn) {
+        const wt = at(st.km - 0.09, bl + side * 20);
+        const gy = wt.y;
+        for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) b.box(0.4, 10, 0.4, mat(wt.x + dx, gy + 5, wt.z + dz), '#bfb8aa', 'concrete');
+        b.cyl(3.2, 3.2, 3.5, 16, mat(wt.x, gy + 11.7, wt.z), '#d8d2c4', 'concrete');
+        b.add(new THREE.ConeGeometry(3.4, 1.2, 16), mat(wt.x, gy + 14.05, wt.z), '#bdb5a6', 'concrete');
+      }
+      // foot over bridge across all tracks (Navyug has its air concourse; Sagarpur's is beyond the train shed)
+      if (st.platforms.length > 1 && jn !== 'modern' && jn !== 'dravidian') {
         const lats = st.platforms.flatMap(p => [p.from, p.to]);
         const lo = Math.min(...lats) + 1.6, hi = Math.max(...lats) - 1.6;
-        const km = st.km + 0.09;
+        const km = st.km + (jn === 'colonial' ? 0.19 : 0.09);
         const deckY = RAIL_TOP + 8.4;
         const c = at(km, (lo + hi) / 2);
         b.box(3, 0.4, hi - lo + 3, mat(c.x, c.y + deckY, c.z, c.ry), '#b3aca0', 'concrete');
@@ -258,10 +299,10 @@ export class StationView {
     const f = newFrame();
     for (let km = km0; km <= km1 + 1e-9; km += 0.002) {
       route.alignment.sampleOffset(km * 1000, mid, f);
-      frames.push({ ...f, y: f.y + PLATFORM_H + 3.72, cant: 0 });
+      frames.push({ ...f, y: f.y + PLATFORM_H + CANOPY_EAVE, cant: 0 });
       ss.push(km * 1000 - km0 * 1000);
     }
-    const hw = width / 2, rise = Math.min(1.4, Math.max(0.5, width * 0.1)), T = 0.1, F = 0.03;
+    const hw = width / 2, rise = canopyRise(width), T = 0.1, F = 0.03;
     // counter-clockwise profiles (outward faces): top surface right to left; edges down, underside left to right
     const top = new Strip(), cap = new Strip(), under = new Strip();
     top.extrude(frames, ss, [[hw, 0], [0, rise], [-hw, 0]], ox, oz, 1, 1);
@@ -273,7 +314,7 @@ export class StationView {
     for (let i = 0; i < top.uv.length; i += 2) { const u = top.uv[i]; top.uv[i] = top.uv[i + 1]; top.uv[i + 1] = u; }
     const M = materials();
     route.alignment.sampleOffset((km0 + km1) * 500, mid, f);
-    this.roofs.push({ x: f.x, z: f.z, cos: Math.cos(f.heading), sin: Math.sin(f.heading), halfLen: (km1 - km0) * 500, halfWid: hw, top: f.y + PLATFORM_H + 3.72 });
+    this.roofs.push({ x: f.x, z: f.z, cos: Math.cos(f.heading), sin: Math.sin(f.heading), halfLen: (km1 - km0) * 500, halfWid: hw, top: f.y + PLATFORM_H + CANOPY_EAVE });
     const roof = new THREE.Mesh(tint(top.geometry(), ROOF_BLUE), M.sheet);
     const ridge = new THREE.Mesh(tint(cap.geometry(), RIDGE_BLUE), M.sheet);
     const base = new THREE.Mesh(under.geometry(), CANOPY_UNDER);
@@ -286,6 +327,109 @@ export class StationView {
       if (pv.pos.length) parts.push(new THREE.Mesh(pv.geometry(), SOLAR));
     }
     for (const m of parts) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
+  }
+
+  /** red seven-segment platform clocks (one texture per station, redrawn each minute) */
+  private ledCanvas: HTMLCanvasElement | null = null;
+  private ledTex: THREE.CanvasTexture | null = null;
+  private ledMat: THREE.MeshBasicMaterial | null = null;
+
+  /**
+   * A digital clock hung on two drop rods from a roof member `ceil` m above the platform at `q`,
+   * reading on both faces along the platform. Shared with the junction roofs.
+   */
+  ledClock(q: { x: number; y: number; z: number; ry: number }, ceil: number, b: GeoBatch) {
+    if (!this.ledTex) {
+      this.ledCanvas = document.createElement('canvas');
+      this.ledCanvas.width = 256; this.ledCanvas.height = 96;
+      this.ledTex = new THREE.CanvasTexture(this.ledCanvas);
+      this.ledTex.colorSpace = THREE.SRGBColorSpace;
+      this.ledMat = new THREE.MeshBasicMaterial({ map: this.ledTex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+      this.drawLed(Math.max(0, this.lastMinute) * 60);
+    }
+    const y = Math.min(ceil - 0.5, 3.0), base = mat(q.x, q.y + y, q.z, q.ry);
+    b.box(0.22, 0.5, 1.45, base, '#151515', 'metal');
+    for (const e of [-0.5, 0.5]) b.box(0.03, ceil - y - 0.25, 0.03, base.clone().multiply(mat(0, (ceil - y) / 2 + 0.12, e)), '#2e2e2e', 'metal');
+    for (const d of [-1, 1]) {
+      const face = new THREE.Mesh(LED_GEO, this.ledMat!);
+      face.applyMatrix4(base.clone().multiply(mat(d * 0.112, 0, 0, d * Math.PI / 2)));
+      this.group.add(face);
+    }
+  }
+
+  /** A horn loudspeaker on a bracket under a roof member `ceil` m up, its mouth along the platform (`dir` +-1). */
+  speaker(q: { x: number; y: number; z: number; ry: number }, ceil: number, dir: number, b: GeoBatch) {
+    const base = mat(q.x, q.y + ceil, q.z, q.ry), grey = '#c9ccc6';
+    b.box(0.06, 0.32, 0.05, base.clone().multiply(mat(0, -0.16, 0)), '#6d6f6c', 'metal');
+    b.box(0.3, 0.05, 0.08, base.clone().multiply(mat(0, -0.32, 0)), '#6d6f6c', 'metal');
+    const horn = base.clone().multiply(mat(dir * 0.12, -0.45, 0, 0, 0, -0.12 * dir));
+    b.cyl(0.07, 0.27, 0.42, 14, horn.clone().multiply(mat(dir * 0.16, 0, 0, 0, 0, dir * Math.PI / 2)), grey, 'metal');
+    b.cyl(0.11, 0.11, 0.24, 10, horn.clone().multiply(mat(-dir * 0.15, 0, 0, 0, 0, Math.PI / 2)), grey, 'metal');
+    b.cyl(0.2, 0.2, 0.02, 14, horn.clone().multiply(mat(dir * 0.375, 0, 0, 0, 0, Math.PI / 2)), '#3b3d3c', 'metal');
+  }
+
+  /** live departure boards (big junctions): one texture per station, redrawn by setDepartures */
+  private boardCanvas: HTMLCanvasElement | null = null;
+  private boardTex: THREE.CanvasTexture | null = null;
+  private boardMat: THREE.MeshBasicMaterial | null = null;
+
+  /** A departure board (`m`: its centre and facing, local; w x h m): a dark housing and the live face. */
+  departureBoard(m: THREE.Matrix4, w: number, h: number, b: GeoBatch) {
+    if (!this.boardTex) {
+      this.boardCanvas = document.createElement('canvas');
+      this.boardCanvas.width = 1024; this.boardCanvas.height = 400;
+      this.boardTex = new THREE.CanvasTexture(this.boardCanvas);
+      this.boardTex.colorSpace = THREE.SRGBColorSpace;
+      this.boardTex.anisotropy = 4;
+      this.boardMat = new THREE.MeshBasicMaterial({ map: this.boardTex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+      this.setDepartures([]);
+    }
+    b.box(w + 0.3, h + 0.3, 0.25, m, '#1b1d1f', 'metal');
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 400 / 1024 > h ? h : w * 400 / 1024), this.boardMat!);
+    face.applyMatrix4(m.clone().multiply(mat(0, 0, 0.13)));
+    this.group.add(face);
+  }
+
+  /** Redraw the departure boards: the trains due, at or leaving the station (time, name, platform, status). */
+  setDepartures(rows: { time: string; name: string; pf: string; status: string }[]) {
+    if (!this.boardCanvas) return;
+    const g = this.boardCanvas.getContext('2d')!, W = 1024, H = 400, amber = '#ffb43a';
+    g.fillStyle = '#0b0c0e'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#16324f'; g.fillRect(0, 0, W, 58);
+    g.fillStyle = '#ffffff'; g.font = 'bold 34px "Nirmala UI", Arial, sans-serif'; g.textBaseline = 'middle';
+    g.textAlign = 'left'; g.fillText(`${this.st.nameHi}  ·  ${this.st.name.toUpperCase()}`, 18, 30);
+    g.textAlign = 'right'; g.fillText('DEPARTURES / प्रस्थान', W - 18, 30);
+    g.font = 'bold 24px Consolas, "Courier New", monospace'; g.fillStyle = '#7a8ea3'; g.textAlign = 'left';
+    const cols = [18, 140, 700, 820];
+    ['TIME', 'TRAIN', 'PF', 'STATUS'].forEach((t, i) => g.fillText(t, cols[i], 82));
+    g.font = 'bold 30px Consolas, "Courier New", monospace';
+    rows.slice(0, 7).forEach((r, i) => {
+      const y = 124 + i * 40;
+      if (i % 2) { g.fillStyle = '#121418'; g.fillRect(0, y - 20, W, 40); }
+      g.fillStyle = amber;
+      g.fillText(r.time, cols[0], y);
+      g.fillText(r.name.toUpperCase().slice(0, 30), cols[1], y);
+      g.fillText(r.pf, cols[2], y);
+      g.fillStyle = r.status === 'ON TIME' || r.status === 'ON PLATFORM' ? '#5fe07a' : r.status === 'DEPARTING' ? '#ff6b4a' : amber;
+      g.fillText(r.status, cols[3], y);
+    });
+    if (!rows.length) { g.fillStyle = '#7a8ea3'; g.fillText('PLEASE WAIT', cols[1], 124); }
+    this.boardTex!.needsUpdate = true;
+  }
+
+  private drawLed(sec: number) {
+    if (!this.ledCanvas) return;
+    const g = this.ledCanvas.getContext('2d')!, W = 256, H = 96;
+    g.fillStyle = '#120505'; g.fillRect(0, 0, W, H);
+    const hh = Math.floor(sec / 3600) % 24, mm = Math.floor(sec / 60) % 60;
+    const txt = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    g.font = 'bold 78px "Consolas", "Courier New", monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#3a0d0b'; g.fillText('88:88', W / 2, H / 2 + 4); // the unlit segments
+    g.shadowColor = '#ff3b22'; g.shadowBlur = 10;
+    g.fillStyle = '#ff3b22'; g.fillText(txt, W / 2, H / 2 + 4);
+    g.shadowBlur = 0;
+    this.ledTex!.needsUpdate = true;
   }
 
   private drawClock(sec: number) {
@@ -303,14 +447,20 @@ export class StationView {
 
   update(clockSec: number, t: number, near: boolean) {
     const minute = Math.floor(clockSec / 60);
-    if (minute !== this.lastMinute) { this.lastMinute = minute; this.drawClock(clockSec); }
+    if (minute !== this.lastMinute) { this.lastMinute = minute; this.drawClock(clockSec); this.drawLed(clockSec); }
     if (near && this.crowd.mesh.visible) this.crowd.update(t); // hidden once the 3D people are in
   }
 
   dispose() {
     this.group.removeFromParent();
-    this.group.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+    this.group.traverse(o => {
+      const m = o as THREE.Mesh;
+      if ((m as THREE.InstancedMesh).isInstancedMesh) (m as THREE.InstancedMesh).dispose();
+      if (m.isMesh) m.geometry.dispose();
+    });
+    this.boardTex?.dispose(); this.boardMat?.dispose();
     this.clockTex.dispose();
+    this.ledTex?.dispose(); this.ledMat?.dispose();
   }
 }
 
@@ -329,6 +479,11 @@ export function underRoof(roofs: RoofCover[], x: number, y: number, z: number) {
 const BOARD_GEO = new THREE.PlaneGeometry(4.2, 4.2);
 /** galvanised underside of platform roofs */
 const CANOPY_UNDER = new THREE.MeshStandardMaterial({ color: 0xe2e6e9, roughness: 0.7, metalness: 0.05 });
+/** platform canopy: eaves this high over the platform; the ridge rises with the width */
+const CANOPY_EAVE = 3.72;
+const canopyRise = (width: number) => Math.min(1.4, Math.max(0.5, width * 0.1));
+/** face of a hanging digital clock */
+const LED_GEO = new THREE.PlaneGeometry(1.3, 0.42);
 const ROOF_BLUE = new THREE.Color(0x7aa6d6), RIDGE_BLUE = new THREE.Color(0x5b88b8);
 /** photovoltaic panels on some platform roofs */
 const SOLAR = new THREE.MeshStandardMaterial({ color: 0x2b3d5e, roughness: 0.3, metalness: 0.4 });

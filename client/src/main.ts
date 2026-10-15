@@ -40,6 +40,9 @@ const BENCH_AT: Record<string, { scenario: string; overrides: ScenarioOverrides;
   station: { scenario: 'free-roam', overrides: { startStation: 'RNPJ' }, speed: 80 },
   open: { scenario: 'free-roam', overrides: { startKm: 4.6 }, speed: 80 },
   tunnel: { scenario: 'free-roam', overrides: { startKm: 35.31, track: 'DOWN' }, speed: 30 },
+  // Sagarpur Central (joined route): running in from 1.7 km out, and standing at a platform
+  'sgpc-arrive': { scenario: 'free-roam', overrides: { route: 'freight-corridor~sagarpur~ghat-express', startKm: 73.0, track: 'DOWN' }, speed: 60 },
+  'sgpc-platform': { scenario: 'free-roam', overrides: { route: 'freight-corridor~sagarpur~ghat-express', startStation: 'SGPC' }, speed: 0 },
   freight: { scenario: 'first-haul', overrides: { startStation: 'MRDI', consist: { loco: 'wag-12b', locos: 2, coaches: [{ type: 'boxcar', count: 90 }, { type: 'brakevan', count: 1 }], loaded: true } }, speed: 80 },
 };
 const benchAt = BENCH_AT[params.get('at') ?? 'station'] ?? BENCH_AT.station;

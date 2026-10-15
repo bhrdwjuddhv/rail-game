@@ -160,7 +160,7 @@ export function planBillboards(railway: Railway, field: TerrainField, settings: 
     const zone = route.zoneAt(s / 1000).zone;
     return {
       id: nextId++, type, format: TYPE_FORMAT[type], s, side, lat, x: f.x, y: hi, z: f.z, ry, footY: lo, region,
-      style: zone === 'town' || zone === 'colony' || zone === 'terminal' ? 'clean' : b === 'desert' || b === 'coast' ? 'rusty' : 'weathered',
+      style: zone === 'town' || zone === 'south-town' || zone === 'colony' || zone === 'terminal' ? 'clean' : b === 'desert' || b === 'coast' ? 'rusty' : 'weathered',
       status: 'ok', dim: dimAt(s), zone: hull(pts),
     };
   };
@@ -190,7 +190,7 @@ export function planBillboards(railway: Railway, field: TerrainField, settings: 
   while (s < L - 400) {
     const km = s / 1000, zone = route.zoneAt(km).zone, st = nearStation(s);
     const wild = WILD.has(zone) && !(route.data.billboardZones ?? []).includes(zone);
-    const townish = zone === 'town' || zone === 'colony' || zone === 'village' || !!st;
+    const townish = zone === 'town' || zone === 'south-town' || zone === 'colony' || zone === 'village' || !!st;
     const perKm = wild ? 0 : settings.billboardsPerKm * (townish ? 1 : zone === 'industrial' || zone === 'terminal' ? 0.6 : 0.35);
     if (perKm <= 0) { s += 500; continue; }
     // no room inside station yards, on bridges or by tunnels: on past them (not a dropped billboard)
@@ -199,9 +199,9 @@ export function planBillboards(railway: Railway, field: TerrainField, settings: 
     const h = hash2(Math.round(s), 17, 311), h2 = hash2(Math.round(s), 23, 313);
     const side: 1 | -1 = h < 0.5 ? -1 : 1;
     let type: BillboardType;
-    if ((st && big(st) || zone === 'town') && leds < settings.ledPerRoute && h2 < 0.25) type = 'led';
+    if ((st && big(st) || zone === 'town' || zone === 'south-town') && leds < settings.ledPerRoute && h2 < 0.25) type = 'led';
     else if (st && big(st)) type = pick(h2, [['wide', 35], ['classic', 30], ['vshape', 15], ['rooftop', 20]]);
-    else if (zone === 'town' || zone === 'colony') type = pick(h2, [['rooftop', 30], ['classic', 35], ['vshape', 20], ['wide', 15]]);
+    else if (zone === 'town' || zone === 'south-town' || zone === 'colony') type = pick(h2, [['rooftop', 30], ['classic', 35], ['vshape', 20], ['wide', 15]]);
     else if (zone === 'village') type = pick(h2, [['wall', 50], ['classic', 40], ['vshape', 10]]);
     else if (zone === 'industrial' || zone === 'terminal' || freight) type = pick(h2, [['unipole', 50], ['wide', 30], ['classic', 20]]);
     else type = pick(h2, [['classic', 55], ['unipole', 25], ['vshape', 20]]);

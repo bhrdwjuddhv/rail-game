@@ -31,6 +31,7 @@ export const PROP_TYPES = [
   'mango', 'neem', 'palm', 'forest', 'bush', 'hut', 'house', 'building2', 'building4', 'building7', 'tank',
   'temple', 'mosque', 'church', 'kiln', 'buffalo', 'cow', 'rock', 'quarter', 'haystack', 'tubewell',
   'hospital', 'school', 'grass', 'treeImp', 'palmImp', 'camel', 'shed', 'warehouse', 'turbine', 'pine', 'pineImp',
+  'tiledhouse', 'banana', 'minitower',
 ] as const;
 export type PropType = typeof PROP_TYPES[number];
 export const PROP_STRIDE = 10; // x y z ry sx sy sz r g b
@@ -51,7 +52,7 @@ export interface TileInfo {
 export const FOOTPRINT: Partial<Record<PropType, [number, number]>> = {
   shed: [9.1, 6.1], warehouse: [24.1, 12.1],
   building2: [6.2, 5.2], building4: [6.2, 5.2], building7: [6.2, 5.2], hospital: [21.2, 7.2], school: [16.2, 5.7],
-  house: [3.7, 3.2], hut: [2.1, 1.8], quarter: [6.6, 3.6], temple: [4.1, 4.1], mosque: [7.3, 5.1], church: [4.1, 11.1], kiln: [17.1, 10.1],
+  house: [3.7, 3.2], hut: [2.1, 1.8], tiledhouse: [4.7, 5.6], minitower: [5.2, 3.7], quarter: [6.6, 3.6], temple: [4.1, 4.1], mosque: [7.3, 5.1], church: [4.1, 11.1], kiln: [17.1, 10.1],
 };
 /** plinth depth below the template base (m); also the steepest footprint a building is put on */
 export const PLINTH_DEPTH = 2.5;
@@ -85,6 +86,8 @@ const tint = (r: () => number, base: [number, number, number], v = 0.15): [numbe
   const k = 1 - v + r() * v * 2;
   return [base[0] * k, base[1] * k, base[2] * k];
 };
+/** the coastal south's colour-washed walls: ochre, sea green, sky blue, pink, lime, white */
+const SOUTH: [number, number, number][] = [[0.98, 0.82, 0.5], [0.62, 0.86, 0.78], [0.66, 0.8, 0.95], [0.96, 0.72, 0.76], [0.82, 0.92, 0.55], [0.96, 0.95, 0.92]];
 const PASTELS: [number, number, number][] = [[0.95, 0.9, 0.78], [0.86, 0.9, 0.95], [0.98, 0.85, 0.72], [0.82, 0.93, 0.82], [0.96, 0.8, 0.82], [0.92, 0.92, 0.9], [0.98, 0.95, 0.62]];
 
 /** Deterministic RNG for one candidate cell: the same cell always gives the same props, at any LOD. */
@@ -178,6 +181,25 @@ export function placeScenery(field: TerrainField, route: Route, info: TileInfo, 
         }
         if (near && r > 0.997) { const t: PropType = rand() < 0.5 ? 'temple' : rand() < 0.6 ? 'mosque' : 'church'; out.push(t, x, y, z, -heading, 1, 1, 1, [1, 1, 1]); continue; }
         if (r > 0.94) tree(x, y, z, g, near, rand);
+        continue;
+      }
+
+      // coastal South Indian town: low tiled-roof houses with verandas, coconut palms and banana plants, a temple-style tower far off
+      if (zone === 'south-town') {
+        if (dist > 22 + route.halfSpacing && r < 0.2 && dist < 650) {
+          if (level === 'impostor' && rand() < 0.5) continue;
+          const ry = -heading + (rand() < 0.5 ? 0 : Math.PI / 2) + (rand() < 0.5 ? Math.PI : 0);
+          out.push('tiledhouse', x, y, z, ry, 0.9 + rand() * 0.25, 0.9 + rand() * 0.3, 0.9 + rand() * 0.25, SOUTH[Math.floor(rand() * SOUTH.length)]);
+          continue;
+        }
+        if (dist > 320 && r > 0.9975) { out.push('minitower', x, y, z, -heading, 1, 1, 1, [1, 1, 1]); continue; }
+        if (r > 0.88) {
+          const s = 0.8 + rand() * 0.5;
+          if (level === 'impostor' || !near) out.push('palmImp', x, y, z, rand() * 6.28, s, s, s, tint(rand, [0.95, 1, 0.85], 0.2));
+          else out.push('palm', x, y, z, rand() * 6.28, s, s, s, tint(rand, [1, 1, 1], 0.18));
+          continue;
+        }
+        if (near && r > 0.84) out.push('banana', x, y, z, rand() * 6.28, 0.9, 0.8 + rand() * 0.5, 0.9, tint(rand, [1, 1, 1], 0.15));
         continue;
       }
 

@@ -18,7 +18,7 @@ import { DEFAULT_LINE_SPACING_M, PostcardData, RouteData, StationData } from './
  *    around everything, a yard of sidings off it, carriage sidings and a loco shed
  */
 
-export type JunctionStyle = 'modern' | 'rajasthani' | 'colonial';
+export type JunctionStyle = 'modern' | 'rajasthani' | 'colonial' | 'dravidian';
 /** platform line, bay entered from the low-km end (bay-low) or the high-km end (bay-high), freight avoiding line, sidings (not routed) */
 export type LineRole = 'platform' | 'bay-low' | 'bay-high' | 'avoiding' | 'siding' | 'carriage' | 'shed';
 
@@ -28,6 +28,8 @@ export interface JunctionData {
   /** the two routes and which of their ends meets the junction (A then B: the joined route runs A -> junction -> B) */
   connects: [{ route: string; end: 'start' | 'end' }, { route: string; end: 'start' | 'end' }];
   region: string; zone: string;
+  /** a town road along the junction this far to the side (m, + right; autos and buses on it), or none */
+  roadOffsetM?: number;
   platformLinesPerSide: number; platformLengthM: number; buildingSide: 1 | -1;
   avoidingLines: boolean; yardSidings: number; carriageSidings: number;
   /** AI trains: dwell range (s) and how many to keep in the station */
@@ -178,7 +180,7 @@ export function joinThroughJunction(j: JunctionData, routes: Record<string, Rout
       ...B.speedLimits.map(r => ({ ...r, fromKm: Math.max(r.fromKm, j1) }))],
     structures: [...A.structures, ...B.structures],
     levelCrossings: [...A.levelCrossings, ...B.levelCrossings],
-    scenery: [...A.scenery.map(z => ({ ...z, toKm: Math.min(z.toKm, j0) })).filter(z => z.toKm > z.fromKm), { fromKm: j0, toKm: j1, zone: j.zone }, ...B.scenery],
+    scenery: [...A.scenery.map(z => ({ ...z, toKm: Math.min(z.toKm, j0) })).filter(z => z.toKm > z.fromKm), { fromKm: j0, toKm: j1, zone: j.zone, ...(j.roadOffsetM ? { roadOffset: j.roadOffsetM } : {}) }, ...B.scenery],
     features: [...A.features, ...(j.fortOffsetM ? [{ type: 'fort', km: mid - 0.6, offsetM: j.fortOffsetM }] : []), ...B.features],
     landforms: [...(A.landforms ?? []), ...(B.landforms ?? [])],
     riversAlong: [...(A.riversAlong ?? []), ...(B.riversAlong ?? [])],

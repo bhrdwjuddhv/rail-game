@@ -190,7 +190,7 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
     let prev: number[][] | null = null;
     for (let s = Math.ceil(s0 / 4) * 4; s < s1; s += 4) {
       const zone = route.zoneAt(s / 1000).zone;
-      if ((zone !== 'town' && zone !== 'colony') || !clearOf(s, 0.35)) { prev = null; continue; }
+      if ((zone !== 'town' && zone !== 'south-town' && zone !== 'colony') || !clearOf(s, 0.35)) { prev = null; continue; }
       const p = at(s, out(side * 16.5));
       const y = field.height(p.x, p.z);
       posts.push(mat(p.x - ox, y + 0.7, p.z - oz, -p.heading));

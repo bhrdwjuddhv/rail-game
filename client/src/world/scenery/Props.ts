@@ -232,6 +232,30 @@ function build(t: PropType): Template[] {
       b.add(new THREE.CylinderGeometry(0, 9.5, 2, 4, 1), mat(0, 7, 0, Math.PI / 4, 0, 0, 1.36, 1, 0.92), '#7d8a93', 'std');
       for (const x of [-5, 0, 5]) b.box(3.5, 4.2, 0.1, mat(x, 2.1, 6.02), '#5a646b');
       return one('std');
+    case 'tiledhouse': {
+      // coastal South Indian house: colour-washed walls (tinted per house), green shutters, a front veranda on
+      // timber posts, a hipped clay-tile roof coming down over it
+      b.box(9, 3.4, 7, mat(0, 1.7, 0), '#ffffff');
+      b.box(9.05, 0.6, 7.05, mat(0, 0.3, 0), '#9c6b4e');
+      for (const x of [-2.6, 2.6]) b.box(1.1, 1.2, 0.08, mat(x, 1.9, 3.53), '#2f5a3a');
+      b.box(1.1, 2.2, 0.08, mat(0, 1.1, 3.53), '#5a3a22');
+      b.box(9, 0.25, 2, mat(0, 0.12, 4.5), '#b9b2a6');
+      for (const x of [-4, -1.3, 1.3, 4]) b.box(0.18, 2.6, 0.18, mat(x, 1.3, 5.2), '#6e4b33');
+      const hip = new THREE.CylinderGeometry(0, 1, 1, 4, 1);
+      hip.rotateY(Math.PI / 4); // edges square to the walls
+      b.add(hip, mat(0, 4.3, 0.8, 0, 0, 0, 7.6, 1.9, 6.6), '#ffffff', 'roof');
+      return [{ geometry: b.geometry('std')!, material: 'std', shadow: true }, { geometry: b.geometry('roof')!, material: 'roof', shadow: true }];
+    }
+    case 'banana':
+      b.cyl(0.13, 0.18, 1.9, 6, mat(0, 0.95, 0), '#7d8a4a');
+      for (let i = 0; i < 6; i++) b.box(2.1, 0.03, 0.6, mat(0, 1.85, 0, (i / 6) * Math.PI * 2, 0, -0.45).multiply(mat(1.0, 0, 0)), i % 2 ? '#5f9a35' : '#6fae3e');
+      return one('std', false);
+    case 'minitower':
+      // a small temple-style tower on the skyline (decorative, seen from afar): stepped painted tiers, a vaulted crown
+      b.box(10, 5, 7, mat(0, 2.5, 0), '#cfc8bc');
+      for (let i = 0; i < 4; i++) b.box(9 - i * 1.8, 2.4, 6 - i * 1.1, mat(0, 6.2 + i * 2.6, 0), i % 2 ? '#bf6a43' : '#d4a24c');
+      b.add(new THREE.CylinderGeometry(1.4, 1.4, 3.4, 10, 1, false, 0, Math.PI), mat(0, 15.6, 0, 0, 0, Math.PI / 2), '#bf6a43');
+      return one('std');
     case 'warehouse':
       // big logistics warehouse: long low box, blue cladding band, loading bays
       b.box(48, 10, 24, mat(0, 5, 0), '#d9dcde');

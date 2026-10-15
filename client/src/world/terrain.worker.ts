@@ -254,7 +254,7 @@ function colourAt(x: number, z: number, info: TileInfo, k: number, natural: numb
     const bu = Math.abs(u / 64 - fu - 0.5) > 0.47 || Math.abs(v / 42 - fw - 0.5) > 0.46;
     mix(hex(cropDef.color), bu ? 0.2 : 0.85, CROP_LAYER[cropDef.name] ?? LAYER.grass);
   }
-  if (zone === 'town' || zone === 'colony') mix(DUST, 0.5, LAYER.soil);
+  if (zone === 'town' || zone === 'south-town' || zone === 'colony') mix(DUST, 0.5, LAYER.soil);
   if (zone === 'ghats' && dist < 120) mix(LATERITE, 0.18, LAYER.laterite);
   if (zone === 'industrial' || zone === 'terminal') mix(DUST, 0.65, LAYER.soil);
   for (const gr of field.grounds) {

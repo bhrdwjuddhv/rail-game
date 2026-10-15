@@ -24,7 +24,8 @@ import { NO_OVERRIDES, type RecordHost, type RecordRunner } from './record/host'
 import { qualityOverride } from './core/Settings';
 import type { RecordMode } from './record/RecordMode';
 import { formatClock, KMPH, parseClock } from '@rail/shared/util';
-import { COACHES, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
+import { COACHES, JUNCTIONS, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
+import { JunctionTraffic } from '@rail/shared/traffic/JunctionTraffic';
 import { Lighting } from './environment/Lighting';
 import { Sky } from './environment/Sky';
 import { Horizon } from './world/Horizon';
@@ -159,6 +160,8 @@ export class Game {
   private oncoming: TrafficManager | null = null;
   /** Free Roam: trains on the player's own line (overtaking in station loops) */
   private sameLine: TrafficManager | null = null;
+  /** big junctions on this route: their own trains coming, standing and going, while the camera is near (centre: world) */
+  private junctionTraffic: { jt: JunctionTraffic; centre: THREE.Vector3 }[] = [];
   /** the traffic setting the AI traffic was started with (changed in Settings: restarted) */
   private trafficSetting = -1;
   /** Record Mode (loaded on first use, desktop only): what it overrides, the open studio, and its trains' runner */
@@ -193,6 +196,7 @@ export class Game {
     this.oncoming?.reset(); this.oncoming = null;
     this.sameLine?.reset(); this.sameLine = null;
     if (this.railway.double) this.startOncoming();
+    this.startJunctions();
   }
   /** cab buffeting from a passing train, 0..1 */
   private shake = 0;
@@ -397,6 +401,7 @@ export class Game {
       this.addAI(new AITrain(d, view, this.ctl.of(view).block), view);
     }
     if (this.railway.double) this.startOncoming();
+    this.startJunctions();
 
     // ---- gameplay ----
     this.rules = new Rules(this.line, this.block, this.scoring, this.plan, s.endStation, this.consist.length, s.rules, () => this.god.eff);
@@ -528,10 +533,12 @@ export class Game {
   /** Draw an AI train (goods or passenger) and register it with its direction's signalling. */
   private addAI(t: AITrain, route: Route) {
     const def = t.def, goods = (def.kind ?? 'goods') === 'goods';
-    const loco = goods ? locoOrDefault('ep-7') : (LOCOS.wap7 ?? locoOrDefault('ep-7'));
+    const loco = def.loco && LOCOS[def.loco] ? LOCOS[def.loco] : goods ? locoOrDefault('ep-7') : (LOCOS.wap7 ?? locoOrDefault('ep-7'));
     const carM = def.carLengthM ?? AI_WAGON_LEN;
     const pax = ['general', 'sleeper', 'ac3'].filter(id => COACHES[id]);
-    const vehicles: Vehicle[] = [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
+    // a trainset (the bullet train): its own cars, nothing coupled
+    const vehicles: Vehicle[] = loco.trainset ? new Consist(loco, COACHES, { loco: loco.id, coaches: [] }).vehicles
+      : [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
     let off = AI_LOCO_LEN; // each wagon after the one before it, coupled (no gap, whatever their lengths)
     for (let i = 0; i < def.wagons; i++) {
       // express make-up: general coaches at both ends, sleepers with an AC coach every few
@@ -573,6 +580,49 @@ export class Game {
     tm.onDespawn = t => this.removeAI(t);
     this.oncoming = tm;
     this.startSameLine();
+  }
+
+  /** when the departure boards were last redrawn (s, run time) */
+  private boardsAt = -10;
+
+  /** The junctions' departure boards: their passenger trains due, standing or leaving, soonest first. */
+  private updateDepartureBoards() {
+    const hhmm = (sec: number) => { const m = Math.floor(sec / 60); return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; };
+    for (const { jt } of this.junctionTraffic) {
+      const sv = this.stations.get(jt.j.code);
+      if (!sv) continue;
+      const rows: { time: string; name: string; pf: string; status: string; eta: number }[] = [];
+      for (const t of jt.trains) {
+        const info = jt.info.get(t), lc = this.ctl.lines.find(l => l.trains.includes(t)), st = lc?.route.station(jt.j.code);
+        if (!info || info.kind === 'goods' || !st || t.tailKm > st.platformToKm) continue;
+        const pf = info.line ? (st.numbers?.[info.line] ?? info.line.replace(/^P/, '')) : '--';
+        let eta = 0, status: string;
+        if (t.headKm < st.platformFromKm) { eta = ((st.platformFromKm - t.headKm) * 1000) / Math.max(t.speed, 12); status = eta < 150 ? 'ARRIVING' : 'ON TIME'; }
+        else status = t.speed < 0.5 ? 'ON PLATFORM' : t.headKm > st.km ? 'DEPARTING' : 'ARRIVING';
+        rows.push({ time: hhmm(this.time.seconds + eta), name: info.name, pf, status, eta });
+      }
+      sv.setDepartures(rows.sort((a, b) => a.eta - b.eta));
+    }
+  }
+
+  /** The big junctions' own traffic (both directions; at least three trains there whenever you are). */
+  private startJunctions() {
+    for (const { jt } of this.junctionTraffic) jt.reset();
+    this.junctionTraffic = [];
+    if (!this.trafficLevelNow() || this.bench) return;
+    const bullet = LOCOS['bullet-train'];
+    for (const sd of this.route.data.stations) {
+      const j = sd.junction && JUNCTIONS[sd.junction.id];
+      if (!j) continue;
+      let seed = 13;
+      for (const ch of this.scenarioId + j.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+      const jt = new JunctionTraffic(this.ctl, j, { seed, inStation: j.trainsInStation, bullet: j.bullet && bullet ? { loco: bullet.id, lengthM: bullet.lengthM } : null });
+      jt.onSpawn = (t, v) => this.addAI(t, v);
+      jt.onDespawn = t => { const a = this.ai.find(x => x.train === t); if (a) this.ctl.of(a.route).remove(t); this.removeAI(t); };
+      const f = newFrame();
+      this.route.alignment.sample(sd.km * 1000, f);
+      this.junctionTraffic.push({ jt, centre: new THREE.Vector3(f.x, f.y, f.z) });
+    }
   }
 
   /**
@@ -636,7 +686,7 @@ export class Game {
       if (ft.type === 'hillstation') add(ft.km - 0.6, ft.km + 0.6, () => buildHillStation(this.route, this.field, ft), undefined, ['wall', 'roof']);
     }
     for (const st of this.route.stations) {
-      add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st); v.crowd.mesh.visible = !this.people?.ready; this.stations.set(st.code, v); return v.group; },
+      add(st.platformFromKm, st.platformToKm, () => { const v = new StationView(this.route, st, this.railway.layout); v.crowd.mesh.visible = !this.people?.ready; this.stations.set(st.code, v); return v.group; },
         () => { this.stations.get(st.code)?.dispose(); this.stations.delete(st.code); }, StationView.MATERIALS);
     }
   }
@@ -1496,11 +1546,14 @@ export class Game {
     if (this.bench) d.speed = this.bench.cfg.speedKmph / 3.6;
     for (const id of this.path.update(d.headKm, d.tailKm)) bus.emit('switch-crossed', { id });
     // scenario AI trains (traffic trains are moved by their manager)
-    const managed = (t: AITrain) => !!this.oncoming?.trains.includes(t) || !!this.sameLine?.trains.includes(t);
+    const managed = (t: AITrain) => !!this.oncoming?.trains.includes(t) || !!this.sameLine?.trains.includes(t) || this.junctionTraffic.some(x => x.jt.trains.includes(t));
     for (const a of this.ai) if (!a.train.gone && !managed(a.train)) a.train.update(dt);
     for (const a of [...this.ai]) if (a.train.gone && !managed(a.train)) { this.ctl.of(a.route).remove(a.train); this.removeAI(a.train); }
     if (this.oncoming && !this.bench) this.oncoming.update(dt, this.oncoming.route.viewKm(this.line.canonicalKm(d.headKm)));
     if (this.sameLine) this.sameLine.update(dt, d.headKm);
+    // junction traffic: new trains only while the camera is within 8 km (those running go on)
+    const cam = this.cameras.camera.position;
+    for (const { jt, centre } of this.junctionTraffic) jt.update(dt, this.time.seconds, cam.distanceTo(centre) < 8000, this.playerHidden ? undefined : { view: this.line, headKm: d.headKm });
     this.recordRunner?.sim(dt);
 
     // wheel slip / coupler events
@@ -1740,6 +1793,7 @@ export class Game {
     }
     for (const sv of this.switchViews) sv.update();
     for (const st of this.stations.values()) st.update(this.time.seconds, this.t, st.centre.distanceTo(cam.position) < 600);
+    if (this.t - this.boardsAt > 4) { this.boardsAt = this.t; this.updateDepartureBoards(); }
     this.traffic.update(wdt, cam.position);
     this.billboards.update(wdt, this.lighting.nightLight);
     this.stop.update(wdt);
