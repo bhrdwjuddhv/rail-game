@@ -6,7 +6,7 @@ import { textures } from '../core/TextureLibrary';
 import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
 import type { Railway } from '@rail/shared/track/Railway';
-import { RAMP_M, Switch, SwitchDef } from '@rail/shared/track/TrackGraph';
+import { deadEnds, DeadEnd, RAMP_M, Switch, SwitchDef } from '@rail/shared/track/TrackGraph';
 
 export const CHUNK_M = 400; // longer chunks = fewer draw calls (each chunk is ~3 draws)
 const SLEEPER_SPACING = 0.65;
@@ -149,6 +149,42 @@ function infill(route: Route, s0: number, s1: number, h: number, ox: number, oz:
   }
 }
 
+const deadEndsOf = new WeakMap<Railway, DeadEnd[]>();
+let bufferMat: THREE.Material | null = null;
+/** buffer face this far short of the line's end, so the raking struts stand on the rails */
+const BUFFER_BACK = 2.6;
+
+/**
+ * A buffer stop, in its own frame (x along the track, the train coming from -x; rail top at y 0):
+ * a red headstock beam with two buffers at buffer height, on two posts over the rails propped by
+ * raking struts back to the rails, as on Indian Railways sidings and bays.
+ */
+function bufferStopParts() {
+  const red = new THREE.Color(0xb3261e), dark = new THREE.Color(0x2b2b2b), out: THREE.BufferGeometry[] = [];
+  const add = (g: THREE.BufferGeometry, col: THREE.Color, m: THREE.Matrix4) => {
+    g.applyMatrix4(m);
+    g.deleteAttribute('uv');
+    const n = g.attributes.position.count, c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) col.toArray(c, i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+    out.push(g.index ? g.toNonIndexed() : g);
+  };
+  const at = (x: number, y: number, z: number, rz = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rz)), new THREE.Vector3(1, 1, 1));
+  add(new THREE.BoxGeometry(0.3, 0.42, 2.7), red, at(0, 1.03, 0)); // headstock
+  for (const z of [-0.98, 0.98]) {
+    add(new THREE.CylinderGeometry(0.1, 0.1, 0.35, 8), dark, at(-0.32, 1.03, z, Math.PI / 2)); // buffer plunger
+    add(new THREE.CylinderGeometry(0.22, 0.22, 0.05, 12), dark, at(-0.5, 1.03, z, Math.PI / 2)); // buffer head
+  }
+  const strutL = Math.hypot(2.3, 1.05), strutA = Math.atan2(1.05, 2.3);
+  for (const z of [-RAIL_C, RAIL_C]) {
+    add(new THREE.BoxGeometry(0.2, 1.25, 0.16), red, at(0.05, 0.62, z)); // post
+    add(new THREE.BoxGeometry(strutL, 0.16, 0.14), red, at(0.05 + 1.15, 0.6, z, -strutA)); // raking strut
+    add(new THREE.BoxGeometry(0.4, 0.08, 0.3), dark, at(2.35, 0.04, z)); // strut shoe on the rail
+  }
+  return mergeGeometries(out, false)!;
+}
+let bufferGeo: THREE.BufferGeometry | null = null;
+
 /** Build one 400 m chunk of track (every line in it): ballast, rails, sleepers, fishplates. */
 export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
   const route = railway.main;
@@ -231,6 +267,23 @@ export function buildTrackChunk(railway: Railway, index: number): THREE.Group {
       sleeperMats.push(new THREE.Matrix4().compose(p, q, scale.set(1, 1, (b - a) / SLEEPER_LEN)));
       sleeperCols.push(open ? wood : conc);
     }
+  }
+
+  // buffer stops where a line ends with nowhere to go (bays, sidings)
+  let ends = deadEndsOf.get(railway);
+  if (!ends) deadEndsOf.set(railway, (ends = deadEnds(railway.layout.lines, railway.layout.switches, route.alignment.length / 1000)));
+  const here = ends.filter(d => d.km * 1000 >= s0 && d.km * 1000 < s1);
+  if (here.length) {
+    bufferGeo ??= bufferStopParts();
+    bufferMat ??= new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.6, metalness: 0.2 });
+    const parts = here.map(d => {
+      route.alignment.sampleOffset(d.km * 1000 - d.dir * BUFFER_BACK, d.offset, f);
+      e.set(0, -f.heading + (d.dir < 0 ? Math.PI : 0), 0, 'YXZ');
+      return bufferGeo!.clone().applyMatrix4(new THREE.Matrix4().compose(p.set(f.x - ox, f.y + RAIL_TOP, f.z - oz), q.setFromEuler(e), one));
+    });
+    const m = new THREE.Mesh(mergeGeometries(parts, false)!, bufferMat);
+    m.castShadow = true;
+    group.add(m);
   }
 
   if (route.double) {

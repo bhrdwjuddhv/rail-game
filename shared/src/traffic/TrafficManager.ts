@@ -36,8 +36,8 @@ export interface TrafficConfig {
 export const DEFAULT_TRAFFIC: TrafficConfig = {
   seed: 1, headwayS: 420, aheadKm: 9, behindKm: 3, minGapKm: 2.5,
   kinds: [
-    { kind: 'passenger', weight: 1, cars: [16, 22], carLengthM: 24.14, maxKmph: 110 },
-    { kind: 'goods', weight: 1, cars: [30, 45], carLengthM: 11.3, maxKmph: 65 },
+    { kind: 'passenger', weight: 1, cars: [16, 22], carLengthM: 23.54, maxKmph: 110 },
+    { kind: 'goods', weight: 1, cars: [30, 45], carLengthM: 10.7, maxKmph: 65 },
   ],
 };
 
@@ -45,8 +45,8 @@ export const DEFAULT_TRAFFIC: TrafficConfig = {
 export const FREIGHT_TRAFFIC: TrafficConfig = {
   ...DEFAULT_TRAFFIC, headwayS: 360,
   kinds: [
-    { kind: 'goods', weight: 2, cars: [42, 56], carLengthM: 19.2, maxKmph: 100, stock: 'container-ds' },
-    { kind: 'goods', weight: 1, cars: [55, 80], carLengthM: 15.0, maxKmph: 75, stock: 'boxcar' },
+    { kind: 'goods', weight: 2, cars: [42, 56], carLengthM: 18.6, maxKmph: 100, stock: 'container-ds' },
+    { kind: 'goods', weight: 1, cars: [55, 80], carLengthM: 14.4, maxKmph: 75, stock: 'boxcar' },
   ],
 };
 

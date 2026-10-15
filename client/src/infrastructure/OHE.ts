@@ -35,6 +35,8 @@ export function wiredOffsets(railway: Railway, s: number) {
 }
 
 export const wireMaterial = new THREE.LineBasicMaterial({ color: 0x2a2420 });
+/** Record Mode can leave the masts and portals out (lineside chunks are rebuilt when it changes) */
+export const oheShow = { masts: true };
 
 /** galvanised steel, plain diffuse (the vertex-colour metal material renders near-black without an environment map) */
 const GALV = '#8f979b';
@@ -94,7 +96,7 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
     if (st) for (const p of st.platforms) for (const e of [p.from, p.to]) { if (e < 0) lo = Math.min(lo, e - 0.8); else hi = Math.max(hi, e + 0.8); }
     const at = (lat: number, y: number) => ({ x: f.x - Math.sin(f.heading) * lat - ox, y, z: f.z + Math.cos(f.heading) * lat - oz });
     const ry = -f.heading;
-    if (!tunnel) {
+    if (!tunnel && oheShow.masts) {
       if (portal) {
         // portal spanning all tracks
         // lattice uprights on concrete foundations (set into the ground, 30 cm showing), a boom across all tracks

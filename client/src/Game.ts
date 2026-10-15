@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { AudioEngine } from './audio/AudioEngine';
 import { Ambience } from './audio/Ambience';
+import { StationAnnouncer } from './audio/StationAnnouncer';
 import { OneShots } from './audio/synth/OneShots';
 import { TrainAudio } from './audio/TrainAudio';
 import { CameraContext, CameraManager } from './camera/CameraManager';
@@ -46,6 +47,7 @@ import { Billboards, ClickedAd } from './world/scenery/Billboards';
 import { AdCard } from './ui/AdCard';
 import { StationStop } from './gameplay/StationStop';
 import { Wag12Cab } from './train/cab/Wag12Cab';
+import { Wag9Cab } from './train/cab/Wag9Cab';
 import { PanelCab } from './train/cab/PanelCab';
 import { RouteChoice, RoutePicker } from './ui/RoutePicker';
 import { DieselSmoke } from './train/Smoke';
@@ -257,7 +259,8 @@ export class Game {
   private slipping = false;
   private lastBP = 5;
   private bpRate = 0;
-  private announced = new Set<string>();
+  /** recorded announcements at the station the train is coming to */
+  private announcer: StationAnnouncer | null = null;
   private startClock: number;
   private ended = false;
   private offs: (() => void)[] = [];
@@ -370,8 +373,9 @@ export class Game {
     this.cab.group.add(this.controls.group);
     this.trainView.loco.body.add(this.cab.group);
     // a 3D model's own cab can come with a purpose-built interior (shown once the model has loaded)
-    if (loco.model?.cab?.interior === 'wag12') {
-      this.modelInterior = new Wag12Cab(this.sys, this.dyn.brakes);
+    const interior = loco.model?.cab?.interior;
+    if (interior === 'wag12' || interior === 'wag9') {
+      this.modelInterior = interior === 'wag12' ? new Wag12Cab(this.sys, this.dyn.brakes) : new Wag9Cab(this.sys, this.dyn.brakes);
       this.modelInterior.group.visible = false;
       this.trainView.loco.body.add(this.modelInterior.group);
     }
@@ -525,14 +529,16 @@ export class Game {
   private addAI(t: AITrain, route: Route) {
     const def = t.def, goods = (def.kind ?? 'goods') === 'goods';
     const loco = goods ? locoOrDefault('ep-7') : (LOCOS.wap7 ?? locoOrDefault('ep-7'));
-    const carM = def.carLengthM ?? AI_WAGON_LEN + 0.6;
+    const carM = def.carLengthM ?? AI_WAGON_LEN;
     const pax = ['general', 'sleeper', 'ac3'].filter(id => COACHES[id]);
     const vehicles: Vehicle[] = [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
+    let off = AI_LOCO_LEN; // each wagon after the one before it, coupled (no gap, whatever their lengths)
     for (let i = 0; i < def.wagons; i++) {
       // express make-up: general coaches at both ends, sleepers with an AC coach every few
       const type = def.stock ? freightStock(def.stock, i, def.wagons) : goods ? 'goods' : pax[i < 2 || i >= def.wagons - 2 ? 0 : i % 5 === 0 ? Math.min(2, pax.length - 1) : Math.min(1, pax.length - 1)];
       const c = COACHES[type];
-      vehicles.push({ kind: 'coach', typeId: type, massKg: 0, length: c.lengthM, frontOffset: AI_LOCO_LEN + 0.6 + i * carM, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
+      vehicles.push({ kind: 'coach', typeId: type, massKg: 0, length: c.lengthM, frontOffset: off, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
+      off += c.lengthM;
     }
     const view = new TrainView(vehicles, loco, COACHES, goods ? 'freight' : 'passenger', false);
     this.addCompiled(view.group, () => this.ai.some(a => a.view === view), false);
@@ -718,6 +724,8 @@ export class Game {
       this.shots = new OneShots(this.audio);
       this.trainAudio = new TrainAudio(this.audio, this.shots, this.consist.loco, this.consist.coachCount);
       this.ambience = new Ambience(this.audio, this.shots);
+      this.announcer = new StationAnnouncer(this.audio);
+      this.offs.push(() => this.announcer?.dispose());
       await this.trainAudio.init();
     }
     // canvas size and pixel ratio set once, before the first frame (a resize clears the canvas)
@@ -906,7 +914,7 @@ export class Game {
   /** the 3D model's own cab is in use (our procedural cab hidden) */
   private modelCabShown = false;
   /** interior built for a loco model's own cab (WAG-12B) */
-  private modelInterior: Wag12Cab | null = null;
+  private modelInterior: Wag12Cab | Wag9Cab | null = null;
   private horizon: Horizon;
   private air = { haze: 1, clouds: 0, tint: new THREE.Color(), tintW: 0 };
   private tmpColor = new THREE.Color();
@@ -1030,7 +1038,6 @@ export class Game {
     this.oncoming?.reset();
     this.sameLine?.reset();
     this.rules.callingOnUntil = -1;
-    this.announced.clear();
     this.trainView.update(L, km, x => this.path.offsetAt(x), d.odometer, this.lighting.nightLight);
     this.cameras.update(this.cameraContext(0.016));
     this.syncRenderCamera();
@@ -1587,6 +1594,7 @@ export class Game {
     this.engine.speed = this.warp * this.rec.scale;
     const wdt = dt * this.rec.scale;
     TrainView.clock = this.t;
+    TrainView.eye.copy(this.cameras.camera.position);
 
     // trains
     this.trainView.update(this.line, d.headKm, km => this.path.offsetAt(km), d.odometer, night);
@@ -1739,14 +1747,17 @@ export class Game {
     this.waterfalls.update(wdt, this.weather.p.rain > 0.3 || this.route.regionAt(this.cameraKm()).sideSlope > 0);
 
     prof.end('scenery');
-    // station announcements as the train approaches
-    for (const st of this.line.stations) {
-      const dist = st.platformFromKm - d.headKm;
-      if (dist > 0 && dist < 1.2 && !this.announced.has(st.code)) {
-        this.announced.add(st.code);
+    // station announcements: from about 1.2 km before the platform until the train is 1 km past it (not at halts,
+    // not in Record Mode's studio, where there is no train of yours)
+    if (this.announcer) {
+      const st = this.playerHidden ? undefined : this.line.stations.find(x => x.type !== 'halt' && d.headKm > x.platformFromKm - 1.2 && d.tailKm < x.platformToKm + 1.0);
+      let at: { code: string; x: number; y: number; z: number } | null = null;
+      if (st) {
         const sv = this.stations.get(st.code);
-        if (sv) this.trainAudio?.announce(sv.centre.x, sv.centre.y, sv.centre.z);
+        if (sv) at = { code: st.code, x: sv.centre.x, y: sv.centre.y + 6, z: sv.centre.z };
+        else { const f = newFrame(); this.route.alignment.sampleOffset(this.line.canonicalKm(st.km) * 1000, st.buildingSide * 20, f); at = { code: st.code, x: f.x, y: f.y + 6, z: f.z }; }
       }
+      this.announcer.update(wdt, at);
     }
 
     // audio
@@ -2203,6 +2214,13 @@ export class Game {
       keep: r => { this.recordRunner = r; },
       resize: () => this.onResize(),
       applySettings: () => this.applySettings(),
+      rebuildLineside: () => {
+        // every track + lineside chunk again (Record Mode hid or showed the OHE masts); a short hitch, then as before
+        for (const g of this.trackChunks.values()) disposeObject(g);
+        this.trackChunks.clear();
+        this.updateStreaming(true);
+        this.pausedNeedsRender = true;
+      },
       setFpsCap: fps => { this.engine.minFrameMs = fps > 0 ? 1000 / fps : 0; },
       frameMs: () => this.engine.rawMs,
       requestRender: () => { this.pausedNeedsRender = true; },

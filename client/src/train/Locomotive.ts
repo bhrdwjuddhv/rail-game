@@ -138,11 +138,11 @@ export class LocoModel {
     this.bogieX = data.bogieCentresM / 2;
     const M = materials();
     const full = new THREE.Group(), mid = new THREE.Group();
-    let headY = 3.95, headX = L / 2 - 0.62, markerY = 1.6, lampZ = [0];
+    let headY = 3.95, headX = L / 2 - 0.62, markerY = 1.6;
 
     if (this.style === 'diesel-hood') {
       const d = this.dieselBody(L, full, mid);
-      headY = d.headY; headX = d.headX; lampZ = d.lampZ;
+      headY = d.headY; headX = d.headX;
       this.stack = new THREE.Vector3(data.diesel?.stackX ?? 1.6, d.stackTop, 0);
     } else {
       const twin = this.style === 'twin-cab';
@@ -167,20 +167,11 @@ export class LocoModel {
     this.lod.addLevel(far, LOCO_LOD[2]);
     this.body.add(this.lod);
 
-    // lights: headlight(s) and markers at the cab end(s)
+    // lights: the headlight is light only (spotlight, beam), no lamp disc of ours: on the 3D models it stood
+    // off the body. Marker lamps at the cab end(s); a trainset's are on the leading car only
     this.headMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
-    // a trainset's lamps are on the leading car only
     const ends = this.style === 'twin-cab' ? [1, -1] : data.trainset && section > 0 ? [] : [1];
     for (const end of ends) {
-      // one headlight, or a twin lamp (diesel hood units)
-      const r = lampZ.length > 1 ? 0.13 : 0.2;
-      for (const lz of lampZ) {
-        const hl = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.12, 14), end > 0 ? this.headMat : new THREE.MeshBasicMaterial({ color: 0x222222 }));
-        hl.rotation.z = Math.PI / 2;
-        hl.position.set(end * headX, headY, lz);
-        this.body.add(hl);
-        this.lamps.push({ mesh: hl, end });
-      }
       for (const z of [-1.2, 1.2]) {
         const mm = new THREE.MeshBasicMaterial({ color: 0x222222 });
         const mk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.06, 10), mm);
@@ -192,11 +183,8 @@ export class LocoModel {
         (mm as THREE.MeshBasicMaterial & { end?: number }).end = end;
       }
     }
+    // the flasher has no lamp ball of its own either (it floated above the 3D models' roofs)
     this.flasherMat = new THREE.MeshBasicMaterial({ color: 0x332200 });
-    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), this.flasherMat);
-    fl.position.set(this.style === 'diesel-hood' ? headX - 0.3 : L / 2 - 1.4, this.style === 'diesel-hood' ? headY + 0.25 : ROOF_H + 0.12, 0);
-    this.body.add(fl);
-    fl.visible = !(data.trainset && section > 0);
 
     this.headlight = new THREE.SpotLight(0xfff1d6, 0, 600, 0.26, 0.45, 1.2);
     this.headlight.position.set(headX + 0.2, headY - 0.05, 0);
@@ -433,10 +421,10 @@ export class LocoModel {
     return { headX: L / 2 - 0.36, headY: shortTop + 0.18, stackTop: longTop + 0.83, lampZ: [-0.22, 0.22] };
   }
 
-  private buildPanto(x: number, dir: number) {
+  private buildPanto(x: number, dir: number, y = ROOF_H) {
     const M = materials();
     const base = new THREE.Group();
-    base.position.set(x, ROOF_H, 0);
+    base.position.set(x, y, 0);
     const b = new GeoBatch();
     for (const z of [-0.5, 0.5]) for (const dx of [-0.5, 0.5]) b.cyl(0.07, 0.09, 0.35, 8, mat(dx, 0.17, z), '#7a4a32');
     b.box(1.3, 0.08, 1.2, mat(0, 0.37, 0), '#5d6266', 'metal');
@@ -482,7 +470,7 @@ export class LocoModel {
     // the model's own rigged pantographs, or ours at the model's pantograph positions
     for (const p of this.pantos) p.base.removeFromParent();
     this.pantos.length = 0;
-    for (const x of cfg.proceduralPantographs?.x ?? []) this.buildPanto(x, x > 0 ? 1 : -1);
+    for (const x of cfg.proceduralPantographs?.x ?? []) this.buildPanto(x, x > 0 ? 1 : -1, cfg.proceduralPantographs?.baseY);
     const [hx, hy] = cfg.lights.head, [mx, my, mz] = cfg.lights.markers;
     for (const l of this.lamps) {
       if (l.z === undefined) l.mesh.position.set(l.end * hx, hy, 0);
@@ -529,7 +517,9 @@ export class LocoModel {
     // closes in around the camera. Neither is one whose console brings its own cabin (interior
     // 'panel': a shell without an interior would cut through it)
     // (on the LOD itself: THREE.LOD sets its levels' visibility every frame)
-    if (this.glb) this.lod.visible = !inCab || (ownCab && this.data.model?.cab?.interior !== 'panel');
+    // (the WAG-9's model has no interior: its cab is a whole room of ours, the model not drawn from the seat)
+    const room = this.data.model?.cab?.interior === 'panel' || this.data.model?.cab?.interior === 'wag9';
+    if (this.glb) this.lod.visible = !inCab || (ownCab && !room);
     if (this.glb) for (const l of this.glb) {
       for (const c of l.cab) c.visible = !inCab || ownCab;
       for (const r of l.pantos) { r.lower.visible = r.upper.visible = !inCab; }
@@ -539,25 +529,32 @@ export class LocoModel {
 
   /** pos 0 = down, 1 = touching the contact wire (no-op for a diesel). */
   setPantograph(pos: number) {
-    if (this.glb) { for (const l of this.glb) for (const r of l.pantos) poseRig(r, pos); return; }
+    // a 3D model's own rigged arms, and our pantographs standing in for arms it cannot move (proceduralPantographs)
+    if (this.glb) for (const l of this.glb) for (const r of l.pantos) poseRig(r, pos);
     if (!this.pantos.length) return;
-    const hinge = this.pantos[0].hinge;
-    const hDown = 0.18, hUp = CONTACT_H - ROOF_H - hinge.y;
+    const L1 = 1.75, L2 = 1.8;
     for (const p of this.pantos) {
-      const h = hDown + (hUp - hDown) * pos;
+      // up: the head on the wire straight above the base centre; the knee from the two arm lengths
       const dir = Math.sign(-p.hinge.x) || 1;
-      const L1 = 1.75, L2 = 1.8;
-      // head is above the base centre; elbow solves two-circle intersection
-      const hx = -p.hinge.x, hy = h;
+      const hx = -p.hinge.x, hy = CONTACT_H - p.base.position.y - p.hinge.y;
       const d = Math.hypot(hx, hy);
       const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
       const k = Math.sqrt(Math.max(0, L1 * L1 - a * a));
-      const mx = (hx * a) / d, my = (hy * a) / d;
-      const ex = mx - (hy * k) / d * dir, ey = my + (hx * k) / d * dir;
-      p.lower.rotation.z = Math.atan2(ey, ex);
+      const kx = (hx * a) / d - (hy * k) / d * dir, ky = (hy * a) / d + (hx * k) / d * dir;
+      const lUp = Math.atan2(ky, kx);
+      let uUp = Math.atan2(hy - ky, hx - kx);
+      // down: folded flat on the roof, the lower arm a few degrees up toward the head side, the upper folded back over it
+      const lDown = dir > 0 ? 0.08 : Math.PI - 0.08, uDown = dir > 0 ? Math.PI + 0.06 : -0.06;
+      // the upper arm swings down past the knee as it rises (never up through the sky): unwrap its angle that way
+      if (dir > 0) while (uUp < uDown) uUp += Math.PI * 2; else while (uUp > uDown) uUp -= Math.PI * 2;
+      // the lower arm leads (the knee lifts first, keeping the pan head clear of the roof)
+      const pl = Math.sqrt(pos);
+      const aL = lDown + (lUp - lDown) * pl, aU = uDown + (uUp - uDown) * pos;
+      const ex = Math.cos(aL) * L1, ey = Math.sin(aL) * L1;
+      p.lower.rotation.z = aL;
       p.upper.position.set(p.hinge.x + ex, p.hinge.y + ey, 0);
-      p.upper.rotation.z = Math.atan2(hy - ey, hx - ex);
-      p.head.position.set(-0.12, p.hinge.y + h + 0.05, 0);
+      p.upper.rotation.z = aU;
+      p.head.position.set(p.hinge.x + ex + Math.cos(aU) * L2 - 0.12, p.hinge.y + ey + Math.sin(aU) * L2 + 0.05, 0);
     }
   }
 

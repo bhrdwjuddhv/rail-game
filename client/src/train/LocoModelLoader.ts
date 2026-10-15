@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { LocoData, LocoModelFile } from '@rail/shared/train/Consist';
+import type { CoachData, LocoData, LocoModelFile } from '@rail/shared/train/Consist';
 import { settings } from '../core/Settings';
 import { CONTACT_H } from '../infrastructure/OHE';
 
@@ -206,6 +206,19 @@ function fit(scene: THREE.Object3D, cfg: LocoModelFile) {
     g.updateMatrixWorld(true);
     for (const p of parts) g.attach(p);
   });
+  // a bogie that is a single mesh node (WAG-9: each bogie with its wheels is one mesh): give it a group of
+  // its own, or merging the bogie's parts below would take the mesh itself out of the model
+  cfg.bogies.forEach(b => {
+    if (Array.isArray(b.node)) return;
+    const n = byName(scene, b.node);
+    if (!n || !(n as THREE.Mesh).isMesh || !n.parent) return;
+    const g = new THREE.Group();
+    g.name = n.name;
+    n.name = `${n.name}-mesh`;
+    n.parent.add(g);
+    g.updateMatrixWorld(true);
+    g.attach(n);
+  });
   fitted.updateMatrixWorld(true);
   // a plain lit look, and shadows; window glass see-through (tagged by the optimiser, or by name in a source file)
   const glassNames = new Set(cfg.glassMaterials ?? []);
@@ -353,4 +366,52 @@ export function poseRig(r: PantoRig, pos: number) {
   r.upper.position.z = knee.x; r.upper.position.y = knee.y;
   r.upper.quaternion.copy(_qx.setFromAxisAngle(_x, -(aU - r.rest[1]))).multiply(r.upperQ);
   if (r.joint) { r.joint.position.z = knee.x; r.joint.position.y = knee.y; }
+}
+
+/** One level of detail of a coach model: a mesh per material, everything in the coach frame (+x along, y up from rail top, centred). */
+export type CoachLevel = { geometry: THREE.BufferGeometry; material: THREE.Material }[];
+const coachCache = new Map<string, Promise<Record<(typeof LEVELS)[number], CoachLevel> | null>>();
+
+/** Bake a fitted coach into plain geometry per material (the transforms applied, parts with one material merged). */
+function coachLevel(fitted: THREE.Group): CoachLevel {
+  fitted.updateMatrixWorld(true);
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  fitted.traverse(o => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const g = plainGeometry(m, m.matrixWorld);
+    const list = byMat.get(m.material as THREE.Material) ?? [];
+    list.push(g);
+    byMat.set(m.material as THREE.Material, list);
+  });
+  const out: CoachLevel = [];
+  for (const [material, list] of byMat) {
+    const geometry = list.length > 1 ? mergeGeometries(list, false) : list[0];
+    if (!geometry) continue;
+    geometry.computeBoundingSphere();
+    out.push({ geometry, material });
+  }
+  return out;
+}
+
+/**
+ * A coach's 3D model (data/coaches model), its three levels of detail baked for instancing. Only the
+ * optimised files are used (coach sources are far too heavy to draw a rake of): when they are missing
+ * the procedural coach stays and a warning says to run `npm run models`.
+ */
+export function loadCoachModel(c: CoachData) {
+  if (!c.model) return Promise.resolve(null);
+  let p = coachCache.get(c.id);
+  if (!p) {
+    const f = files(`coach-${c.id}`), l = gltfLoader();
+    const cfg = { ...c.model, bogies: [], pantographs: [], hideInCab: [], lights: { head: [0, 0], markers: [0, 0, 0] } } as LocoModelFile;
+    p = Promise.all(LEVELS.map(k => l.loadAsync(f[k]).then(g => g.scene)))
+      .then(([near, mid, far]) => ({ near: coachLevel(fit(near, cfg)), mid: coachLevel(fit(mid, cfg)), far: coachLevel(fit(far, cfg)) }))
+      .catch(err => {
+        console.warn(`[models] coach ${c.id}: optimised files missing (${f.near}) - the procedural coach is kept. Run "npm run models".`, err);
+        return null;
+      });
+    coachCache.set(c.id, p);
+  }
+  return p;
 }

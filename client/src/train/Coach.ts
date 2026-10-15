@@ -7,6 +7,7 @@ import { newFrame, RAIL_TOP, TrackFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
 import type { CoachData, LocoData, Vehicle } from '@rail/shared/train/Consist';
 import { LocoModel } from './Locomotive';
+import { CoachLevel, loadCoachModel } from './LocoModelLoader';
 import { wagonTemplate, wagonTint } from './Wagons';
 import { isFreightStock } from '@rail/shared/train/Consist';
 
@@ -98,9 +99,9 @@ function coachTemplate(c: CoachData) {
   if (!goods) {
     b.box(3, 0.6, 2, mat(-2.5, FLOOR - 0.55, 0), '#303438', 'metal');
     b.box(2.2, 0.5, 1.6, mat(3.5, FLOOR - 0.5, 0), '#303438', 'metal');
-    for (const e of [-1, 1]) b.box(0.4, 2.3, 1.3, mat(e * (L / 2 + 0.15), FLOOR + 1.2, 0), '#1c1c1c'); // gangway bellows
+    for (const e of [-1, 1]) b.box(0.25, 2.3, 1.3, mat(e * (L / 2 + 0.125), FLOOR + 1.2, 0), '#1c1c1c'); // gangway bellows, to the coach's end: they meet the next coach's
   }
-  for (const e of [-1, 1]) b.box(0.5, 0.22, 0.3, mat(e * (L / 2 + 0.1), 0.95, 0), '#2a2a2a', 'metal'); // CBC
+  for (const e of [-1, 1]) b.box(0.25, 0.22, 0.3, mat(e * (L / 2 + 0.125), 0.95, 0), '#2a2a2a', 'metal'); // CBC, its face at the coach's end
   t = { body: geo, under: b.geometry('metal')!, mat: material };
   // std parts (bellows) merged into under geometry via second key
   const stdPart = b.geometry('std');
@@ -155,6 +156,10 @@ const _flip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0)
 export class TrainView {
   /** simulation time (s): lamps blink by it, so they stop when the world is frozen */
   static clock = 0;
+  /** the camera (world position), for coach models' level of detail */
+  static readonly eye = new THREE.Vector3();
+  /** coach types drawn with their 3D model: instanced meshes per level of detail (near, mid, far), filled each update */
+  private models = new Map<string, { levels: THREE.InstancedMesh[][]; n: number[] }>();
   readonly group = new THREE.Group();
   /** the leading loco section (cab, lights, cameras) */
   readonly loco: LocoModel;
@@ -197,6 +202,8 @@ export class TrainView {
     }
     vehicles.forEach((v, i) => { if (v.kind === 'coach') this.bodies.get(this.look[i])!.idx.push(i); });
     for (const s of this.bodies.values()) this.refreshSet(s);
+    // coach types with a 3D model: the procedural body until it has loaded
+    for (const [type, n] of cap) if (coachTypes[type]?.model) void loadCoachModel(coachTypes[type]).then(m => { if (m) this.useModel(type, [m.near, m.mid, m.far], n); });
     this.bogies = new THREE.InstancedMesh(coachBogie(), M.std, Math.max(1, coaches.length * 2));
     this.wheels = new THREE.InstancedMesh(coachWheelset(), M.metal, Math.max(1, coaches.length * 4));
     this.bogies.count = coaches.length * 2;
@@ -213,6 +220,22 @@ export class TrainView {
     }
   }
   private coachTypes: Record<string, CoachData>;
+  /** A coach type's model has loaded: instanced meshes for its levels of detail replace its procedural body, bogies and wheels. */
+  private useModel(type: string, levels: CoachLevel[], n: number) {
+    const set = this.bodies.get(type);
+    if (!set) return;
+    const meshes = levels.map((parts, li) => parts.map(p => {
+      const im = new THREE.InstancedMesh(p.geometry, p.material, n);
+      im.count = 0;
+      im.frustumCulled = false;
+      im.castShadow = li < 2; im.receiveShadow = true;
+      im.userData.sharedGeometry = true;
+      this.group.add(im);
+      return im;
+    }));
+    this.models.set(type, { levels: meshes, n: [0, 0, 0] });
+    set.body.visible = set.under.visible = false;
+  }
   private lookOf(i: number, loaded: boolean) {
     const t = this.vehicles[i].typeId, e = this.coachTypes[t]?.emptyLook;
     return !loaded && e && this.coachTypes[e] ? e : t;
@@ -255,6 +278,7 @@ export class TrainView {
     this.wheelAngle = distanceM / 0.46;
     let bi = 0, wi = 0, li = 0;
     const vs = this.vehicles;
+    for (const m of this.models.values()) m.n.fill(0);
     for (let i = 0; i < vs.length; i++) {
       const v = vs[i];
       const c = headKm - (v.frontOffset + v.length / 2) / 1000;
@@ -288,6 +312,15 @@ export class TrainView {
         lm.syncLod();
         continue;
       }
+      // a coach with its 3D model: near / mid / far copy by distance from the camera (its own bogies and wheels)
+      const mdl = this.models.get(this.look[i]);
+      if (mdl) {
+        const d = Math.hypot(_p.x + ox - TrainView.eye.x, _p.y + oy - TrainView.eye.y, _p.z + oz - TrainView.eye.z);
+        const lv = d < 90 ? 0 : d < 450 ? 1 : 2;
+        for (const im of mdl.levels[lv]) im.setMatrixAt(mdl.n[lv], _m);
+        mdl.n[lv]++;
+        continue;
+      }
       const set = this.bodies.get(this.look[i])!;
       const slot = this.slot[i];
       set.body.setMatrixAt(slot, _m);
@@ -315,6 +348,8 @@ export class TrainView {
       this.lampT = TrainView.clock % 1;
       (this.tailLamp.material as THREE.MeshBasicMaterial).color.setRGB(this.lampT < 0.35 ? 4 : 0.25, 0, 0);
     }
+    for (const m of this.models.values()) m.levels.forEach((l, k) => { for (const im of l) { im.count = m.n[k]; im.instanceMatrix.needsUpdate = true; } });
+    this.bogies.count = bi; this.wheels.count = wi;
     this.bogies.instanceMatrix.needsUpdate = true;
     this.wheels.instanceMatrix.needsUpdate = true;
   }

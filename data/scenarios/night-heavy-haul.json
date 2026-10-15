@@ -55,7 +55,7 @@
       "track": "DOWN",
       "maxKmph": 100,
       "wagons": 45,
-      "carLengthM": 19.2,
+      "carLengthM": 18.6,
       "kind": "goods",
       "stock": "container-ds",
       "stops": [

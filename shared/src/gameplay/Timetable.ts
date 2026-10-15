@@ -117,8 +117,10 @@ export class Dispatcher {
     s.arrivedAt = clock - MIN_DWELL;
   }
 
-  lineOf(st: StationInfo, offset: number) {
-    return st.lineInfo.reduce((best, l) => (Math.abs(l.offset - offset) < Math.abs(best.offset - offset) ? l : best)).id;
+  /** The station line at a lateral offset (and km: a junction's two bay halves share an offset). */
+  lineOf(st: StationInfo, offset: number, km?: number) {
+    const here = km === undefined ? st.lineInfo : st.lineInfo.filter(l => km >= l.fromKm - 0.01 && km <= l.toKm + 0.01);
+    return (here.length ? here : st.lineInfo).reduce((best, l) => (Math.abs(l.offset - offset) < Math.abs(best.offset - offset) ? l : best)).id;
   }
 
   stationState(trainId: string, code: string) { return this.state.get(trainId)?.get(code); }
@@ -243,18 +245,41 @@ export class Dispatcher {
           if (s.giveWay) line = this.loopAt(st)!.id;
         }
 
-        if (interlocked && t.headKm < st.entryKm) {
+        // a route in is asked for by the first train coming (not by one behind it, which would hold the station's single
+        // reception while the train ahead waits at the home signal), and not while the train still stands in another
+        // station waiting to leave (it would hold this one's reception for nothing)
+        const queued = trains.some(o => o !== t && !this.manual.has(o.id) && o.headKm > t.headKm && o.headKm < st.entryKm && !this.interlocking.find(o.id, st, 'reception'));
+        const held = this.route.stations.some(o => o !== st && o.type !== 'halt' && o.km < st.km && t.headKm >= o.entryKm && t.headKm <= o.exitKm && !this.interlocking.find(t.id, o, 'departure'));
+        if (interlocked && t.headKm < st.entryKm && !queued && !held && !this.interlocking.find(t.id, st, 'reception') || (interlocked && t.headKm < st.entryKm && this.interlocking.find(t.id, st, 'reception'))) {
           // along the middle line (from the last station): its own home; back to the line booked (or the
           // running line), else straight on along the middle line
           const fromMiddle = this.route.middle && Math.abs(t.offsetAt(t.headKm)) < 1;
-          const r = this.interlocking.requestReception(t.id, st, fromMiddle ? [line, MIDDLE_LINE] : [line], occupants, fromMiddle);
+          // a route set while the train was on its running line, which then came along the middle line (or the other
+          // way): it waits at the other home signal; set again while there is time for the points
+          const had = this.interlocking.find(t.id, st, 'reception');
+          // (also when it already stands at that signal: only while it is short of all the route's points)
+          if (had && !!had.fromMiddle !== fromMiddle && t.headKm < Math.min(...had.needs.map(n => n.sw.def.rampStart)) - 0.01) this.interlocking.release(had);
+          // a big junction: a train calling here gets a platform line, never a through line (each train its own
+          // turn round the platforms, so they are all used); a goods train runs round on the avoiding line
+          let prefs = fromMiddle ? [line, MIDDLE_LINE] : [line], only = false;
+          // (one coming along the middle line too: it crosses back to its running line before the ladder)
+          if (st.platformLines?.length && plan.line) only = true; // a booked line here (a bay): wait for it, never a through line
+          else if (st.platformLines?.length) {
+            // (a train calling here stands at a platform anyway: giving way never sends it onto a through line)
+            if (plan.stop) {
+              const pl = st.platformLines, k = [...t.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % pl.length;
+              prefs = [...pl.slice(k), ...pl.slice(0, k)];
+              only = true;
+            } else if ((t.priority ?? 2) <= 1 && st.avoiding && !s.giveWay) prefs = [st.avoiding, line];
+          }
+          const r = this.interlocking.requestReception(t.id, st, prefs, occupants, fromMiddle, only);
           if (r && s.giveWay && !s.giveWayTold && r.lineId === line) {
             s.giveWayTold = true;
             const f = trains.find(x => x.id === s.giveWay);
             if (f) for (const l of this.listeners) l.givingWay?.(t, st, f);
           }
           const home = this.block.stationSignals(st.code).find(x => x.def.kind === 'home' && (x.def.line === MIDDLE_LINE) === fromMiddle);
-          if (!r && home) {
+          if (!r && home && !only) { // (never called on into an occupied junction platform: it waits for a free one)
             const nearHome = home.km - t.headKm < 0.4 && home.km > t.headKm;
             s.waitHome = nearHome && Math.abs(t.speed) < 0.1 ? s.waitHome + dt : 0;
             if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line, occupants, fromMiddle);
@@ -275,7 +300,8 @@ export class Dispatcher {
           && this.overtaken(t, st, s, trains, clock);
         if (interlocked && dwellOk && t.headKm > st.entryKm - 3) {
           const recv = this.interlocking.reception(st);
-          const lineId = recv && recv.trainId === t.id ? recv.lineId : this.lineOf(st, t.offsetAt(Math.max(t.tailKm, Math.min(t.headKm, st.platformToKm))));
+          const at = Math.max(t.tailKm, Math.min(t.headKm, st.platformToKm));
+          const lineId = recv && recv.trainId === t.id ? recv.lineId : this.lineOf(st, t.offsetAt(at), at);
           // only once the train is received here (or inside the station): a departure route set ahead of that
           // could be for the wrong line (a train arriving along the middle line is received onto its own)
           if (t.headKm > st.entryKm + 0.1 || recv?.trainId === t.id) {

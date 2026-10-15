@@ -78,7 +78,7 @@ export interface LocoModelFile {
    * The model's own pantograph arms are not rigged: remove these parts and use
    * the game's animated pantograph at x (m, loco frame) on the roof instead.
    */
-  proceduralPantographs?: { remove: string[]; x: number[] };
+  proceduralPantographs?: { remove: string[]; x: number[]; /** height of their base above the rail (default the procedural roof, 4.05 m) */ baseY?: number };
   /** pantograph arms: lower arm (pivots at its base), upper arm with the pan head (pivots at the knee), knee joint part */
   pantographs: { lower: string; upper: string; joint?: string }[];
   /** parts hidden in the cab view when our procedural cab is used (no `cab` below): the model's own interior */
@@ -89,7 +89,7 @@ export interface LocoModelFile {
    * gamepad or the touch controls. `eye`: driver's eye (m, loco frame).
    */
   cab?: {
-    eye: [number, number, number]; interior?: 'wag12' | 'panel';
+    eye: [number, number, number]; interior?: 'wag12' | 'wag9' | 'panel';
     /**
      * interior 'panel': a separate driver's console model, loaded only when the
      * cab view is wanted (it is heavy). Fitted like the body (loco frame of the
@@ -105,6 +105,8 @@ export interface LocoModelFile {
       title?: string; author?: string; licence?: string; source?: string;
     };
   };
+  /** triangle budget of the near (high / medium) copies: the optimiser thins the densest parts (springs, bolts, wheels) down to it */
+  maxTriangles?: number;
   /** materials that are window glass (exported opaque): rendered see-through */
   glassMaterials?: string[];
   /** parts removed from the model (placeholders replaced by the game's own) */
@@ -141,6 +143,23 @@ export interface CoachData {
   seats?: number;
   /** the coach type drawn while this wagon is empty (container wagons: the bare well wagon) */
   emptyLook?: string;
+  /**
+   * A 3D model for the coach (drawn instead of the procedural body, bogies and wheels once loaded), fitted like a
+   * loco's: coach frame +x along, y up from rail top, centred, its ends at +-lengthM / 2 (lengthM = the model's
+   * length over gangways / couplers, so coupled coaches meet).
+   */
+  model?: CoachModelFile;
+}
+
+export interface CoachModelFile {
+  file: string; scale: number; rotationDeg: [number, number, number]; offset: [number, number, number];
+  /** parts left out (stray or placeholder nodes) */
+  remove?: string[];
+  look?: { roughness: number; metalness: number };
+  glassMaterials?: string[];
+  /** triangle budget of the near copy (see LocoModelFile.maxTriangles) */
+  maxTriangles?: number;
+  title?: string; author?: string; licence?: string; source?: string;
 }
 
 /** Freight stock (boxcars, container wagons, brake vans). */
@@ -168,7 +187,11 @@ export interface Vehicle {
 /** `locos`: number of loco units (1-2) worked from the lead cab (multiple working) */
 export interface ConsistSpec { loco: string; coaches: { type: string; count: number }[]; loaded?: boolean; locos?: number }
 
-export const COUPLER_GAP = 0.6;
+/**
+ * Space left between coupled vehicles (m). Lengths in the data are over buffers / couplers (as published), so
+ * coupled vehicles touch: 0. (It was 0.6, which showed as a gap between every pair of vehicles.)
+ */
+export const COUPLER_GAP = 0;
 
 export class Consist {
   readonly vehicles: Vehicle[] = [];
@@ -196,7 +219,7 @@ export class Consist {
         davis: { a: loco.resistance.aN / n, b: loco.resistance.bNperMs / n, c: lead ? loco.resistance.cNperMs2 : 0 },
         unit: u, section: s, reversed: !cars && n > 1 && s === n - 1,
       });
-      off += secL + (s < n - 1 ? (cars ? 0 : 0.3) : COUPLER_GAP);
+      off += secL + (s < n - 1 ? 0 : COUPLER_GAP);
     }
     for (const g of spec.coaches) {
       const c = coachTypes[g.type];

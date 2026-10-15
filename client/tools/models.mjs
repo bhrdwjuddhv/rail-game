@@ -1,6 +1,6 @@
 // Optimise 3D models for the game (npm run models).
 //
-// For every data/locomotives/*.json with a "model" section, reads its source
+// For every data/locomotives/*.json and data/coaches/*.json with a "model" section, reads its source
 // GLB (never modified) and writes optimised copies to
 // client/public/assets/models/_processed/<id>.<variant>.glb:
 //   high    full geometry, textures capped at 2048   (desktop High / Ultra, near)
@@ -33,6 +33,7 @@ const PIPELINE_VERSION = 6;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const DATA = path.resolve(ROOT, '..', 'data', 'locomotives');
+const COACH_DATA = path.resolve(ROOT, '..', 'data', 'coaches');
 const OUT = path.join(PUBLIC, 'assets', 'models', '_processed');
 const CACHE = path.join(OUT, 'cache.json');
 const TEX_CACHE = path.join(OUT, '.ktx2-cache');
@@ -110,7 +111,8 @@ async function compressTextures(doc, cap) {
     tex.setImage(new Uint8Array(ktx)).setMimeType('image/ktx2');
     bytes += info.width * info.height * (normal ? 1 : 0.5) * 1.333; // GPU bytes (BC7/ETC2-class ~1 B/px, BC1/ETC1 ~0.5)
   }
-  doc.createExtension(KHRTextureBasisu).setRequired(true);
+  // colour-only models (no textures) need no texture extension at all
+  if (root.listTextures().length) doc.createExtension(KHRTextureBasisu).setRequired(true);
   return bytes;
 }
 
@@ -142,6 +144,50 @@ function sloppy(doc, ratio, error) {
   }
 }
 
+/** Largest scale on a node's world matrix (column lengths). */
+function worldScale(n) {
+  const m = n.getWorldMatrix();
+  return Math.max(Math.hypot(m[0], m[1], m[2]), Math.hypot(m[4], m[5], m[6]), Math.hypot(m[8], m[9], m[10]));
+}
+
+/**
+ * Thin a model down to a triangle budget: the densest parts first (coil springs, bolts, wheels modelled
+ * with tens of thousands of triangles), with a geometric error that is a size in metres, not a fraction
+ * of the part - so a 20 cm spring and a 16 m body lose the same few millimetres. The tolerance grows
+ * until the model fits, up to maxErrM (6 cm near; the far copies, seen from hundreds of metres, up to 12 / 40 cm).
+ */
+function thin(doc, budget, scale, maxErrM = 0.06, sloppyOk = false) {
+  const prims = [];
+  for (const n of doc.getRoot().listNodes()) {
+    const m = n.getMesh();
+    if (!m) continue;
+    const ws = worldScale(n) * scale;
+    for (const p of m.listPrimitives()) if (p.getMode() === 4 && p.getIndices() && !prims.some(x => x.p === p)) prims.push({ p, ws });
+  }
+  const count = () => prims.reduce((a, x) => a + x.p.getIndices().getCount() / 3, 0);
+  for (const errM of [0.002, 0.004, 0.008, 0.015, 0.03, 0.06, 0.12, 0.25, 0.4].filter(e => e <= maxErrM)) {
+    if (count() <= budget) break;
+    for (const { p, ws } of prims) {
+      const idx = p.getIndices(), pos = p.getAttribute('POSITION');
+      if (idx.getCount() < 900) continue; // under 300 triangles: never worth it
+      const positions = pos.getArray() instanceof Float32Array ? pos.getArray() : Float32Array.from(pos.getArray());
+      let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (let i = 0; i < positions.length; i += 3) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], positions[i + k]); hi[k] = Math.max(hi[k], positions[i + k]); }
+      const extentM = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) * ws;
+      if (!(extentM > 0)) continue;
+      const indices = Uint32Array.from(idx.getArray());
+      const target = Math.max(36, Math.floor(indices.length * 0.02 / 3) * 3), rel = Math.min(1, errM / extentM);
+      // edge collapses that keep every part's shape (a wheel stays a wheel); position-only (sloppy) simplification
+      // collapses thin parts - wheel discs, sheet metal - so it is used only for the farthest copy
+      // Permissive: also across split vertices (these models are flat-shaded: every face its own normals)
+      let [out] = MeshoptSimplifier.simplify(indices, positions, 3, target, errM / ws, ['Permissive', 'ErrorAbsolute']);
+      if (sloppyOk && out.length > indices.length * 0.6) [out] = MeshoptSimplifier.simplifySloppy(indices, positions, 3, null, target, rel);
+      if (out.length >= 3 && out.length < indices.length) idx.setArray(pos.getCount() > 65535 ? out : Uint16Array.from(out));
+    }
+  }
+  return Math.round(count());
+}
+
 /** Drop the parts the data leaves out: outside cfg.keep (one section of a twin loco), and pantograph arms the game replaces. */
 function keepParts(doc, cfg) {
   const remove = new Set([...(cfg.proceduralPantographs?.remove ?? []), ...(cfg.remove ?? [])]);
@@ -163,7 +209,7 @@ function keepParts(doc, cfg) {
 async function processLoco(id, cfg, cache) {
   const src = path.join(PUBLIC, cfg.file);
   if (!fs.existsSync(src)) return { id, status: 'missing', note: `${cfg.file} not found` };
-  const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify([cfg.texturePatches ?? null, cfg.keep ?? null, cfg.proceduralPantographs ?? null, cfg.hideInCab, cfg.remove ?? null, cfg.glassMaterials ?? null])).update(fs.readFileSync(src)).digest('hex');
+  const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify([cfg.texturePatches ?? null, cfg.keep ?? null, cfg.proceduralPantographs ?? null, cfg.hideInCab, cfg.remove ?? null, cfg.glassMaterials ?? null, cfg.maxTriangles ?? null])).update(fs.readFileSync(src)).digest('hex');
   const outputs = VARIANTS.map(v => path.join(OUT, `${id}.${v.name}.glb`));
   if (!flag('--force') && cache[id]?.key === key && outputs.every(f => fs.existsSync(f))) return { ...cache[id].result, cached: true };
 
@@ -187,9 +233,11 @@ async function processLoco(id, cfg, cache) {
       // part's triangles. The model is flat-shaded (no shared vertices across faces), so the
       // seam-preserving simplifier cannot collapse anything; sloppy simplification works on
       // positions only, which is right at the distances these LODs are shown
-      dropSmallParts(doc, v.minPartM, cfg.scale, v.dropCab ? new Set(cfg.hideInCab) : new Set());
-      sloppy(doc, v.ratio, v.error);
+      dropSmallParts(doc, v.minPartM, cfg.scale, v.dropCab ? new Set(cfg.hideInCab ?? []) : new Set());
+      if (!cfg.maxTriangles || v.minPartM > 1) sloppy(doc, v.ratio, v.error); // (models with a budget: thin() below keeps their parts whole)
     }
+    // a budget in the data (very dense source models): near copies to it, far ones to a fifth / a twenty-fifth
+    if (cfg.maxTriangles) thin(doc, cfg.maxTriangles * (v.ratio < 1 ? (v.minPartM > 1 ? 0.04 : 0.2) : 1), cfg.scale, v.ratio < 1 ? (v.minPartM > 1 ? 0.4 : 0.12) : 0.06, v.minPartM > 1);
     const gpu = await compressTextures(doc, v.tex);
     await doc.transform(prune({ keepLeaves: true }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
     const file = outputs[VARIANTS.indexOf(v)];
@@ -270,6 +318,16 @@ for (const f of fs.readdirSync(DATA).filter(f => f.endsWith('.json'))) {
     console.log(`${rp.status}${rp.cached ? ' (cached)' : ''} ${((Date.now() - t1) / 1000).toFixed(1)} s`);
     rows.push(rp);
   }
+}
+// coaches with a 3D model: the same four copies (no cab, no moving parts)
+for (const f of fs.readdirSync(COACH_DATA).filter(f => f.endsWith('.json'))) {
+  const coach = JSON.parse(fs.readFileSync(path.join(COACH_DATA, f), 'utf8'));
+  if (!coach.model?.file || (only && coach.id !== only)) continue;
+  const t0 = Date.now();
+  process.stdout.write(`  coach ${coach.id} ... `);
+  const r = await processLoco(`coach-${coach.id}`, coach.model, cache);
+  console.log(`${r.status}${r.cached ? ' (cached)' : ''} ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  rows.push(r);
 }
 fs.writeFileSync(CACHE, JSON.stringify(cache, null, 1));
 for (const r of rows) {

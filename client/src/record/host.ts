@@ -105,6 +105,8 @@ export interface RecordHost {
   keep(r: RecordRunner | null): void;
   resize(): void;
   applySettings(): void;
+  /** build the track and lineside chunks again (OHE masts shown / hidden) */
+  rebuildLineside(): void;
   setFpsCap(fps: number): void;
   /** wall time of the last frame (ms) */
   frameMs(): number;

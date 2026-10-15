@@ -8,6 +8,7 @@ const reg = buildRegistry({
   locomotives: import.meta.glob('../../data/locomotives/*.json', { eager: true, import: 'default' }),
   coaches: import.meta.glob('../../data/coaches/*.json', { eager: true, import: 'default' }),
   scenarios: import.meta.glob('../../data/scenarios/*.json', { eager: true, import: 'default' }),
+  junctions: import.meta.glob('../../data/junctions/*.json', { eager: true, import: 'default' }),
 });
 
 export const DATA_ISSUES = reg.issues;
@@ -16,4 +17,5 @@ export const ROUTES = reg.routes;
 export const LOCOS = reg.locos;
 export const COACHES = reg.coaches;
 export const SCENARIOS = reg.scenarios;
+export const JUNCTIONS = reg.junctions;
 export const locoOrDefault = reg.locoOrDefault;

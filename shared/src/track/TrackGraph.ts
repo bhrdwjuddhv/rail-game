@@ -191,3 +191,24 @@ export class TrackPath {
     return crossed;
   }
 }
+
+/** Where a track ends with nowhere further to go: a buffer stop. `dir` +1: the line's far end (trains run into it going up the km). */
+export interface DeadEnd { km: number; offset: number; dir: 1 | -1; line: string }
+
+/**
+ * Line ends that no switch or other line carries on from (sidings, bays, a
+ * terminus), away from the route's own ends.
+ */
+export function deadEnds(lines: LineDef[], switches: Switch[], lengthKm: number): DeadEnd[] {
+  const out: DeadEnd[] = [];
+  const at = (a: number, b: number) => Math.abs(a - b) < EPS;
+  for (const l of lines) {
+    if (l.toKm < lengthKm - 0.05
+      && !switches.some(s => at(s.def.from, l.offset) && Math.abs(s.def.rampStart - l.toKm) < 0.01)
+      && !lines.some(o => o !== l && at(o.offset, l.offset) && Math.abs(o.fromKm - l.toKm) < 0.003)) out.push({ km: l.toKm, offset: l.offset, dir: 1, line: l.id });
+    if (l.fromKm > 0.05
+      && !switches.some(s => at(s.def.to, l.offset) && Math.abs(s.def.rampEnd - l.fromKm) < 0.01)
+      && !lines.some(o => o !== l && at(o.offset, l.offset) && Math.abs(o.toKm - l.fromKm) < 0.003)) out.push({ km: l.fromKm, offset: l.offset, dir: -1, line: l.id });
+  }
+  return out;
+}

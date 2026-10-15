@@ -1,0 +1,33 @@
+{
+  "id": "sagarpur",
+  "name": "Sagarpur Central",
+  "nameHi": "सागरपुर सेंट्रल",
+  "nameRegional": "સાગરપુર સેન્ટ્રલ",
+  "code": "SGPC",
+  "style": "colonial",
+  "connects": [
+    { "route": "freight-corridor", "end": "end" },
+    { "route": "ghat-express", "end": "end" }
+  ],
+  "region": "kutch-coast",
+  "zone": "town",
+  "platformLinesPerSide": 5,
+  "platformLengthM": 620,
+  "buildingSide": -1,
+  "avoidingLines": true,
+  "yardSidings": 5,
+  "carriageSidings": 2,
+  "dwellS": [60, 240],
+  "trainsInStation": 5,
+  "bullet": false,
+  "trainNames": {
+    "express": ["Sagar Express", "Coromandel Coast", "Western Ghats Express", "Port Link"],
+    "mail": ["Sagarpur Mail", "Malabar Mail"],
+    "local": ["SGPC Local", "Harbour Line"]
+  },
+  "postcards": [
+    { "name": "Sagarpur clock tower", "atKm": 0.02, "offsetM": -125, "heightM": 12, "lookKm": 0 },
+    { "name": "Under the iron train shed", "atKm": -0.32, "offsetM": -10, "heightM": 3.0, "lookKm": 0.15 },
+    { "name": "Sagarpur from the harbour", "atKm": 0.85, "offsetM": 160, "heightM": 28, "lookKm": 0 }
+  ]
+}

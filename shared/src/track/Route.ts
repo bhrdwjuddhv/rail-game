@@ -4,6 +4,7 @@ import { compileLandforms, Landform, LandformData } from './Landforms';
 import { formatGradient, parseGradient, ProfilePoint } from './Gradient';
 import { SegmentDef } from './TrackSegment';
 import { RAMP_M, RunningLine, TrackGraph } from './TrackGraph';
+import type { JunctionStyle, LineRole } from './Junctions';
 
 // ---------- data file shapes ----------
 export interface CrossoverData { km: number; fromLine: string; toLine: string }
@@ -11,10 +12,14 @@ export interface StationData {
   name: string; nameHi: string; nameRegional: string; code: string; km: number;
   type: 'halt' | 'wayside' | 'junction' | 'terminal';
   platformLengthM: number; buildingSide: 1 | -1;
-  /** loop lines (running lines may be listed too; they are implicit) */
-  lines: { id: string; offset: number }[];
+  /** loop lines (running lines may be listed too; they are implicit); role: a big junction's kinds of line (Junctions.ts) */
+  lines: { id: string; offset: number; role?: LineRole }[];
   platforms: { num: string; from: number; to: number; lines: string[] }[];
   crossovers?: CrossoverData[];
+  /** platform number of each line (big junctions: one number per line, A / B for a bay's halves) */
+  numbers?: Record<string, string>;
+  /** a big junction (data/junctions): ladders of turnouts, bays, avoiding line, sidings; its architecture style */
+  junction?: { id: string; style: JunctionStyle };
   /**
    * Freight crossing station: platformLengthM is then the standing length of
    * its loops (a 1.5 km train fits), and only a short, low service platform of
@@ -83,7 +88,7 @@ export interface RouteData {
   /** a dedicated freight corridor: only goods trains (traffic, menus) */
   freight?: boolean;
   /** the sea beside the line from fromKm past the route end: shore shoreM out on `side` (1 = Up side) */
-  sea?: { fromKm: number; side: 1 | -1; shoreM: number };
+  sea?: { fromKm: number; side: 1 | -1; shoreM: number; /** where the coast ends (default: past the route end) */ toKm?: number };
 }
 export interface RegionData {
   id: string; name: string; ground: string[]; crops: { name: string; color: string }[];
@@ -155,6 +160,10 @@ export interface StationInfo extends StationData {
   /** lines this direction can be routed into: its running line, then its loops */
   lineInfo: { id: string; offset: number; fromKm: number; toKm: number }[];
   regionId: string;
+  /** big junction, this direction: its ladders (line ids, inner to outer) at the entry and the exit end */
+  ladderIn?: string[]; ladderOut?: string[];
+  /** big junction: lines with a platform for trains calling here (bays excluded), the bays, the freight avoiding line */
+  platformLines?: string[]; bayIn?: string; bayOut?: string; avoiding?: string;
 }
 export interface BoardDef { kind: 'km' | 'whistle' | 'speed' | 'caution' | 'termination' | 'gradient' | 'approach' | 'stop' | 'ghat'; km: number; text: string; offset: number }
 export interface RiverDef { id: string; points: { x: number; z: number }[]; width: number; floor: number; water: number; bridgeKm: number; minX: number; maxX: number; minZ: number; maxZ: number }
@@ -283,6 +292,7 @@ export class Route {
 
   // ---------------- stations & switches ----------------
   private compileStation(s0: StationData) {
+    if (s0.junction) { this.compileJunction(s0); return; }
     const s = this.spread(s0);
     const half = s.platformLengthM / 2000;
     const run = this.running;
@@ -318,6 +328,103 @@ export class Route {
       if (st.exitKm + r + 0.02 < this.lengthKm - 0.05) this.graph.addSwitch({ id: `${s.code}-${MIDDLE_LINE}-O`, station: s.code, kind: 'facing', from: run.offset, to: 0, rampStart: st.exitKm + 0.02, rampEnd: st.exitKm + r + 0.02 });
     }
     (s.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `${s.code}-XO${i}`, s.code, own));
+    this.stations.push(st);
+  }
+
+  /**
+   * A big junction, this direction's side of it (Junctions.ts). From the running line a
+   * ladder of turnouts leads out across the platform lines, each turnout one step of the
+   * diagonal, each line branching off where its step ends; at the far end a trailing
+   * ladder brings them back. The outermost offset is a bay in two halves: one entered from
+   * this end (dead end at the middle, for terminating trains), one leaving at the far end
+   * (for starting trains). Before the ladder the middle line's turnout; before that, if
+   * there is one, the freight avoiding line's long turnout out round everything. Sidings
+   * (yard, carriages, loco shed) branch off the outermost line; they are never routed.
+   */
+  private compileJunction(s0: StationData) {
+    const s = this.spread(s0), run = this.running, code = s.code, side = Math.sign(run.offset) || -1;
+    const half = s.platformLengthM / 2000, pf0 = s.km - half, pf1 = s.km + half, r = RAMP_M / 1000;
+    const mine = s.lines.filter(l => Math.sign(l.offset) === side);
+    const dist = (l: { offset: number }) => Math.abs(l.offset - run.offset);
+    const plat = mine.filter(l => (l.role ?? 'platform') === 'platform').sort((a, b) => dist(a) - dist(b));
+    const bayIn = mine.find(l => l.role === 'bay-low'), bayOut = mine.find(l => l.role === 'bay-high');
+    const avl = mine.find(l => l.role === 'avoiding');
+    const deco = mine.filter(l => l.role === 'siding' || l.role === 'carriage' || l.role === 'shed').sort((a, b) => dist(a) - dist(b));
+    // a turnout step: about 1 in 9 across, 60 to 140 m long
+    const step = (a: number, b: number) => Math.min(0.14, Math.max(0.06, Math.abs(b - a) * 0.009));
+    const from = new Map<string, number>(), to = new Map<string, number>();
+    // entry ladder: the platform lines all start before the platform; the bay one more step out
+    const chainIn = [...plat, ...(bayIn ? [bayIn] : [])];
+    const dIn = chainIn.map((l, i) => step(i ? chainIn[i - 1].offset : run.offset, l.offset));
+    const toe = pf0 - 0.03 - dIn.slice(0, plat.length).reduce((a, b) => a + b, 0);
+    let t = toe;
+    chainIn.forEach((l, i) => {
+      this.graph.addSwitch({ id: `${code}-${l.id}-E`, station: code, kind: 'facing', from: i ? chainIn[i - 1].offset : run.offset, to: l.offset, rampStart: +t.toFixed(6), rampEnd: +(t + dIn[i]).toFixed(6) });
+      t += dIn[i];
+      from.set(l.id, t);
+    });
+    // exit ladder: the outermost line ends first, each turnout steps back in
+    const chainOut = [...plat, ...(bayOut ? [bayOut] : [])];
+    const dOut = chainOut.map((l, i) => step(i ? chainOut[i - 1].offset : run.offset, l.offset));
+    let e = pf1 + 0.06;
+    for (let i = chainOut.length - 1; i >= 0; i--) {
+      const l = chainOut[i];
+      to.set(l.id, e);
+      this.graph.addSwitch({ id: `${code}-${l.id}-X`, station: code, kind: 'trailing', from: l.offset, to: i ? chainOut[i - 1].offset : run.offset, rampStart: +e.toFixed(6), rampEnd: +(e + dOut[i]).toFixed(6) });
+      e += dOut[i];
+    }
+    const ladderEnd = e;
+    // the middle line's turnouts just outside the ladders
+    const mid = this.middle;
+    const mlIn = toe - 0.03 - r, mlOut = ladderEnd + 0.03;
+    // the avoiding line: out before everything, back after everything
+    const avD = avl ? Math.min(0.5, Math.max(0.15, dist(avl) * 0.009)) : 0;
+    const avIn = (mid ? mlIn : toe) - 0.03 - avD, avOut = (mid ? mlOut + r : ladderEnd) + 0.03;
+    const st: StationInfo = {
+      ...s,
+      platformFromKm: pf0, platformToKm: pf1,
+      entryKm: avl ? avIn : mid ? mlIn : toe, exitKm: avl ? avOut + avD : mid ? mlOut + r : ladderEnd,
+      yardFromKm: 0, yardToKm: 0,
+      lineInfo: [{ id: run.id, offset: run.offset, fromKm: 0, toKm: this.lengthKm }],
+      regionId: this.regionIdAt(s.km),
+      ladderIn: chainIn.map(l => l.id), ladderOut: chainOut.map(l => l.id),
+      platformLines: plat.map(l => l.id), bayIn: bayIn?.id, bayOut: bayOut?.id, avoiding: avl?.id,
+    };
+    // the yard spans both sides: as wide as the longer of them (the other side's ladders are the mirror image)
+    st.yardFromKm = Math.min(st.entryKm, s.km - (s.km - st.entryKm)) - 0.05;
+    st.yardToKm = st.exitKm + 0.05;
+    const add = (id: string, offset: number, a: number, b: number) => {
+      const li = { id, offset, fromKm: +a.toFixed(6), toKm: +b.toFixed(6) };
+      st.lineInfo.push(li);
+      this.graph.addLine({ ...li, id: `${code}-${id}`, station: code });
+    };
+    for (const l of plat) add(l.id, l.offset, from.get(l.id)!, to.get(l.id)!);
+    if (bayIn) add(bayIn.id, bayIn.offset, from.get(bayIn.id)!, s.km - 0.015);
+    if (bayOut) add(bayOut.id, bayOut.offset, s.km + 0.015, to.get(bayOut.id)!);
+    if (avl) {
+      add(avl.id, avl.offset, avIn + avD, avOut);
+      this.graph.addSwitch({ id: `${code}-${avl.id}-E`, station: code, kind: 'facing', from: run.offset, to: avl.offset, rampStart: +avIn.toFixed(6), rampEnd: +(avIn + avD).toFixed(6) });
+      this.graph.addSwitch({ id: `${code}-${avl.id}-X`, station: code, kind: 'trailing', from: avl.offset, to: run.offset, rampStart: +avOut.toFixed(6), rampEnd: +(avOut + avD).toFixed(6) });
+    }
+    if (mid) {
+      st.lineInfo.push({ id: MIDDLE_LINE, offset: 0, fromKm: mlIn + r, toKm: mlOut });
+      this.graph.addSwitch({ id: `${code}-${MIDDLE_LINE}-E`, station: code, kind: 'facing', from: run.offset, to: 0, rampStart: +mlIn.toFixed(6), rampEnd: +(mlIn + r).toFixed(6) });
+      this.graph.addSwitch({ id: `${code}-${MIDDLE_LINE}-X`, station: code, kind: 'trailing', from: 0, to: run.offset, rampStart: +mlOut.toFixed(6), rampEnd: +(mlOut + r).toFixed(6) });
+      if (st.entryKm - r - 0.02 > 0.05) this.graph.addSwitch({ id: `${code}-${MIDDLE_LINE}-I`, station: code, kind: 'trailing', from: 0, to: run.offset, rampStart: st.entryKm - r - 0.02, rampEnd: st.entryKm - 0.02 });
+      if (st.exitKm + r + 0.02 < this.lengthKm - 0.05) this.graph.addSwitch({ id: `${code}-${MIDDLE_LINE}-O`, station: code, kind: 'facing', from: run.offset, to: 0, rampStart: st.exitKm + 0.02, rampEnd: st.exitKm + r + 0.02 });
+    }
+    // sidings: a short ladder of their own off the outermost routed line (never routed: switch suffix S)
+    const parent = avl ?? bayIn ?? plat[plat.length - 1];
+    if (parent && deco.length) {
+      let ts = avl ? s.km - 0.62 : from.get(parent.id)! + 0.01, prev = parent.offset;
+      for (const l of deco) {
+        const d = step(prev, l.offset);
+        this.graph.addSwitch({ id: `${code}-${l.id}-S`, station: code, kind: 'facing', from: prev, to: l.offset, rampStart: +ts.toFixed(6), rampEnd: +(ts + d).toFixed(6) });
+        ts += d;
+        this.graph.addLine({ id: `${code}-${l.id}`, station: code, offset: l.offset, fromKm: +ts.toFixed(6), toKm: +(s.km + 0.45).toFixed(6) });
+        prev = l.offset;
+      }
+    }
     this.stations.push(st);
   }
 
@@ -367,6 +474,7 @@ export class Route {
         if (home - 1.2 > (prev ? prev.exitKm + 0.3 : 0.05)) sig.push({ id: sid(st.code, `D-${MIDDLE_LINE}`), km: home - 1.2, kind: 'distant', offset: 0, aspects: 4, station: st.code, line: MIDDLE_LINE });
       }
       for (const l of st.lineInfo) {
+        if (l.toKm < st.platformToKm + 0.035) continue; // a dead-end bay: no starter
         sig.push({ id: sid(st.code, `S-${l.id}`), km: st.platformToKm + 0.03, kind: 'starter', offset: l.offset, aspects: 4, station: st.code, line: l.id });
       }
       if (st.exitKm + 0.4 < this.lengthKm - 0.2) { // (a terminal at the end of the line has no room for one)
@@ -485,9 +593,10 @@ export class Route {
     const sea = this.data.sea;
     if (sea) {
       // a 3 km wide straight "river" whose near bank is the shore, running on 3 km past the end of the line
-      const W = 3000, lat = sea.side * (sea.shoreM + W / 2), end = this.alignment.length;
+      // the coast to its toKm, or on past the end of the line
+      const W = 3000, lat = sea.side * (sea.shoreM + W / 2), end = Math.min(this.alignment.length, (sea.toKm ?? Infinity) * 1000);
       const pts: { x: number; z: number }[] = [];
-      for (let s = sea.fromKm * 1000; s <= end + 3000; s += 25) {
+      for (let s = sea.fromKm * 1000; s <= end + (sea.toKm === undefined ? 3000 : 0); s += 25) {
         this.alignment.sampleOffset(Math.min(s, end), lat, f);
         const over = Math.max(0, s - end);
         pts.push({ x: f.x + Math.cos(f.heading) * over, z: f.z + Math.sin(f.heading) * over });

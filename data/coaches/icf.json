@@ -1,0 +1,28 @@
+{
+  "id": "icf",
+  "name": "ICF coach (3D model)",
+  "massEmptyT": 46,
+  "massLoadedT": 56,
+  "lengthM": 16.2,
+  "bogieCentresM": 11.26,
+  "axleSpacingM": 2.19,
+  "maxBrakeForceKN": 26,
+  "resistance": { "aN": 900, "bNperMs": 25, "cNperMs2": 1 },
+  "livery": { "body": "#2a4f8f", "band": "#e8c547", "roof": "#7d8287", "window": "#1a1f24" },
+  "windows": "open",
+  "interiorLight": "#ffe6b0",
+  "seats": 72,
+  "model": {
+    "file": "assets/models/coach/icf.glb",
+    "title": "ICF coach",
+    "author": "FILL IN: model author",
+    "licence": "FILL IN: licence",
+    "source": "FILL IN: where the model came from (URL)",
+    "scale": 1,
+    "rotationDeg": [0, 0, 0],
+    "offset": [-13.96, -0.34, -0.035],
+    "remove": ["Box097", "Box098"],
+    "look": { "roughness": 0.6, "metalness": 0.1 },
+    "maxTriangles": 90000
+  }
+}

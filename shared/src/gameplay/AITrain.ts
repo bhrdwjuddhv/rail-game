@@ -15,11 +15,17 @@ export interface AITrainDef {
   stops: { station: string; line: string; dwellS: number }[];
   despawnKm: number;
   track?: string;
-  /** vehicle length incl. coupling gap (default: a goods wagon) */
+  /** vehicle length over couplers (default: a goods wagon) */
   carLengthM?: number;
   kind?: 'goods' | 'passenger';
   /** wagon type (data/coaches id) of the rake: container stock gets a mix of loads */
   stock?: string;
+  /** locomotive (data/locomotives id) when not the default for its kind (a trainset: lengthM is its length) */
+  loco?: string;
+  /** whole train length (m) instead of loco + wagons */
+  lengthM?: number;
+  /** a terminating train: it stops with its head here (a bay's end) and leaves service endDwellS later */
+  endAtKm?: number; endDwellS?: number;
 }
 
 export const AI_LOCO_LEN = 20.56;
@@ -43,10 +49,11 @@ export class AITrain implements WorkedTrain {
   readonly cruiseKmph: number;
   get name() { return this.def.name; }
   private dwellStops = new Set<string>();
+  private endWait = 0;
 
   constructor(readonly def: AITrainDef, private route: Route, private block: BlockSystem) {
     this.id = def.id;
-    this.length = AI_LOCO_LEN + def.wagons * (def.carLengthM ?? AI_WAGON_LEN + 0.6);
+    this.length = def.lengthM ?? AI_LOCO_LEN + def.wagons * (def.carLengthM ?? AI_WAGON_LEN);
     this.priority = def.kind === 'passenger' ? 3 : 1;
     this.cruiseKmph = def.maxKmph;
     this.headKm = def.startKm;
@@ -86,6 +93,12 @@ export class AITrain implements WorkedTrain {
       const d = (stopKm - head) * 1000;
       if (d < 2500) target = Math.min(target, Math.sqrt(2 * b * Math.max(0, d - 2)));
       if (d < 3 && this.speed < 0.3) this.dwellStops.add(s.code);
+    }
+    // a terminating train: to its stop (a bay's end), then out of service after its dwell
+    if (this.def.endAtKm !== undefined) {
+      const d = (this.def.endAtKm - head) * 1000;
+      target = Math.min(target, Math.sqrt(2 * b * Math.max(0, d - 1)));
+      if (d < 4 && this.speed < 0.3) { this.endWait += dt; if (this.endWait > (this.def.endDwellS ?? 60)) this.gone = true; }
     }
     this.speed = approach(this.speed, target, target > this.speed ? 0.25 : 0.7, dt);
     if (this.speed < 0.05 && target < 0.05) this.speed = 0;

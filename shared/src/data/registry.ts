@@ -5,11 +5,12 @@
 // import.meta.glob in the browser, fs in Node), keyed by path.
 import { DataIssue, normaliseLoco, reportIssues, validateCoach, validateRoute } from './validate';
 import type { RegionData, RouteData } from '../track/Route';
+import { JunctionData, joinThroughJunction } from '../track/Junctions';
 import type { CoachData, LocoData } from '../train/Consist';
 import type { ScenarioData } from '../gameplay/Scenario';
 
 export type RawFiles = Record<string, unknown>;
-export interface DataFiles { regions: RawFiles; routes: RawFiles; locomotives: RawFiles; coaches: RawFiles; scenarios: RawFiles }
+export interface DataFiles { regions: RawFiles; routes: RawFiles; locomotives: RawFiles; coaches: RawFiles; scenarios: RawFiles; junctions?: RawFiles }
 
 export interface Registry {
   issues: DataIssue[];
@@ -18,6 +19,8 @@ export interface Registry {
   locos: Record<string, LocoData>;
   coaches: Record<string, CoachData>;
   scenarios: Record<string, ScenarioData>;
+  /** big junction stations (data/junctions); each adds a route joining its two routes through it (routes[joined id]) */
+  junctions: Record<string, JunctionData>;
   /** Locomotive by id, falling back to the first valid one (never undefined). */
   locoOrDefault(id: string | undefined): LocoData;
 }
@@ -47,9 +50,20 @@ export function buildRegistry(files: DataFiles, report = true): Registry {
     return r.consist?.coaches?.every(c => coaches[c.type]) ? r : null;
   });
 
+  // junctions: each joins two routes into one more route (A -> junction -> B), by id A~junction~B
+  const junctions = byId<JunctionData>(files.junctions ?? {}, (f, j: JunctionData) => {
+    const bad = j.connects?.filter(c => !routes[c.route]) ?? [];
+    if (bad.length || j.connects?.length !== 2) { issues.push({ file: f, level: 'error', message: `connects must name two routes that exist (${bad.map(c => c.route).join(', ') || 'two needed'})` }); return null; }
+    return j;
+  });
+  for (const j of Object.values(junctions)) {
+    const joined = joinThroughJunction(j, routes);
+    if (joined) routes[joined.id] = joined;
+  }
+
   if (report && issues.length) reportIssues(issues);
   return {
-    issues, regions, routes, locos, coaches, scenarios,
+    issues, regions, routes, locos, coaches, scenarios, junctions,
     locoOrDefault: id => (id && locos[id]) || locos['ep-7'] || Object.values(locos)[0],
   };
 }

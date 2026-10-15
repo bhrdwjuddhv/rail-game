@@ -271,7 +271,8 @@ export class Menus {
       const n = coaches.reduce((a, c) => a + c.count, 0);
       const loaded = el.querySelector<HTMLInputElement>('[data-f="loaded"]')!.checked;
       const mass = (LOCOS[(el.querySelector('[data-f="loco"]') as HTMLInputElement).value]?.massT ?? 0) + coaches.reduce((a, c) => a + c.count * (loaded ? COACHES[c.type].massLoadedT : COACHES[c.type].massEmptyT), 0);
-      summary.textContent = `${n} coaches, ${Math.round(mass)} t, ${Math.round(20.56 + n * 24.1)} m long${n > 24 ? ' - too long for platforms (max 24)' : ''}`;
+      const len = (LOCOS[(el.querySelector('[data-f="loco"]') as HTMLInputElement).value]?.lengthM ?? 20.56) + coaches.reduce((a, c) => a + c.count * COACHES[c.type].lengthM, 0);
+      summary.textContent = `${n} coaches, ${Math.round(mass)} t, ${Math.round(len)} m long${n > 24 ? ' - too long for platforms (max 24)' : ''}`;
       return { coaches, loaded, n };
     };
     read();

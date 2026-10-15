@@ -27,7 +27,7 @@ export function mirrorRouteData(d: RouteData, L: number): RouteData {
     regions: byKm(d.regions.map(range), r => r.fromKm),
     stations: byKm(d.stations.map(s => ({
       ...s, km: km(s.km), buildingSide: (-s.buildingSide) as 1 | -1,
-      lines: s.lines.map(l => ({ ...l, offset: -l.offset })),
+      lines: s.lines.map(l => ({ ...l, offset: -l.offset, role: l.role === 'bay-low' ? 'bay-high' : l.role === 'bay-high' ? 'bay-low' : l.role })),
       platforms: s.platforms.map(p => ({ ...p, from: -p.from, to: -p.to })),
       crossovers: s.crossovers?.map(xo),
     })), s => s.km),
@@ -38,6 +38,11 @@ export function mirrorRouteData(d: RouteData, L: number): RouteData {
     scenery: byKm(d.scenery.map(z => ({ ...range(z), roadOffset: z.roadOffset === undefined ? undefined : -z.roadOffset })), z => z.fromKm),
     features: byKm(d.features.map(f => ({ ...f, km: km(f.km) })), f => f.km),
     crossovers: d.crossovers?.map(xo),
+    landforms: d.landforms && byKm(d.landforms.map(l => ({ ...l, km: km(l.toKm ?? l.km), toKm: l.toKm === undefined ? undefined : km(l.km), offsetM: -l.offsetM })), l => l.km),
+    riversAlong: d.riversAlong && byKm(d.riversAlong.map(r => ({ ...range(r), offsetM: -r.offsetM })), r => r.fromKm),
+    postcards: d.postcards?.map(p => ({ ...p, km: km(p.km), offsetM: -p.offsetM, lookKm: p.lookKm === undefined ? undefined : km(p.lookKm) })),
+    // a coast running to the end of the line is, from the far end, a coast from the start
+    sea: d.sea && { side: (-d.sea.side) as 1 | -1, shoreM: d.sea.shoreM, fromKm: d.sea.toKm === undefined ? 0 : km(d.sea.toKm), toKm: km(d.sea.fromKm) },
   };
 }
 

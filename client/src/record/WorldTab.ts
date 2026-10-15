@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { WEATHER, WeatherId } from '../environment/Weather';
-import { wireMaterial } from '../infrastructure/OHE';
+import { oheShow, wireMaterial } from '../infrastructure/OHE';
 import { TRAFFIC_LEVELS, settings } from '../core/Settings';
 import { newFrame } from '@rail/shared/track/Chainage';
 import type { Flat } from '@rail/shared/record/SceneFile';
@@ -14,7 +14,7 @@ const DEFAULTS = {
   timeFrozen: false, timeSpeed: 1, sunAngle: 0,
   rain: -1, fog: 1, wind: -1, clouds: -1,
   forceGreen: false, traffic: -2, crowds: true, crowdAmount: 1, billboards: true,
-  hideWires: false, hideSignals: false, hidePeople: false, hideRoad: false, beam: 1, glow: 1,
+  hideWires: false, hideMasts: false, hideSignals: false, hidePeople: false, hideRoad: false, beam: 1, glow: 1,
 };
 type WorldSettings = typeof DEFAULTS;
 
@@ -53,6 +53,7 @@ export class WorldTab {
     h.stationCrowds(s.crowds && !s.hidePeople);
     h.billboards.visible = s.billboards;
     wireMaterial.visible = !s.hideWires;
+    if (oheShow.masts === s.hideMasts) { oheShow.masts = !s.hideMasts; h.rebuildLineside(); }
     rec.hideSignals = s.hideSignals;
     h.roadTraffic.visible = !s.hideRoad;
     rec.beam = s.beam; rec.glow = s.glow;
@@ -69,6 +70,7 @@ export class WorldTab {
     h.stationCrowds(true);
     h.billboards.visible = true;
     wireMaterial.visible = true;
+    if (!oheShow.masts) { oheShow.masts = true; h.rebuildLineside(); }
     h.roadTraffic.visible = true;
   }
 
@@ -123,7 +125,7 @@ export class WorldTab {
       <details open><summary>People, billboards, clutter</summary>
         ${tog('crowds', 'Platform crowds')}${sl('crowdAmount', 'Crowd size', 0, 1, 0.05, v => `${Math.round(v * 100)}%`)}
         ${tog('billboards', 'Billboards')}
-        ${tog('hideWires', 'Hide overhead wires')}${tog('hideSignals', 'Hide signals')}${tog('hidePeople', 'Hide people')}${tog('hideRoad', 'Hide road vehicles')}</details>
+        ${tog('hideWires', 'Hide overhead wires')}${tog('hideMasts', 'Hide overhead wire masts and portals')}${tog('hideSignals', 'Hide signals')}${tog('hidePeople', 'Hide people')}${tog('hideRoad', 'Hide road vehicles')}</details>
       <details><summary>Lights</summary>
         ${sl('beam', 'Headlight beam', 0, 3, 0.05, v => `${v.toFixed(2)}&times;`)}${sl('glow', 'Fog glow (bloom)', 0, 3, 0.05, v => `${v.toFixed(2)}&times;`)}</details>
       <div class="buttons left"><button data-wa="reset">Reset world settings</button></div>`;

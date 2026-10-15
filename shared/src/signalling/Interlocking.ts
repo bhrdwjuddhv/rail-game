@@ -78,6 +78,14 @@ export class Interlocking {
       if (sw.def.kind === 'crossover') { needs.push({ sw, state: kind === 'departure' && id === crossTo && !m.viaMiddle ? 'reverse' : 'normal' }); continue; }
       // <code>-<line>-E / -X: into / out of a station line; <code>-ML-I / -O: in from / out onto the middle line
       const suffix = id.slice(id.lastIndexOf('-') + 1), line = id.slice(st.code.length + 1, id.lastIndexOf('-'));
+      // a big junction's ladder: every step up to the line's own is taken (the diagonal), the rest lie
+      // normal; so two departures merging on the same ladder always disagree on a switch and never both set
+      const chain = kind === 'reception' ? (suffix === 'E' ? st.ladderIn : undefined) : (suffix === 'X' ? st.ladderOut : undefined);
+      if (chain?.includes(line)) {
+        const ti = chain.indexOf(lineId);
+        needs.push({ sw, state: ti >= 0 && chain.indexOf(line) <= ti ? 'reverse' : 'normal' });
+        continue;
+      }
       let reverse: boolean;
       if (kind === 'reception') {
         if (suffix === 'E') reverse = line === lineId && !(m.fromMiddle && mid);
@@ -100,7 +108,9 @@ export class Interlocking {
   /** Is the platform section of a line free of other trains? */
   lineClear(st: StationInfo, lineId: string, occupants: Occupant[], exceptId: string) {
     const off = this.lineOffset(st, lineId);
-    const a = st.entryKm, b = st.exitKm;
+    // only the line's own length (a junction's two bay halves share an offset)
+    const li = st.lineInfo.find(l => l.id === lineId);
+    const a = Math.max(st.entryKm, li?.fromKm ?? -Infinity), b = Math.min(st.exitKm, li?.toKm ?? Infinity);
     for (const o of occupants) {
       if (o.id === exceptId) continue;
       for (let km = o.tailKm; km <= o.headKm + 1e-9; km += 0.02) {
@@ -168,13 +178,16 @@ export class Interlocking {
     return r;
   }
 
-  /** Try to receive a train, preferring `prefs` lines in order; `fromMiddle`: it comes along the middle line. */
-  requestReception(trainId: string, st: StationInfo, prefs: string[], occupants: Occupant[], fromMiddle = false) {
+  /**
+   * Try to receive a train, preferring `prefs` lines in order (`only`: none but those); `fromMiddle`: it
+   * comes along the middle line.
+   */
+  requestReception(trainId: string, st: StationInfo, prefs: string[], occupants: Occupant[], fromMiddle = false, only = false) {
     const existing = this.find(trainId, st, 'reception');
     if (existing) return existing;
     // only one reception at a time per station (single home signal)
     if (this.routes.some(r => r.station === st && r.kind === 'reception')) return null;
-    const order = [...prefs, ...st.lineInfo.map(l => l.id).filter(id => !prefs.includes(id))];
+    const order = only ? prefs : [...prefs, ...st.lineInfo.map(l => l.id).filter(id => !prefs.includes(id))];
     for (const lineId of order) {
       if (!st.lineInfo.some(l => l.id === lineId)) continue;
       if (!this.lineClear(st, lineId, occupants, trainId)) continue;
@@ -227,7 +240,9 @@ export class Interlocking {
       // sectional route release once the tail has cleared the switches
       // (a departure onto the middle line holds until the tail is past its O turnout, just beyond the exit)
       const outEnd = r.needs.find(n => n.state === 'reverse' && n.sw.def.id.endsWith('-O'))?.sw.def.rampEnd;
-      const clearKm = r.kind === 'reception' ? r.station.entryKm + 0.11 : Math.max(r.station.exitKm, outEnd ?? 0) + 0.01;
+      // a reception holds until the tail has cleared the last points it uses (a junction's ladder is far inside its limits)
+      const inEnd = Math.max(0, ...r.needs.filter(n => n.state === 'reverse').map(n => n.sw.def.rampEnd));
+      const clearKm = r.kind === 'reception' ? Math.max(r.station.entryKm + 0.11, inEnd + 0.01) : Math.max(r.station.exitKm, outEnd ?? 0) + 0.01;
       if (occ.tailKm > clearKm) this.release(r);
     }
     // a middle line claim (this direction's) ends once its train has no route there and is off that stretch of

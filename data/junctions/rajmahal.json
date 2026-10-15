@@ -1,0 +1,34 @@
+{
+  "id": "rajmahal",
+  "name": "Rajmahal Junction",
+  "nameHi": "राजमहल जंक्शन",
+  "nameRegional": "राजमहल जंक्शन",
+  "code": "RJMJ",
+  "style": "rajasthani",
+  "connects": [
+    { "route": "himalayan-line", "end": "start" },
+    { "route": "freight-corridor", "end": "start" }
+  ],
+  "region": "thar-desert",
+  "zone": "town",
+  "platformLinesPerSide": 4,
+  "platformLengthM": 620,
+  "buildingSide": 1,
+  "avoidingLines": true,
+  "yardSidings": 6,
+  "carriageSidings": 2,
+  "dwellS": [60, 240],
+  "trainsInStation": 5,
+  "bullet": false,
+  "fortOffsetM": -700,
+  "trainNames": {
+    "express": ["Marudhar Express", "Rajmahal Express", "Himsagar Express", "Thar Link"],
+    "mail": ["Rajputana Mail", "Mewar Mail"],
+    "local": ["RJMJ Local", "Desert Shuttle"]
+  },
+  "postcards": [
+    { "name": "Rajmahal dome and chhatris", "atKm": 0.05, "offsetM": 120, "heightM": 14, "lookKm": 0 },
+    { "name": "Rajmahal from the fort road", "atKm": -0.9, "offsetM": -90, "heightM": 30, "lookKm": -0.1 },
+    { "name": "Arched colonnade, platform 1", "atKm": -0.2, "offsetM": 63, "heightM": 2.0, "lookKm": 0.15 }
+  ]
+}

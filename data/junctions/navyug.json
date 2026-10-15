@@ -1,0 +1,33 @@
+{
+  "id": "navyug",
+  "name": "Navyug Junction",
+  "nameHi": "नवयुग जंक्शन",
+  "nameRegional": "नवयुग जंक्शन",
+  "code": "NVJ",
+  "style": "modern",
+  "connects": [
+    { "route": "himalayan-line", "end": "end" },
+    { "route": "ghat-express", "end": "start" }
+  ],
+  "region": "north-plains",
+  "zone": "town",
+  "platformLinesPerSide": 5,
+  "platformLengthM": 620,
+  "buildingSide": 1,
+  "avoidingLines": false,
+  "yardSidings": 0,
+  "carriageSidings": 3,
+  "dwellS": [60, 240],
+  "trainsInStation": 6,
+  "bullet": true,
+  "trainNames": {
+    "express": ["Navyug Express", "Himgiri Express", "Sahyadri Express", "Shatabdi Link", "Konkan Kanya"],
+    "mail": ["Navyug Mail", "Ganga Mail", "Deccan Mail"],
+    "local": ["NVJ Local", "Ranipur Local", "Suburban Fast"]
+  },
+  "postcards": [
+    { "name": "Navyug roof from the throat", "atKm": -0.75, "offsetM": -48, "heightM": 22, "lookKm": 0 },
+    { "name": "Air concourse over the tracks", "atKm": 0.42, "offsetM": 70, "heightM": 34, "lookKm": -0.05 },
+    { "name": "Navyug at platform level", "atKm": -0.25, "offsetM": 16.5, "heightM": 2.2, "lookKm": 0.2 }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "id": "wag-9",
+  "name": "WAG-9",
+  "operator": "Bharat Rail Network",
+  "number": "31245",
+  "type": "electric",
+  "massT": 123,
+  "lengthM": 20.56,
+  "axles": 6,
+  "bogieCentresM": 11.2,
+  "axleSpacingM": 1.85,
+  "wheelDiameterM": 1.092,
+  "maxPowerKW": 4500,
+  "maxTractiveEffortKN": 460,
+  "maxSpeedKmph": 100,
+  "notches": 8,
+  "regen": {
+    "maxEffortKN": 260,
+    "maxPowerKW": 4500,
+    "fadeStartKmph": 15,
+    "fadeEndKmph": 3,
+    "notches": 8
+  },
+  "brakes": {
+    "maxBrakeForceKN": 110,
+    "independentMaxBarKgcm2": 3.5
+  },
+  "resistance": {
+    "aN": 1800,
+    "bNperMs": 40,
+    "cNperMs2": 7
+  },
+  "adhesion": {
+    "dry": 0.34,
+    "wet": 0.23,
+    "damp": 0.28,
+    "sanderBonus": 0.07
+  },
+  "electrical": {
+    "lineVoltageKV": 25,
+    "motorCount": 6,
+    "ampsPerKN": 3.4
+  },
+  "livery": {
+    "body": "#e9e7e0",
+    "band": "#d8a417",
+    "roof": "#7c8287",
+    "underframe": "#26282a",
+    "logoText": "BRN"
+  },
+  "cabLayout": "ep-desk-left",
+  "soundProfile": {
+    "motorBaseHz": 36,
+    "motorHzPerKmph": 7.6,
+    "hornLowHz": [247, 311],
+    "hornHighHz": [370, 466],
+    "blowerHz": 96
+  },
+  "model": {
+    "file": "assets/models/locos/wag9.glb",
+    "title": "WAG-9",
+    "author": "FILL IN: model author",
+    "licence": "FILL IN: licence (e.g. CC BY 4.0)",
+    "source": "FILL IN: where the model came from (URL)",
+    "scale": 120.67,
+    "rotationDeg": [0, 90, 0],
+    "offset": [-0.034, -0.008, -0.004],
+    "bogies": [
+      {
+        "node": "Wag_9_New_Wheels",
+        "wheels": []
+      },
+      {
+        "node": "Wag_9_Wheels:Wag_9_New_Wheels",
+        "wheels": []
+      }
+    ],
+    "pantographs": [],
+    "proceduralPantographs": {
+      "remove": [
+        "Pantograph:pCube4",
+        "Pantograph:pCube5"
+      ],
+      "x": [-5.02, 5.22],
+      "baseY": 3.4
+    },
+    "hideInCab": [],
+    "cab": {
+      "eye": [8.05, 3.06, -0.55],
+      "interior": "wag9"
+    },
+    "lights": {
+      "head": [9.5, 3.9],
+      "markers": [10.2, 1.7, 1]
+    },
+    "look": {
+      "roughness": 0.55,
+      "metalness": 0.05
+    },
+    "maxTriangles": 160000
+  }
+}

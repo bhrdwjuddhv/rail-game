@@ -116,9 +116,10 @@ export class StationView {
 
     // ---- shelters, benches, lamps, crowd spots ----
     const spots: { x: number; y: number; z: number; heading: number }[] = [];
+    const solar = big && r() < 0.5;
     for (const p of st.platforms) {
       const mid = (p.from + p.to) / 2, w = Math.abs(p.to - p.from);
-      this.canopy(route, st.km - shelterHalf - 0.003, st.km + shelterHalf + 0.003, mid, w * 0.9, ox, oz);
+      this.canopy(route, st.km - shelterHalf - 0.003, st.km + shelterHalf + 0.003, mid, w * 0.9, ox, oz, solar);
       for (let km = st.km - shelterHalf; km <= st.km + shelterHalf; km += 0.006) {
         const o = top(km, mid);
         for (const dl of [-w * 0.18, w * 0.18]) {
@@ -247,12 +248,12 @@ export class StationView {
   }
 
   /**
-   * Platform roof: one continuous slab per platform following the line (no
-   * gaps between panels), 10 cm thick, falling 5 % away from the track side.
-   * Tin roof on top with its ridges running down the slope; the underside and
-   * edges are plain galvanised sheet so the roof reads as solid from below.
+   * Platform roof: one continuous gabled roof per platform following the line,
+   * blue corrugated sheet on both slopes (ridges running down them) with a
+   * ridge cap, a white fascia board hanging along each eave and a galvanised
+   * underside. Some stations have rows of solar panels on one slope.
    */
-  private canopy(route: Route, km0: number, km1: number, mid: number, width: number, ox: number, oz: number) {
+  private canopy(route: Route, km0: number, km1: number, mid: number, width: number, ox: number, oz: number, solar: boolean) {
     const frames: TrackFrame[] = [], ss: number[] = [];
     const f = newFrame();
     for (let km = km0; km <= km1 + 1e-9; km += 0.002) {
@@ -260,20 +261,31 @@ export class StationView {
       frames.push({ ...f, y: f.y + PLATFORM_H + 3.72, cant: 0 });
       ss.push(km * 1000 - km0 * 1000);
     }
-    const hw = width / 2, fall = width * 0.05 * (mid < 0 ? 1 : -1); // lower edge away from the tracks
-    const yR = fall / 2, yL = -fall / 2, T = 0.1;
-    // counter-clockwise profiles (outward faces): top surface right to left; then left edge, underside, right edge
-    const top = new Strip(), under = new Strip();
-    top.extrude(frames, ss, [[hw, yR], [-hw, yL]], ox, oz, 1, 1);
-    under.extrude(frames, ss, [[-hw, yL], [-hw, yL - T], [hw, yR - T], [hw, yR]], ox, oz, 1, 1);
-    // UVs: u along the platform, v across it, so the corrugations (vertical in the image) run down the slope
+    const hw = width / 2, rise = Math.min(1.4, Math.max(0.5, width * 0.1)), T = 0.1, F = 0.03;
+    // counter-clockwise profiles (outward faces): top surface right to left; edges down, underside left to right
+    const top = new Strip(), cap = new Strip(), under = new Strip();
+    top.extrude(frames, ss, [[hw, 0], [0, rise], [-hw, 0]], ox, oz, 1, 1);
+    cap.extrude(frames, ss, [[0.3, rise - 0.02], [0, rise + 0.09], [-0.3, rise - 0.02]], ox, oz, 1, 1);
+    under.extrude(frames, ss, [[-hw, 0], [-hw, -T], [0, rise - T], [hw, -T], [hw, 0]], ox, oz, 1, 1);
+    // fascia boards along both eaves
+    for (const e of [-hw, hw]) under.extrude(frames, ss, [[e - F, 0.14], [e - F, -0.45], [e + F, -0.45], [e + F, 0.14]], ox, oz, 1, 1, true);
+    // UVs: u along the platform, v across it, so the corrugations (vertical in the image) run down the slopes
     for (let i = 0; i < top.uv.length; i += 2) { const u = top.uv[i]; top.uv[i] = top.uv[i + 1]; top.uv[i + 1] = u; }
     const M = materials();
     route.alignment.sampleOffset((km0 + km1) * 500, mid, f);
     this.roofs.push({ x: f.x, z: f.z, cos: Math.cos(f.heading), sin: Math.sin(f.heading), halfLen: (km1 - km0) * 500, halfWid: hw, top: f.y + PLATFORM_H + 3.72 });
-    const roof = new THREE.Mesh(top.geometry(), M.sheet);
+    const roof = new THREE.Mesh(tint(top.geometry(), ROOF_BLUE), M.sheet);
+    const ridge = new THREE.Mesh(tint(cap.geometry(), RIDGE_BLUE), M.sheet);
     const base = new THREE.Mesh(under.geometry(), CANOPY_UNDER);
-    for (const m of [roof, base]) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
+    const parts = [roof, ridge, base];
+    if (solar) {
+      // panels 4 m long with 2 m gaps, 8 cm above the slope away from the track side
+      const sg = mid < 0 ? -1 : 1, l0 = sg * hw * 0.12, l1 = sg * hw * 0.88, y = (l: number) => rise * (1 - Math.abs(l) / hw) + 0.08;
+      const pv = new Strip(), prof: [number, number][] = sg > 0 ? [[l1, y(l1)], [l0, y(l0)]] : [[l0, y(l0)], [l1, y(l1)]];
+      for (let i = 1; i + 2 < frames.length - 1; i += 3) pv.extrude(frames.slice(i, i + 3), ss.slice(i, i + 3), prof, ox, oz, 1, 1);
+      if (pv.pos.length) parts.push(new THREE.Mesh(pv.geometry(), SOLAR));
+    }
+    for (const m of parts) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
   }
 
   private drawClock(sec: number) {
@@ -317,6 +329,15 @@ export function underRoof(roofs: RoofCover[], x: number, y: number, z: number) {
 const BOARD_GEO = new THREE.PlaneGeometry(4.2, 4.2);
 /** galvanised underside of platform roofs */
 const CANOPY_UNDER = new THREE.MeshStandardMaterial({ color: 0xe2e6e9, roughness: 0.7, metalness: 0.05 });
+const ROOF_BLUE = new THREE.Color(0x7aa6d6), RIDGE_BLUE = new THREE.Color(0x5b88b8);
+/** photovoltaic panels on some platform roofs */
+const SOLAR = new THREE.MeshStandardMaterial({ color: 0x2b3d5e, roughness: 0.3, metalness: 0.4 });
+/** Every vertex of `g` coloured `c` (the vertex-coloured sheet material). */
+function tint(g: THREE.BufferGeometry, c: THREE.Color) {
+  const a = g.attributes.color.array as Float32Array;
+  for (let i = 0; i < a.length; i += 3) c.toArray(a, i);
+  return g;
+}
 const LABEL_GEO = new THREE.PlaneGeometry(3.15, 1.12);
 
 function labelMaterial2(t: THREE.Texture) {
