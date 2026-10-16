@@ -1,4 +1,5 @@
 import type { AudioEngine } from './AudioEngine';
+import { fetchBuffer } from '../core/Net';
 
 /** recorded station announcements (client/public/assets/announcement) */
 const FILES = ['railannouncement1.mp3', 'announcement2.mp3', 'announcement3.mp3'];
@@ -31,9 +32,9 @@ export class StationAnnouncer {
   }
 
   private load() {
-    this.loading ??= Promise.all(FILES.map(f => fetch(`${import.meta.env.BASE_URL}assets/announcement/${f}`)
-      .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${f}: ${r.status}`))))
-      .then(b => this.a.ctx.decodeAudioData(b))
+    this.loading ??= Promise.all(FILES.map(f => fetchBuffer(`${import.meta.env.BASE_URL}assets/announcement/${f}`)
+      // (decodeAudioData takes the buffer over: a copy, so a cached one stays usable)
+      .then(b => this.a.ctx.decodeAudioData(b.slice(0)))
       .catch(e => { console.warn('[audio] station announcement not loaded:', e); return null; })))
       .then(list => { this.buffers = list.filter((b): b is AudioBuffer => !!b); });
     return this.loading;

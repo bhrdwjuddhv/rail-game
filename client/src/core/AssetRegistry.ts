@@ -1,28 +1,26 @@
 import * as THREE from 'three/webgpu';
 import TEXTURES from '../../../data/textures.json';
+import MANIFEST from '../../../data/asset-manifest.json';
+import { fetchBuffer } from './Net';
+import { ktx2Loader } from './Ktx2';
 
 const TEX = TEXTURES as unknown as { ui: Record<string, string> };
 
 /**
  * One API for procedural and file-based assets. Every asset has an id; the
  * game always asks for it with a procedural factory. If
- * public/assets/manifest.json maps that id to a file (.glb / .ktx2 / .png /
- * .ogg), the file is loaded and swapped in - no code changes needed.
+ * data/asset-manifest.json maps that id to a file (.glb / .ktx2 / .png /
+ * .ogg), the file is loaded and swapped in - no code changes needed. (The
+ * manifest is bundled into the game: no request for it.)
  *
  *   { "model:loco/ep-7": "assets/ep7.glb", "tex:terrain/ground": "assets/ground.ktx2", "audio:horn/low": "assets/horn.ogg" }
  */
 export class AssetRegistry {
-  private manifest: Record<string, string> = {};
-  private renderer?: unknown;
+  private manifest: Record<string, string> = MANIFEST as Record<string, string>;
   private audioCache = new Map<string, Promise<AudioBuffer | null>>();
 
-  async init(renderer: unknown) {
-    this.renderer = renderer;
-    try {
-      const r = await fetch(`${import.meta.env.BASE_URL}assets/manifest.json`);
-      if (r.ok) this.manifest = await r.json();
-    } catch { /* no manifest: everything stays procedural */ }
-  }
+  /** (kept for callers; the KTX2 loader has the renderer already: core/Ktx2) */
+  async init(_renderer: unknown) { /* nothing to fetch: the manifest is bundled */ }
 
   has(id: string) { return id in this.manifest; }
 
@@ -65,11 +63,7 @@ export class AssetRegistry {
       mat.needsUpdate = true;
     };
     if (url.endsWith('.ktx2')) {
-      import('three/addons/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
-        const l = new KTX2Loader().setTranscoderPath(`${import.meta.env.BASE_URL}basis/`);
-        if (this.renderer) l.detectSupport(this.renderer as any);
-        return l.loadAsync(url).then(apply);
-      }).catch(e => console.warn(`texture ${id} failed`, e));
+      ktx2Loader().loadAsync(url).then(apply).catch(e => console.warn(`texture ${id} failed`, e));
     } else {
       new THREE.TextureLoader().loadAsync(url).then(apply).catch(e => console.warn(`texture ${id} failed`, e));
     }
@@ -81,7 +75,7 @@ export class AssetRegistry {
     if (!url) return Promise.resolve(null);
     let p = this.audioCache.get(id);
     if (!p) {
-      p = fetch(url).then(r => r.arrayBuffer()).then(b => ctx.decodeAudioData(b)).catch(() => null);
+      p = fetchBuffer(url).then(b => ctx.decodeAudioData(b.slice(0))).catch(() => null);
       this.audioCache.set(id, p);
     }
     return p;

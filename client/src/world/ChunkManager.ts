@@ -7,6 +7,8 @@ import type { Route } from '@rail/shared/track/Route';
 import { PROP_STRIDE, PROP_TYPES, PropType } from './scenery/Placement';
 import { propMaterials, propTemplate } from './scenery/Props';
 import type { TileRequest } from './terrain.worker';
+// (inlined: the four workers start from the bundle, not four requests for the same script)
+import TerrainWorker from './terrain.worker.ts?worker&inline';
 import { REGIONS } from '../data';
 
 export const TILE = 400;
@@ -106,7 +108,7 @@ export class ChunkManager {
     const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
     this.queueLimit = n * 2;
     for (let i = 0; i < n; i++) {
-      const w = new Worker(new URL('./terrain.worker.ts', import.meta.url), { type: 'module' });
+      const w = new TerrainWorker();
       w.onmessage = e => this.onMessage(e.data);
       w.onerror = e => console.error('terrain worker error', e.message);
       w.postMessage({ type: 'init', route: route.data, regions: REGIONS, billboardZones });

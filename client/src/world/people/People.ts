@@ -3,6 +3,7 @@ import { WebGLRenderer, WebGLRenderTarget } from 'three';
 import { newFrame } from '@rail/shared/track/Chainage';
 import type { Route, StationInfo } from '@rail/shared/track/Route';
 import { rng } from '@rail/shared/util';
+import { fetchBuffer, fetchJson } from '../../core/Net';
 import { PLATFORM_H } from '../../infrastructure/Station';
 
 /**
@@ -67,14 +68,12 @@ export class PeopleSystem {
   async load(camera: THREE.Camera, scene: THREE.Scene): Promise<boolean> {
     let list: ModelMeta[];
     try {
-      const r = await fetch(BASE + 'people.json');
-      if (!r.ok) return false;
-      list = (await r.json()).models;
+      list = (await fetchJson<{ models: ModelMeta[] }>(BASE + 'people.json')).models;
     } catch { return false; }
     if (!list?.length) return false;
     for (const meta of list) {
       try {
-        const buf = await (await fetch(BASE + meta.file)).arrayBuffer();
+        const buf = await fetchBuffer(BASE + meta.file);
         await nextFrame();
         const model = this.build(meta, buf);
         await this.renderer.compileAsync(model.levels[0].mesh, camera, scene).catch(() => {});

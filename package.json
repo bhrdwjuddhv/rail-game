@@ -9,12 +9,13 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @rail/client",
-    "build": "npm run typecheck && npm run build -w @rail/client",
+    "build": "npm run typecheck && npm run packs && cd client && node ../node_modules/vite/bin/vite.js build",
     "preview": "npm run preview -w @rail/client",
     "test": "vitest run",
-    "typecheck": "tsc -p shared && tsc -p client",
+    "typecheck": "node node_modules/typescript/bin/tsc -p shared && node node_modules/typescript/bin/tsc -p client",
     "textures": "npm run textures -w @rail/client",
-    "models": "npm run models -w @rail/client"
+    "models": "npm run models -w @rail/client",
+    "packs": "node client/tools/packs.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

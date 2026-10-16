@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { ktx2Loader, setKtx2Renderer } from '../core/Ktx2';
+import { ensurePack } from '../core/Packs';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { CoachData, LocoData, LocoModelFile } from '@rail/shared/train/Consist';
@@ -53,7 +54,6 @@ export interface GlbLevel {
 }
 
 const LEVELS = ['near', 'mid', 'far'] as const;
-let renderer: unknown = null;
 let loader: GLTFLoader | null = null;
 const cache = new Map<string, Promise<Record<(typeof LEVELS)[number], THREE.Group> | null>>();
 /** the loaded files themselves (one download however many parts are fitted from them) */
@@ -71,13 +71,11 @@ export function partConfig(data: LocoData, section = 0): LocoModelFile {
 }
 
 /** Set once at start-up (KTX2 needs the renderer to pick a GPU format). */
-export function initModelLoader(r: unknown) { renderer = r; }
+export function initModelLoader(r: unknown) { setKtx2Renderer(r); }
 
 function gltfLoader() {
   if (loader) return loader;
-  const ktx2 = new KTX2Loader().setTranscoderPath(`${import.meta.env.BASE_URL}basis/`).setWorkerLimit(2);
-  if (renderer) ktx2.detectSupport(renderer as never);
-  loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
+  loader = new GLTFLoader().setKTX2Loader(ktx2Loader()).setMeshoptDecoder(MeshoptDecoder);
   return loader;
 }
 
@@ -99,7 +97,7 @@ type PanelFile = NonNullable<NonNullable<LocoModelFile['cab']>['panel']>;
 export async function loadPanelScene(locoId: string, panel: PanelFile) {
   const l = gltfLoader();
   const opt = files(`${locoId}-panel`).near;
-  try { return (await l.loadAsync(opt)).scene; }
+  try { await ensurePack(opt); return (await l.loadAsync(opt)).scene; }
   catch {
     console.warn(`[models] ${locoId}: optimised cab panel missing (${opt}) - loading the source ${panel.file}. Run "npm run models" for the small, compressed copy.`);
     return (await l.loadAsync(`${import.meta.env.BASE_URL}${panel.file}`)).scene;
@@ -283,7 +281,7 @@ export function loadLocoModel(data: LocoData, section = 0) {
     const source = `${import.meta.env.BASE_URL}${cfg.file}`;
     // the scenes are cloned for each part fitted from them (fit removes the other parts' meshes)
     const scenes = (k: string, load: () => Promise<THREE.Object3D[]>) => { let r = raw.get(k); if (!r) raw.set(k, (r = load())); return r.then(s => s.map(x => x.clone(true))); };
-    p = scenes(`${data.id}:opt`, () => Promise.all(LEVELS.map(k => l.loadAsync(f[k]).then(g => g.scene))))
+    p = scenes(`${data.id}:opt`, () => ensurePack(f.near).then(() => Promise.all(LEVELS.map(k => l.loadAsync(f[k]).then(g => g.scene)))))
       .then(([near, mid, far]) => ({ near: fit(near, cfg), mid: fit(mid, cfg), far: fit(far, cfg) }))
       // not optimised yet (npm run models not run): use the source file for every level - slower to
       // load and heavier to draw, with the source livery, but enough to try a new model straight away
@@ -420,7 +418,7 @@ export function loadCoachModel(c: CoachData) {
   if (!p) {
     const f = files(`coach-${c.id}`), l = gltfLoader();
     const cfg = { ...c.model, bogies: [], pantographs: [], hideInCab: [], lights: { head: [0, 0], markers: [0, 0, 0] } } as LocoModelFile;
-    p = Promise.all(LEVELS.map(k => l.loadAsync(f[k]).then(g => g.scene)))
+    p = ensurePack(f.near).then(() => Promise.all(LEVELS.map(k => l.loadAsync(f[k]).then(g => g.scene))))
       .then(([near, mid, far]) => ({ near: coachLevel(fit(near, cfg)), mid: coachLevel(fit(mid, cfg)), far: coachLevel(fit(far, cfg)) }))
       .catch(err => {
         console.warn(`[models] coach ${c.id}: optimised files missing (${f.near}) - the procedural coach is kept. Run "npm run models".`, err);

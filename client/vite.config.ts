@@ -59,10 +59,32 @@ function dropTextureSources(): Plugin {
   };
 }
 
+/**
+ * The service worker (public/sw.js) gets this build's stamp: a new deploy starts a new cache and the old
+ * one is dropped, while repeat visits to the same build are served from the cache.
+ */
+function serviceWorkerStamp(): Plugin {
+  let outDir = '';
+  return {
+    name: 'sw-stamp',
+    apply: 'build',
+    configResolved(c) { outDir = path.resolve(c.root, c.build.outDir); },
+    closeBundle() {
+      const f = path.join(outDir, 'sw.js');
+      if (fs.existsSync(f)) fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('__BUILD__', Date.now().toString(36)));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [basisTranscoder(), dropTextureSources()],
+  plugins: [basisTranscoder(), dropTextureSources(), serviceWorkerStamp()],
   worker: { format: 'es' },
-  build: { target: 'es2022' },
+  build: {
+    target: 'es2022',
+    // three.js in its own chunk: it changes far less often than the game, so it stays cached across deploys
+    // (Record Mode is its own lazy chunk already: loaded only when opened)
+    rollupOptions: { output: { manualChunks: (id: string) => (id.includes('node_modules/three/') ? 'three' : undefined) } },
+  },
   // data/ lives at the repo root, shared by client and server
   server: { fs: { allow: ['..'] } },
   test: { name: 'client', environment: 'node', include: ['test/**/*.test.ts'] },

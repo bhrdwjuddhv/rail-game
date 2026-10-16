@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "textures": "node tools/textures.mjs",
-    "models": "node tools/models.mjs && node tools/people.mjs"
+    "models": "node tools/models.mjs && node tools/people.mjs",
+    "packs": "node tools/packs.mjs"
   },
   "dependencies": {
     "@rail/shared": "0.1.0",

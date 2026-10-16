@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import TEXTURES from '../../../data/textures.json';
 import { effective, settings } from './Settings';
+import { ktx2Loader } from './Ktx2';
+import { ensurePack } from './Packs';
 
 type Q = 'high' | 'medium' | 'low';
 type Kind = 'color' | 'normal' | 'roughness';
@@ -61,7 +63,6 @@ const UPLOADS_PER_FRAME = 2;
  */
 export class TextureLibrary {
   private renderer: unknown = null;
-  private ktx2: Promise<{ load(url: string): Promise<THREE.Texture> }> | null = null;
   private bindings = new Map<string, Binding[]>();
   private refs = new Map<string, number>();
   private releaseTimers = new Map<string, number>();
@@ -254,13 +255,9 @@ export class TextureLibrary {
       });
   }
 
+  /** a KTX2 file: its pack first (one request for the lot), through the shared loader (one transcoder) */
   private loadKtx2(url: string) {
-    this.ktx2 ??= import('three/addons/loaders/KTX2Loader.js').then(({ KTX2Loader }) => {
-      const l = new KTX2Loader().setTranscoderPath(`${import.meta.env.BASE_URL}basis/`).setWorkerLimit(2);
-      if (this.renderer) l.detectSupport(this.renderer as never);
-      return { load: (u: string) => l.loadAsync(u) as Promise<THREE.Texture> };
-    });
-    return this.ktx2.then(k => k.load(url));
+    return ensurePack(url).then(() => ktx2Loader().loadAsync(url) as Promise<THREE.Texture>);
   }
 
   private apply(b: Binding, kind: Kind, slot: Slot) {

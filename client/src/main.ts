@@ -18,6 +18,7 @@ import type { BenchConfig, BenchView } from './core/Benchmark';
 import type { Quality } from './core/Settings';
 import { Menus } from './ui/Menus';
 import { prepareJourney } from './routemode/prepare';
+import { initPacks } from './core/Packs';
 import { setVegetationRenderer } from './world/scenery/Vegetation';
 import { initModelLoader } from './train/LocoModelLoader';
 
@@ -82,6 +83,9 @@ async function boot() {
   applyUrlOverrides();
   rs.setMaxPixelRatio(settings.get().maxPixelRatio);
   setMaxAnisotropy(8);
+  initPacks();
+  // repeat visits: the game's files from the service worker's cache (public/sw.js)
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => { /* no offline cache */ });
   await assets.init(rs.renderer);
   textures.init(rs.renderer);
   setVegetationRenderer(rs.renderer);

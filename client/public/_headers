@@ -1,0 +1,31 @@
+# Cloudflare Pages caching (see NETWORK_LOG.md).
+# Content-hashed build output (JS, CSS, WASM, packs): never changes under its name.
+/assets/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.wasm
+  Cache-Control: public, max-age=31536000, immutable
+/packs/*
+  Cache-Control: public, max-age=31536000, immutable
+# Game files kept under fixed names (textures, models, sounds, pictures): a day in the browser, revalidated
+# after; the service worker serves them offline and refreshes them in the background
+/assets/textures/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/assets/models/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/assets/announcement/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/assets/thumbs/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/assets/ui/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/basis/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+# the page itself and the worker: always checked, so a new build is picked up at once
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
