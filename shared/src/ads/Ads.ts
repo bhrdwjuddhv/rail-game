@@ -5,10 +5,14 @@ import { rng } from '../util';
  * which ad each billboard shows. Pure logic (no DOM): the client builds the
  * billboards, this decides what is on them.
  *
- * frequency (0..1): how often an ad appears compared to the others. A
- * billboard picks among the ads that may run there (active, in their dates,
- * on this route / region / billboard type) with chance frequency / sum of
- * their frequencies. 0 = never shown.
+ * frequency (0..1): the share of the billboards an ad takes where it may run
+ * (active, in its dates, on that route / region / billboard type). While the
+ * ads that may run on a billboard ask for less than all of it together, the
+ * rest is left free; when they ask for more, each gets frequency / sum. 0 =
+ * never shown. Free billboards show the house designs (houseAds): "advertise
+ * here" on the best-placed share of them, railway safety messages and posters
+ * of the routes on the others. So every paying campaign means fewer "advertise
+ * here" boards, with no other change.
  */
 
 export type AdFormat = 'wide' | 'standard' | 'portrait' | 'screen';
@@ -34,9 +38,20 @@ export interface Ad {
   images: Partial<Record<AdFormat, string>>;
   url: string | null;
   fallback: AdFallback;
+  /** a house design (not from the file): the "advertise here" board, a safety message or a route poster (art: which) */
+  house?: 'advertise' | 'safety' | 'scenic';
+  art?: string;
 }
 export interface AdSettings { billboardsPerKm: number; minGapMetres: number; sameAdMinGapMetres: number; ledPerRoute: number }
-export interface AdsFile { settings: AdSettings; ads: Ad[] }
+/**
+ * The house designs on billboards no ad has taken. advertiseHereShare (0..1): the share of those that show
+ * the "advertise here" board (the best-placed ones); the rest show filler art (safety messages, route
+ * posters), or the "advertise here" board too when fillerEnabled is false. contactUrl: mailto: or https://
+ * (the board's "Contact us" button; none: no button).
+ */
+export interface HouseAds { advertiseHereShare: number; title: string; sub: string; contactUrl: string | null; fillerEnabled: boolean }
+export const DEFAULT_HOUSE_ADS: HouseAds = { advertiseHereShare: 0.3, title: 'YOUR BRAND HERE', sub: 'Click here to advertise', contactUrl: null, fillerEnabled: true };
+export interface AdsFile { settings: AdSettings; ads: Ad[]; house: HouseAds }
 
 export const DEFAULT_AD_SETTINGS: AdSettings = { billboardsPerKm: 4, minGapMetres: 120, sameAdMinGapMetres: 1500, ledPerRoute: 4 };
 const KNOWN_AD = new Set(['id', 'frequency', 'weight', 'active', 'startDate', 'endDate', 'routes', 'regions', 'billboardTypes', 'images', 'image', 'url', 'fallback', 'note']);
@@ -45,6 +60,9 @@ const IMAGE_FILE = /^[\w\-./]+\.(jpe?g|png|webp)$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** https://host[:port][/path?query#hash]: no spaces, quotes or angle brackets */
 const HTTPS_URL = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?([/?#][^\s"'<>]*)?$/i;
+/** mailto:name@host.tld[?subject=...] */
+const MAILTO = /^mailto:[^\s@<>"']+@[a-z0-9-]+(\.[a-z0-9-]+)+(\?[^\s"'<>]*)?$/i;
+const KNOWN_HOUSE = new Set(['advertiseHereShare', 'title', 'sub', 'contactUrl', 'fillerEnabled']);
 
 /**
  * Read the ads file, warning (never throwing) about anything wrong: unknown
@@ -134,7 +152,39 @@ export function parseAds(raw: unknown, warn: (msg: string) => void = () => {}): 
       images, url, fallback,
     });
   }
-  return { settings, ads };
+  const h = (r.houseAds && typeof r.houseAds === 'object' ? r.houseAds : {}) as Record<string, unknown>;
+  for (const k of Object.keys(h)) if (!KNOWN_HOUSE.has(k)) warn(`houseAds.${k}: unknown setting (ignored)`);
+  const text = (v: unknown, def: string, name: string) => {
+    if (v === undefined) return def;
+    if (typeof v !== 'string' || !v.trim()) { warn(`houseAds.${name} must be some text (using "${def}")`); return def; }
+    return v.trim();
+  };
+  let contactUrl: string | null = null;
+  if (h.contactUrl !== undefined && h.contactUrl !== null && h.contactUrl !== '') {
+    const u = String(h.contactUrl).trim();
+    if (MAILTO.test(u) || HTTPS_URL.test(u)) contactUrl = u;
+    else warn(`houseAds.contactUrl "${u}" must be a mailto: address or an https:// link (no button)`);
+  }
+  const share = h.advertiseHereShare;
+  const house: HouseAds = {
+    advertiseHereShare: share === undefined ? DEFAULT_HOUSE_ADS.advertiseHereShare
+      : typeof share === 'number' && share >= 0 && share <= 1 ? share
+        : (warn(`houseAds.advertiseHereShare: ${String(share)} must be a number from 0 to 1 (using ${DEFAULT_HOUSE_ADS.advertiseHereShare})`), DEFAULT_HOUSE_ADS.advertiseHereShare),
+    title: text(h.title, DEFAULT_HOUSE_ADS.title, 'title'),
+    sub: text(h.sub, DEFAULT_HOUSE_ADS.sub, 'sub'),
+    contactUrl,
+    fillerEnabled: h.fillerEnabled === undefined ? true : h.fillerEnabled !== false,
+  };
+  return { settings, ads, house };
+}
+
+/**
+ * Which free billboards (no ad took them) show the "advertise here" board: the best-placed share of them
+ * (higher score first: LED screens, station approaches, big hoardings), so advertisers see the best spots on offer.
+ */
+export function advertiseHere(free: { i: number; score: number; s: number }[], share: number): Set<number> {
+  const n = Math.round(free.length * Math.max(0, Math.min(1, share)));
+  return new Set([...free].sort((a, b) => b.score - a.score || a.s - b.s).slice(0, n).map(e => e.i));
 }
 
 /** Where a billboard stands, for choosing what may run on it. */
@@ -168,6 +218,9 @@ export function pickAds(slots: AdSlot[], file: AdsFile, seed: number, today: str
     const sl = slots[i];
     const ok = file.ads.map((a, k) => (adRuns(a, sl, today) ? k : -1)).filter(k => k >= 0);
     const want = Math.max(1, sl.count ?? 1);
+    // together the ads here ask for this share of the billboards; the rest stay free for the house designs
+    const asked = ok.reduce((a, k) => a + file.ads[k].frequency, 0);
+    if (ok.length && asked < 1 && rand() >= asked) continue;
     for (let n = 0; n < want && ok.length; n++) {
       const free = ok.filter(k => !out[i].includes(k) && (last.get(k) === undefined || sl.s - last.get(k)! >= file.settings.sameAdMinGapMetres));
       let k: number;
@@ -189,11 +242,11 @@ export function pickAds(slots: AdSlot[], file: AdsFile, seed: number, today: str
   return out;
 }
 
-/** Each ad's expected share of a route's billboards (frequency / sum of what can run there). */
+/** Each ad's expected share of a route's billboards (frequency, or frequency / sum when they ask for more than all). */
 export function expectedShares(file: AdsFile, route: string, today: string) {
   const runs = file.ads.filter(a => a.active && a.frequency > 0 && (!a.startDate || today >= a.startDate) && (!a.endDate || today <= a.endDate) && fits(a.routes, route));
   const total = runs.reduce((s, a) => s + a.frequency, 0);
-  return file.ads.map(a => ({ id: a.id, frequency: a.frequency, share: runs.includes(a) && total > 0 ? a.frequency / total : 0 }));
+  return file.ads.map(a => ({ id: a.id, frequency: a.frequency, share: runs.includes(a) && total > 0 ? a.frequency / Math.max(1, total) : 0 }));
 }
 
 /** Today as YYYY-MM-DD (local), for campaign dates. */

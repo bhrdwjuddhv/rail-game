@@ -10,6 +10,7 @@ const FOOT = 104, WIRE = 22, L = 46;
 export class PantoIndicator {
   private el: HTMLElement;
   private arms: SVGPolylineElement;
+  private fill: SVGPolygonElement;
   private head: SVGLineElement;
   private wire: SVGLineElement;
   private text: HTMLElement;
@@ -25,12 +26,14 @@ export class PantoIndicator {
       <svg viewBox="0 0 140 120" aria-hidden="true">
         <line class="pi-wire" x1="6" y1="${WIRE}" x2="134" y2="${WIRE}"/>
         <rect class="pi-roof" x="10" y="${FOOT}" width="120" height="10" rx="2"/>
+        <polygon class="pi-fill" points=""/>
         <rect class="pi-ins" x="38" y="${FOOT - 5}" width="8" height="6"/><rect class="pi-ins" x="94" y="${FOOT - 5}" width="8" height="6"/>
         <polyline class="pi-arms" points=""/>
         <line class="pi-head" x1="0" y1="0" x2="0" y2="0"/>
       </svg>
       <b class="pi-text"></b>`;
     this.arms = this.el.querySelector('.pi-arms')!;
+    this.fill = this.el.querySelector('.pi-fill')!;
     this.head = this.el.querySelector('.pi-head')!;
     this.wire = this.el.querySelector('.pi-wire')!;
     this.text = this.el.querySelector('.pi-text')!;
@@ -53,6 +56,7 @@ export class PantoIndicator {
       const w = Math.sqrt(Math.max(0, L * L - (h / 2) ** 2));
       const pts = [[42, FOOT - 5], [70 - Math.min(w, 40), FOOT - h / 2], [70, top], [70 + Math.min(w, 40), FOOT - h / 2], [98, FOOT - 5]];
       this.arms.setAttribute('points', pts.map(p => p.join(',')).join(' '));
+      this.fill.setAttribute('points', pts.map(p => p.join(',')).join(' '));
       this.head.setAttribute('x1', '44'); this.head.setAttribute('x2', '96');
       this.head.setAttribute('y1', String(top)); this.head.setAttribute('y2', String(top));
     }

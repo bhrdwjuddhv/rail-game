@@ -27,6 +27,19 @@ export class BrakeSystem {
   instant = false;
   infiniteAir = false;
 
+  /**
+   * The train changed (coaches coupled on or left behind): pressures kept for the vehicles still there,
+   * new ones taking the brake pipe as it is and the last cylinder's pressure.
+   */
+  resize(vehicles: Vehicle[]) {
+    const bp = new Float32Array(vehicles.length), bc = new Float32Array(vehicles.length);
+    for (let i = 0; i < vehicles.length; i++) {
+      bp[i] = i < this.bp.length ? this.bp[i] : this.bp[0];
+      bc[i] = i < this.bc.length ? this.bc[i] : this.bc[this.bc.length - 1];
+    }
+    this.vehicles = vehicles; this.bp = bp; this.bc = bc;
+  }
+
   constructor(private vehicles: Vehicle[], startReleased = true) {
     const n = vehicles.length;
     this.bp = new Float32Array(n).fill(startReleased ? BP_NORMAL : 3.5);

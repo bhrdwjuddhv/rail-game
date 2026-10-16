@@ -140,7 +140,8 @@ html.touch .msg { font-size: 12.5px; padding: 4px 10px; text-align: center; }
 .m-pt-icon line, .m-pt-icon path { stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; fill: none; }
 .m-pt-icon .wire { stroke: #7f8a95; stroke-width: 1.6; }
 .m-pt-icon .roof { stroke: #7f8a95; stroke-width: 2; }
-.m-pt-icon .base { fill: currentColor; }
+.m-pt-icon .dt2 { fill: currentColor; opacity: var(--icon-duo, 0.3); }
+.m-pt-icon .base-o { fill: none; stroke: currentColor; stroke-width: 1.8; }
 .m-pt-icon .head path { stroke-width: 2.8; }
 .m-panto.on .m-pt-icon .wire { stroke: #ffd36a; }
 .m-pt-ring { position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px); transform: rotate(-90deg); pointer-events: none; }

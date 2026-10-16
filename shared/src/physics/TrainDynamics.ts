@@ -57,7 +57,13 @@ export class TrainDynamics {
   ignoreMaxSpeed = false;
   noSlip = false;
 
-  constructor(readonly consist: Consist, public headKm: number) {
+  /** The train changed at a stop (coaches coupled on or left behind; the same loco): physics and brakes follow. */
+  setConsist(c: Consist) {
+    this.consist = c;
+    this.brakes.resize(c.vehicles);
+  }
+
+  constructor(public consist: Consist, public headKm: number) {
     this.traction = createTraction(consist.loco, consist.locoUnits);
     this.brakes = new BrakeSystem(consist.vehicles);
   }

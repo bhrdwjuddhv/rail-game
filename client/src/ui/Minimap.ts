@@ -13,7 +13,11 @@ export interface MapTrain {
  * Route map with stations, structures and train positions. M toggles a large
  * view. A double line is drawn as two strokes (Down on the left of +km, Up on
  * the right) with the player's line highlighted; trains sit on their line.
+ * A long route (a Route Mode journey) shows only the stretch around the
+ * player's train, moving along with it; station names never overlap.
  */
+/** routes longer than this (km) show a window round the train: half its length, small and large map */
+const LONG_KM = 30, WINDOW_KM = { small: 5, large: 12 };
 export class Minimap {
   readonly canvas = document.createElement('canvas');
   private g: CanvasRenderingContext2D;
@@ -45,9 +49,19 @@ export class Minimap {
     this.canvas.classList.toggle('large', this.large);
   }
 
+  /** the stretch drawn: the whole route, or a window round the player's train on a long one */
+  private view(trains: MapTrain[]) {
+    const p = trains.find(t => t.player);
+    if (this.route.lengthKm <= LONG_KM || !p) return this.bounds;
+    const half = this.large ? WINDOW_KM.large : WINDOW_KM.small;
+    const i0 = Math.max(0, Math.floor((p.km - half) * 10)), i1 = Math.min(this.pts.length - 1, Math.ceil((p.km + half) * 10));
+    const w = this.pts.slice(i0, i1 + 1);
+    return { minX: Math.min(...w.map(q => q.x)), maxX: Math.max(...w.map(q => q.x)), minZ: Math.min(...w.map(q => q.z)), maxZ: Math.max(...w.map(q => q.z)) };
+  }
+
   draw(trains: MapTrain[], camera: { x: number; z: number }) {
     const g = this.g, S = this.canvas.width;
-    const b = this.bounds, pad = 14;
+    const b = this.view(trains), pad = 14;
     const sc = Math.min((S - pad * 2) / (b.maxX - b.minX || 1), (S - pad * 2) / (b.maxZ - b.minZ || 1));
     const X = (x: number) => pad + (x - b.minX) * sc + ((S - pad * 2) - (b.maxX - b.minX) * sc) / 2;
     const Z = (z: number) => pad + (z - b.minZ) * sc + ((S - pad * 2) - (b.maxZ - b.minZ) * sc) / 2;
@@ -82,10 +96,22 @@ export class Minimap {
     }
     g.globalAlpha = 1;
     g.font = `${this.large ? 13 : 10}px sans-serif`;
-    for (const st of this.route.stations) {
+    // stations on the map; a name is left out where it would overlap one already written (junctions first)
+    const taken: [number, number, number, number][] = [];
+    const order = [...this.route.stations].sort((a, c) => Number(!!c.junction) - Number(!!a.junction));
+    for (const st of order) {
       this.route.alignment.sample(st.km * 1000, f);
-      g.fillStyle = '#fff'; g.fillRect(X(f.x) - 3, Z(f.z) - 3, 6, 6);
-      g.fillText(this.large ? st.name : st.code, X(f.x) + 6, Z(f.z) + 4);
+      const x = X(f.x), z = Z(f.z);
+      if (x < -10 || x > S + 10 || z < -10 || z > S + 10) continue;
+      g.fillStyle = st.junction ? '#ff9933' : '#fff';
+      const r = st.junction ? 4.5 : 3;
+      g.fillRect(x - r, z - r, r * 2, r * 2);
+      const text = this.large || st.junction ? st.name : st.code, w = g.measureText(text).width, h = this.large ? 13 : 10;
+      const box: [number, number, number, number] = [x + 6, z + 4 - h, x + 6 + w, z + 4];
+      if (box[2] > S - 2 || taken.some(t => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])) continue;
+      taken.push(box);
+      g.fillStyle = '#fff';
+      g.fillText(text, box[0], z + 4);
     }
     for (const t of trains) {
       this.route.alignment.sample(t.km * 1000, f);

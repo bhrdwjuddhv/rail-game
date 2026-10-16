@@ -17,8 +17,8 @@
   "avoidingLines": true,
   "yardSidings": 6,
   "carriageSidings": 2,
-  "dwellS": [60, 240],
-  "trainsInStation": 5,
+  "dwellS": [45, 180],
+  "trainsInStation": 4,
   "bullet": false,
   "fortOffsetM": -700,
   "trainNames": {

@@ -14,6 +14,7 @@ import type { AITrain } from '@rail/shared/gameplay/AITrain';
 import { KMPH } from '@rail/shared/util';
 import type { CamTarget, RecordRunner, Studio, TrackHit } from './host';
 import { RouteMap } from './RouteMap';
+import { icon } from '../ui/theme/icons';
 
 /** Ready-made trains of the spawn picker (Custom opens the consist builder). */
 export const READY: { id: string; name: string; sub: string; spec: ConsistSpec }[] = [
@@ -589,7 +590,7 @@ export class RecordTrains implements RecordRunner {
       const n = this.info(r), sel = this.same(r, this.selected);
       const kind = r.kind === 'player' ? 'yours' : r.kind === 'spawned' ? (r.s.t.held ? 'waiting for Go' : r.s.t.dwell > 0 ? 'at a stop' : r.s.t.mode) : 'AI traffic';
       return `<tr class="${sel ? 'sel' : ''}" data-i="${i}"><td><span class="dot" style="background:${n.colour}"></span>${esc(n.name)}</td><td>${Math.round(Math.abs(n.speed) * 3.6)}</td><td>${n.route.canonicalKm(n.headKm).toFixed(1)}</td><td class="dim">${kind}</td>
-        <td class="acts"><button data-t="select" title="Select (settings card)">&#9673;</button><button data-t="focus" title="Focus camera">&#127909;</button><button data-t="drive" title="Drive this train">&#9881;</button>${r.kind !== 'player' ? `<button data-t="dup" title="Duplicate">&#10697;</button><button data-t="remove" title="Remove (Ctrl+Z brings it back)">&#10005;</button>` : ''}</td></tr>`;
+        <td class="acts"><button data-t="select" title="Select (settings card)" aria-label="Select">${icon('select')}</button><button data-t="focus" title="Focus camera" aria-label="Focus camera">${icon('videoCamera')}</button><button data-t="drive" title="Drive this train" aria-label="Drive">${icon('train')}</button>${r.kind !== 'player' ? `<button data-t="dup" title="Duplicate" aria-label="Duplicate">${icon('copy')}</button><button data-t="remove" title="Remove (Ctrl+Z brings it back)" aria-label="Remove">${icon('trash')}</button>` : ''}</td></tr>`;
     });
     return `<table class="rec-list"><tr><th>Train</th><th>km/h</th><th>km</th><th></th><th></th></tr>${rows.join('')}</table>`;
   }
@@ -668,7 +669,7 @@ export class RecordTrains implements RecordRunner {
       <div class="buttons left"><button data-q="pick-dest">Pick destination on the track&hellip;</button></div>
       <h5>Via</h5>${p.via.map((v, i) => `<div class="row">${esc(v.station ? r.station(v.station)?.name ?? v.station : name(v.km))}
         ${v.station ? `<select data-qv="${i}">${viaLines(v.station).map(l => `<option value="${l}" ${l === v.line ? 'selected' : ''}>${l === r.running.id ? 'Main line' : l === 'ML' ? 'Middle line' : `Loop ${l}`}</option>`).join('')}</select>` : ''}
-        <button data-qx="via:${i}" title="Remove">&#10005;</button></div>`).join('')}
+        <button data-qx="via:${i}" title="Remove" aria-label="Remove">${icon('close')}</button></div>`).join('')}
       <div class="row"><select data-q="via-station"><option value="">Add a station&hellip;</option>${ahead.filter(st => st.lineInfo.length > 1).map(st => `<option value="${st.code}">${esc(st.name)}</option>`).join('')}</select><button data-q="pick-via">Pick on track&hellip;</button></div>
       <label>Cruise speed <input type="number" min="5" max="${s.loco.maxSpeedKmph}" step="5" value="${p.cruiseKmph}" data-q="cruiseKmph"> km/h</label>
       <label class="tog"><input type="checkbox" data-q="obeySignals" ${p.obeySignals ? 'checked' : ''}><span>Obey signals</span></label>
@@ -676,9 +677,9 @@ export class RecordTrains implements RecordRunner {
       <label class="tog"><input type="checkbox" data-q="stopAtStations" ${p.stopAtStations ? 'checked' : ''}><span>Stop at stations</span></label>
       ${p.stopAtStations ? `<label>Stop time <input type="number" min="0" max="600" step="5" value="${p.stopS}" data-q="stopS"> s</label>
       <label class="tog"><input type="checkbox" data-q="boarding" ${p.boarding ? 'checked' : ''}><span>Doors open (boarding)</span></label>` : ''}
-      <h5>Stop markers</h5>${p.markers.map((m, i) => `<div class="row">${name(m.km)}: stop <input type="number" min="0" max="3600" step="5" value="${m.seconds}" data-qm="${i}"> s <button data-qx="marker:${i}">&#10005;</button></div>`).join('')}
+      <h5>Stop markers</h5>${p.markers.map((m, i) => `<div class="row">${name(m.km)}: stop <input type="number" min="0" max="3600" step="5" value="${m.seconds}" data-qm="${i}"> s <button data-qx="marker:${i}" aria-label="Remove">${icon('close')}</button></div>`).join('')}
       <div class="buttons left"><button data-q="pick-marker">Add "Stop here"&hellip;</button></div>
-      <h5>Slow zones</h5>${p.slow.map((z, i) => `<div class="row">${name(z.fromKm)} &ndash; ${name(z.toKm)}: <input type="number" min="5" max="300" step="5" value="${z.kmph}" data-qz="${i}"> km/h <button data-qx="slow:${i}">&#10005;</button></div>`).join('')}
+      <h5>Slow zones</h5>${p.slow.map((z, i) => `<div class="row">${name(z.fromKm)} &ndash; ${name(z.toKm)}: <input type="number" min="5" max="300" step="5" value="${z.kmph}" data-qz="${i}"> km/h <button data-qx="slow:${i}" aria-label="Remove">${icon('close')}</button></div>`).join('')}
       <div class="buttons left"><button data-q="pick-slow">Add "Slow to"&hellip;</button></div>
       <label>When finished <select data-q="end">${(Object.keys(END_NAMES) as PathEnd[]).map(k => `<option value="${k}" ${k === p.end ? 'selected' : ''}>${END_NAMES[k]}</option>`).join('')}</select></label>
       <label>Start <select data-q="start"><option value="now" ${p.start === 'now' ? 'selected' : ''}>Now</option><option value="go" ${p.start === 'go' ? 'selected' : ''}>On "Go"</option><option value="after" ${p.start === 'after' ? 'selected' : ''}>After a delay</option></select></label>

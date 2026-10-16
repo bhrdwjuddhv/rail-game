@@ -1,0 +1,167 @@
+{
+  "help": "Sample campaigns (fictional brands) for testing the billboards. Not shown unless God Mode -> Billboards -> \"Show sample ads\" is on. Same format as ads.json (see ADS_GUIDE.md).",
+  "ads": [
+    {
+      "id": "chai-supreme",
+      "frequency": 0.8,
+      "active": true,
+      "routes": ["all"],
+      "regions": ["all"],
+      "billboardTypes": ["all"],
+      "images": {
+        "wide": "chai-supreme-wide.jpg",
+        "standard": "chai-supreme-2x1.jpg",
+        "portrait": "chai-supreme-1x2.jpg",
+        "screen": "chai-supreme-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#c0392b",
+        "fg": "#ffffff",
+        "title": "CHAI SUPREME",
+        "sub": "Fresh every morning"
+      }
+    },
+    {
+      "id": "ganga-cement",
+      "frequency": 0.6,
+      "active": true,
+      "routes": ["all"],
+      "regions": ["all"],
+      "billboardTypes": ["classic", "wide", "unipole", "rooftop", "wall"],
+      "images": {
+        "wide": "ganga-cement-wide.jpg",
+        "standard": "ganga-cement-2x1.jpg",
+        "portrait": "ganga-cement-1x2.jpg",
+        "screen": "ganga-cement-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#1f6f8b",
+        "fg": "#ffffff",
+        "title": "GANGA CEMENT",
+        "sub": "Strong like a bridge"
+      }
+    },
+    {
+      "id": "raja-mobiles",
+      "frequency": 0.5,
+      "active": true,
+      "routes": ["all"],
+      "regions": ["all"],
+      "billboardTypes": ["all"],
+      "images": {
+        "wide": "raja-mobiles-wide.jpg",
+        "standard": "raja-mobiles-2x1.jpg",
+        "portrait": "raja-mobiles-1x2.jpg",
+        "screen": "raja-mobiles-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#f1c40f",
+        "fg": "#222222",
+        "title": "RAJA MOBILES",
+        "sub": "5G phones from Rs 6999"
+      }
+    },
+    {
+      "id": "kisan-tractors",
+      "frequency": 0.4,
+      "active": true,
+      "routes": ["all"],
+      "regions": ["north-plains", "thar-desert", "aravalli-hills", "alpine-meadow"],
+      "billboardTypes": ["all"],
+      "images": {
+        "wide": "kisan-tractors-wide.jpg",
+        "standard": "kisan-tractors-2x1.jpg",
+        "portrait": "kisan-tractors-1x2.jpg",
+        "screen": "kisan-tractors-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#27ae60",
+        "fg": "#ffffff",
+        "title": "KISAN TRACTORS",
+        "sub": "Built for every field"
+      }
+    },
+    {
+      "id": "sagar-logistics",
+      "frequency": 0.7,
+      "active": true,
+      "routes": ["freight-corridor"],
+      "regions": ["all"],
+      "billboardTypes": ["unipole", "wide", "classic", "led"],
+      "images": {
+        "wide": "sagar-logistics-wide.jpg",
+        "standard": "sagar-logistics-2x1.jpg",
+        "portrait": "sagar-logistics-1x2.jpg",
+        "screen": "sagar-logistics-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#2f3e8f",
+        "fg": "#ffffff",
+        "title": "SAGAR LOGISTICS",
+        "sub": "Port to doorstep, on time"
+      }
+    },
+    {
+      "id": "himgiri-woollens",
+      "frequency": 0.9,
+      "active": true,
+      "routes": ["himalayan-line"],
+      "regions": ["all"],
+      "billboardTypes": ["all"],
+      "images": {
+        "wide": "himgiri-woollens-wide.jpg",
+        "standard": "himgiri-woollens-2x1.jpg",
+        "portrait": "himgiri-woollens-1x2.jpg",
+        "screen": "himgiri-woollens-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#6d3b7f",
+        "fg": "#fff6e0",
+        "title": "HIMGIRI WOOLLENS",
+        "sub": "Warm all winter"
+      }
+    },
+    {
+      "id": "diwali-sale",
+      "frequency": 1,
+      "active": true,
+      "startDate": "2026-10-01",
+      "endDate": "2026-11-15",
+      "routes": ["all"],
+      "regions": ["all"],
+      "billboardTypes": ["led", "wide", "rooftop", "fob"],
+      "images": {
+        "wide": "diwali-sale-wide.jpg",
+        "standard": "diwali-sale-2x1.jpg",
+        "portrait": "diwali-sale-1x2.jpg",
+        "screen": "diwali-sale-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#ff8c1a",
+        "fg": "#3a1500",
+        "title": "BAZAAR DIWALI SALE",
+        "sub": "Up to 50% off, till 15 Nov"
+      }
+    },
+    {
+      "id": "safe-crossing",
+      "frequency": 0.3,
+      "active": true,
+      "routes": ["all"],
+      "regions": ["all"],
+      "billboardTypes": ["kiosk", "platform", "wall"],
+      "images": {
+        "wide": "safe-crossing-wide.jpg",
+        "standard": "safe-crossing-2x1.jpg",
+        "portrait": "safe-crossing-1x2.jpg",
+        "screen": "safe-crossing-16x9.jpg"
+      },
+      "fallback": {
+        "bg": "#f5f5f0",
+        "fg": "#1b2a3a",
+        "title": "STOP. LOOK. CROSS.",
+        "sub": "Use the foot over bridge"
+      }
+    }
+  ]
+}

@@ -32,6 +32,11 @@ Attribution: "WAG-12" by lakshya11x (https://sketchfab.com/3d-models/wag-12-3330
 
 In the game, these credits are shown under **Controls & help → Credits**. Loco models come from each loco's `model` section; the other assets come from `data/credits.json`.
 
+## Icons
+
+- **Phosphor Icons** (duotone weight) by Helena Zhang and Tobias Fried, MIT licence, https://phosphoricons.com: the general UI icons. Only the icons the game uses are bundled, from `@phosphor-icons/core`; the list is in `client/src/ui/theme/icons.ts`.
+- The railway icons (pantograph, breaker, reverser, couplers, signal, loco, coach, wagon and others) are original, drawn in the same duotone style.
+
 ## Libraries
 
 The game and its tools use three.js, glTF-Transform, meshoptimizer, sharp, ktx2-encoder (Basis Universal) and Vite, all under the MIT or Apache 2.0 licences. See each package's own licence file in `node_modules`.

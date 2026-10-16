@@ -17,7 +17,8 @@ function knee(hx: number, hy: number) {
 }
 
 /**
- * Pantograph button: an original pantograph drawing whose arm unfolds until the
+ * Pantograph button (duotone, like every icon: the outline at full colour, the frame's fill and the
+ * base at the secondary opacity): an original pantograph drawing whose arm unfolds until the
  * pan head meets the wire, a progress ring for the travel, and an LED (grey
  * down, blinking amber moving, green up). It is driven by the loco's own
  * pantograph position (the same value the 3D model uses), so both always match.
@@ -27,6 +28,7 @@ export class PantographButton {
   private lower: SVGLineElement;
   private upper: SVGLineElement;
   private head: SVGGElement;
+  private frame: SVGPolygonElement;
   private ring: SVGCircleElement;
   private pos = -1;
   private state = '';
@@ -41,7 +43,9 @@ export class PantographButton {
       <svg class="m-pt-icon" viewBox="0 0 48 48" aria-hidden="true">
         <line class="wire" x1="3" y1="8" x2="45" y2="8"/>
         <line class="roof" x1="4" y1="41" x2="44" y2="41"/>
-        <rect class="base" x="6" y="37" width="12" height="4" rx="1"/>
+        <polygon class="dt2 frame" points=""/>
+        <rect class="dt2" x="6" y="37" width="12" height="4" rx="1"/>
+        <rect class="base-o" x="6" y="37" width="12" height="4" rx="1"/>
         <line class="arm lower" x1="${A.x}" y1="${A.y}" x2="0" y2="0"/>
         <line class="arm upper" x1="0" y1="0" x2="0" y2="0"/>
         <g class="head"><path d="M-10 0h20M-12 -2.5l2 2.5M12 -2.5l-2 2.5"/></g>
@@ -52,6 +56,7 @@ export class PantographButton {
     this.lower = this.el.querySelector('.lower')!;
     this.upper = this.el.querySelector('.upper')!;
     this.head = this.el.querySelector('.head')!;
+    this.frame = this.el.querySelector('.frame')!;
     this.ring = this.el.querySelector('.m-pt-ring circle')!;
     this.el.addEventListener('click', e => {
       e.stopPropagation();
@@ -67,6 +72,8 @@ export class PantographButton {
     this.upper.setAttribute('x1', k.x.toFixed(2)); this.upper.setAttribute('y1', k.y.toFixed(2));
     this.upper.setAttribute('x2', String(HEAD_X)); this.upper.setAttribute('y2', hy.toFixed(2));
     this.head.setAttribute('transform', `translate(${HEAD_X} ${hy.toFixed(2)})`);
+    // the duotone fill: the triangle the two arms make with the base, rising with them
+    this.frame.setAttribute('points', `${A.x},${A.y} ${k.x.toFixed(2)},${k.y.toFixed(2)} ${HEAD_X},${hy.toFixed(2)} ${HEAD_X},${A.y}`);
   }
 
   /**

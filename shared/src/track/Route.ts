@@ -85,6 +85,8 @@ export interface RouteData {
   crossovers?: CrossoverData[];
   /** contact wire height above rail (m): 5.55 standard, about 7.4 high-rise for double-stack containers */
   oheContactHeightM?: number;
+  /** a joined route: the wire height stretch by stretch (each part keeps its own; the rest: oheContactHeightM) */
+  oheSections?: { fromKm: number; toKm: number; heightM: number }[];
   /** a dedicated freight corridor: only goods trains (traffic, menus) */
   freight?: boolean;
   /** the sea beside the line from fromKm past the route end: shore shoreM out on `side` (1 = Up side) */
@@ -620,6 +622,13 @@ export class Route {
   }
 
   // ---------------- lookups ----------------
+  /** contact wire height above rail at km (this view's km) */
+  contactHeightAt(km: number) {
+    const k = this.canonicalKm(km);
+    for (const s of this.data.oheSections ?? []) if (k >= s.fromKm && k < s.toKm) return s.heightM;
+    return this.data.oheContactHeightM ?? 5.55;
+  }
+
   speedLimitAt(km: number) {
     for (const l of this.data.speedLimits) if (km >= l.fromKm && km < l.toKm) return l.kmph;
     return 30;

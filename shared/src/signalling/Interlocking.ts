@@ -211,6 +211,12 @@ export class Interlocking {
     return this.find(trainId, st, 'departure') ?? this.establish(trainId, st, lineId, 'departure', false, occupants, crossTo, m);
   }
 
+  /** Is the middle line through this station (and on to the next) free: nobody holds it here or in the section beyond? */
+  middleFree(st: StationInfo, next?: StationInfo) {
+    if (this.middle.has(st.code)) return false;
+    return !next || !this.middle.has(sectionKey(st, next));
+  }
+
   /** Is this section of the middle line (from `st` to `to`) free to claim for `trainId`? */
   sectionFree(st: StationInfo, to: StationInfo, trainId: string) {
     const h = this.middle.get(sectionKey(st, to));
@@ -242,7 +248,10 @@ export class Interlocking {
       const outEnd = r.needs.find(n => n.state === 'reverse' && n.sw.def.id.endsWith('-O'))?.sw.def.rampEnd;
       // a reception holds until the tail has cleared the last points it uses (a junction's ladder is far inside its limits)
       const inEnd = Math.max(0, ...r.needs.filter(n => n.state === 'reverse').map(n => n.sw.def.rampEnd));
-      const clearKm = r.kind === 'reception' ? Math.max(r.station.entryKm + 0.11, inEnd + 0.01) : Math.max(r.station.exitKm, outEnd ?? 0) + 0.01;
+      // a big junction's departure frees its exit ladder once the tail is off the last points it uses: the next train can be
+      // routed out behind it at once (its starter stays red until the block ahead clears)
+      const clearKm = r.kind === 'reception' ? Math.max(r.station.entryKm + 0.11, inEnd + 0.01)
+        : r.station.platformLines?.length && !outEnd ? Math.max(r.station.platformToKm, inEnd) + 0.01 : Math.max(r.station.exitKm, outEnd ?? 0) + 0.01;
       if (occ.tailKm > clearKm) this.release(r);
     }
     // a middle line claim (this direction's) ends once its train has no route there and is off that stretch of

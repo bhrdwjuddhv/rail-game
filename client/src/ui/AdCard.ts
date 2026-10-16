@@ -1,4 +1,5 @@
 import type { Ad } from '@rail/shared/ads/Ads';
+import { icon } from './theme/icons';
 
 /**
  * The card shown when a billboard is clicked or tapped (the game is paused
@@ -46,15 +47,17 @@ export class AdCard {
     if (ad.url) {
       const visit = document.createElement('button');
       visit.className = 'primary';
-      visit.textContent = 'Visit website';
+      visit.textContent = ad.house === 'advertise' ? 'Contact us' : 'Visit website';
       visit.addEventListener('click', () => {
         this.onVisit(ad);
-        window.open(ad.url!, '_blank', 'noopener,noreferrer');
+        // an e-mail address opens the mail app (a new tab would stay blank)
+        if (ad.url!.startsWith('mailto:')) location.href = ad.url!;
+        else window.open(ad.url!, '_blank', 'noopener,noreferrer');
         // back from the site: still paused, until the player says so
         buttons.replaceChildren();
         const go = document.createElement('button');
         go.className = 'primary';
-        go.innerHTML = '&#9654;&nbsp; Tap to continue';
+        go.innerHTML = `${icon('play')} Tap to continue`;
         go.addEventListener('click', () => this.close());
         buttons.appendChild(go);
       });

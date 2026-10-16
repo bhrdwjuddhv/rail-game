@@ -7,13 +7,15 @@
 .rec-panel[hidden] { display: none; }
 .rec-panel header { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; font-size: 14px; }
 .rec-panel header b { flex: 1; white-space: nowrap; font-size: 13.5px; }
-.rec-panel button { padding: 4px 9px; font-size: 12px; border-radius: 5px; background: #26303a; border-color: rgba(255, 255, 255, 0.16); }
-.rec-panel button:hover { background: #33404c; }
-.rec-panel button.on { background: #6b4c10; border-color: var(--accent); color: #fff; }
-.rec-panel button.primary { background: #1e5a8c; border-color: #3a8bd0; }
+.rec-panel button { padding: 4px 9px; font-size: 12px; border-radius: var(--r-sm); background: var(--c-base-2); border-color: var(--c-line-strong); gap: 5px; }
+.rec-panel button:hover { background: var(--c-base-3); }
+.rec-panel button.on { background: var(--c-saffron-soft); border-color: var(--c-saffron); color: #fff; }
+.rec-panel button.primary { background: var(--c-primary); border-color: var(--c-primary); }
+.rec-panel button .ic { width: 15px; height: 15px; }
+.rec-panel header b .ic { color: var(--c-saffron); }
 .rec-panel .buttons { margin-top: 6px; gap: 6px; }
-.rec-panel .buttons:not(.vertical) button:last-child:not(:only-child) { background: #26303a; border-color: rgba(255, 255, 255, 0.16); }
-.rec-panel .buttons button.primary:last-child { background: #1e5a8c; }
+.rec-panel .buttons:not(.vertical) button:last-child:not(:only-child) { background: var(--c-base-2); border-color: var(--c-line-strong); color: var(--c-text); }
+.rec-panel .buttons button.primary:last-child { background: var(--c-primary); color: #fff; }
 .rec-panel label { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
 .rec-panel label > input[type="range"] { flex: 1; min-width: 60px; }
 .rec-panel label output { min-width: 48px; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
@@ -37,7 +39,7 @@
 .rec-fps { color: #ffcf6a; font-size: 11px; }
 .rec-panel nav { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); }
 .rec-panel nav button { flex: 1; border-radius: 6px 6px 0 0; border-bottom: none; background: transparent; }
-.rec-panel nav button.on { background: #26303a; color: var(--accent); border-color: var(--line); }
+.rec-panel nav button.on { background: var(--c-base-2); color: var(--c-saffron); border-color: var(--line); }
 .rec-body { flex: 1; overflow: auto; padding: 8px 12px 14px; }
 .rec-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 6px 0; }
 .rec-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px !important; text-align: left; border-left: 3px solid var(--liv) !important; }

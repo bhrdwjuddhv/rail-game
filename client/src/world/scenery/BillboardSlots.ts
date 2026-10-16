@@ -48,16 +48,16 @@ export interface BillboardSlot {
   zone: number[];
 }
 
-/** Panel size (m) and its bottom edge above the base, the distance out from the outer running line, and the turn toward the trains (deg from parallel). */
+/** Panel size (m) and its bottom edge above the base, the distance out from the outer running line, and the turn toward the trains (deg from parallel: well round, so the faces read from the cab). */
 export const SPEC: Record<BillboardType, { w: number; h: number; bottom: number; setback: number; angle: number; foot: number }> = {
-  classic: { w: 6.4, h: 3.2, bottom: 4.6, setback: 11, angle: 25, foot: 2.2 },
-  wide: { w: 12, h: 4, bottom: 5.4, setback: 15, angle: 25, foot: 5.2 },
-  vshape: { w: 6.4, h: 3.2, bottom: 4.6, setback: 13, angle: 35, foot: 2.6 },
-  unipole: { w: 10.5, h: 3.5, bottom: 12, setback: 19, angle: 22, foot: 1.2 },
-  rooftop: { w: 9, h: 3, bottom: 10.6, setback: 22, angle: 18, foot: 6.5 },
-  wall: { w: 7.2, h: 2.4, bottom: 0.45, setback: 9, angle: 8, foot: 0.6 },
-  kiosk: { w: 1.2, h: 2.4, bottom: 0.7, setback: 7, angle: 30, foot: 0.6 },
-  led: { w: 6.4, h: 3.6, bottom: 5, setback: 13, angle: 25, foot: 2.4 },
+  classic: { w: 6.4, h: 3.2, bottom: 4.6, setback: 11, angle: 42, foot: 2.2 },
+  wide: { w: 12, h: 4, bottom: 5.4, setback: 15, angle: 38, foot: 5.2 },
+  vshape: { w: 6.4, h: 3.2, bottom: 4.6, setback: 13, angle: 48, foot: 2.6 },
+  unipole: { w: 10.5, h: 3.5, bottom: 12, setback: 19, angle: 36, foot: 1.2 },
+  rooftop: { w: 9, h: 3, bottom: 10.6, setback: 22, angle: 32, foot: 6.5 },
+  wall: { w: 7.2, h: 2.4, bottom: 0.45, setback: 9, angle: 16, foot: 0.6 },
+  kiosk: { w: 1.2, h: 2.4, bottom: 0.7, setback: 7, angle: 42, foot: 0.6 },
+  led: { w: 6.4, h: 3.6, bottom: 5, setback: 13, angle: 42, foot: 2.4 },
   platform: { w: 3, h: 1.5, bottom: 0.9, setback: 0, angle: 0, foot: 1.5 },
   fob: { w: 7, h: 1.4, bottom: 0.3, setback: 0, angle: 90, foot: 0 },
 };

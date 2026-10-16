@@ -33,6 +33,7 @@ export function mirrorRouteData(d: RouteData, L: number): RouteData {
     })), s => s.km),
     signals: byKm(d.signals.map(s => ({ ...s, km: km(s.km), offset: s.offset === undefined ? undefined : -s.offset })), s => s.km),
     speedLimits: byKm(d.speedLimits.map(range), r => r.fromKm),
+    oheSections: d.oheSections && byKm(d.oheSections.map(range), r => r.fromKm),
     structures: byKm(d.structures.map(range), r => r.fromKm),
     levelCrossings: byKm(d.levelCrossings.map(l => ({ ...l, km: km(l.km) })), l => l.km),
     scenery: byKm(d.scenery.map(z => ({ ...range(z), roadOffset: z.roadOffset === undefined ? undefined : -z.roadOffset })), z => z.fromKm),

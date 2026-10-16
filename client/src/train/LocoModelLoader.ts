@@ -20,6 +20,10 @@ export interface PantoRig {
   lowerQ: THREE.Quaternion; upperQ: THREE.Quaternion;
   /** arm angles (radians, from +z toward +y): as modelled, on the wire, folded down */
   rest: [number, number]; up: [number, number]; down: [number, number];
+  /** the head as modelled (along the loco), the model's height offset and scale, the knee as modelled: to aim at another wire height */
+  head0x: number; offsetY: number; scale: number; knee0: THREE.Vector2;
+  /** the wire height `up` is for */
+  hUp: number;
 }
 
 const ang = (v: THREE.Vector2) => Math.atan2(v.y, v.x);
@@ -348,7 +352,7 @@ export function instanceLevel(template: THREE.Group, cfg: LocoModelFile): GlbLev
     // down: lower arm a few degrees above flat in its own direction, upper folded back over it
     const flat = (a: number, e: number) => (Math.cos(a) >= 0 ? e : Math.PI - e);
     const down: [number, number] = [flat(rest[0], 0.08), flat(rest[0] + Math.PI, -0.05)];
-    level.pantos.push({ lower, upper, joint, base, l1, l2, lowerQ: lower.quaternion.clone(), upperQ: upper.quaternion.clone(), rest, up, down });
+    level.pantos.push({ lower, upper, joint, base, l1, l2, lowerQ: lower.quaternion.clone(), upperQ: upper.quaternion.clone(), rest, up, down, head0x: head0.x, offsetY: cfg.offset[1], scale: cfg.scale, knee0, hUp: CONTACT_H });
   }
   return level;
 }
@@ -356,7 +360,18 @@ export function instanceLevel(template: THREE.Group, cfg: LocoModelFile): GlbLev
 const _qx = new THREE.Quaternion(), _x = new THREE.Vector3(1, 0, 0);
 
 /** Pose a pantograph rig: pos 0 = down, 1 = pan head on the contact wire. */
-export function poseRig(r: PantoRig, pos: number) {
+/**
+ * Pose a model's pantograph: pos 0 folded down .. 1 the head on the wire. `wireH`: the contact wire's height
+ * above rail where the loco is (the arms reach just as far as it: part raised under a normal wire, higher under a
+ * high-rise one).
+ */
+export function poseRig(r: PantoRig, pos: number, wireH = r.hUp) {
+  if (Math.abs(wireH - r.hUp) > 0.01) {
+    const headUp = new THREE.Vector2(r.head0x, (wireH - r.offsetY) / r.scale);
+    const kneeUp = solveKnee(r.base, headUp, r.l1, r.l2, r.knee0);
+    r.up = [ang(kneeUp.clone().sub(r.base)), ang(headUp.clone().sub(kneeUp))];
+    r.hUp = wireH;
+  }
   const aL = r.down[0] + (r.up[0] - r.down[0]) * pos;
   const aU = r.down[1] + (r.up[1] - r.down[1]) * pos;
   const knee = new THREE.Vector2(r.base.x + Math.cos(aL) * r.l1, r.base.y + Math.sin(aL) * r.l1);

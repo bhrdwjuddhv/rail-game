@@ -11,17 +11,20 @@ export interface WeatherParams {
   cloud: number;      // cloud layer opacity
   overcast: number;   // dims sun, greys the sky
   rain: number;       // 0..1
+  /** snowfall 0..1 (the same particles, as slow white flakes; rain stays 0, so nothing is wet) */
+  snow: number;
   wind: number;
   lightning: number;  // flashes per second
   adhesion: 'dry' | 'damp' | 'wet';
 }
 
 export const WEATHER: Record<WeatherId, { name: string } & Omit<WeatherParams, 'haze'> & { haze: string }> = {
-  clear: { name: 'Clear', fog: 0.00022, haze: '#b9cadb', cloud: 0.18, overcast: 0, rain: 0, wind: 0.35, lightning: 0, adhesion: 'dry' },
-  hazy:  { name: 'Hazy summer', fog: 0.00075, haze: '#cdbd9c', cloud: 0.2, overcast: 0.12, rain: 0, wind: 0.5, lightning: 0, adhesion: 'dry' },
-  fog:   { name: 'Winter fog', fog: 0.016, haze: '#c3c7cb', cloud: 0.9, overcast: 0.75, rain: 0, wind: 0.05, lightning: 0, adhesion: 'damp' },
-  rain:  { name: 'Monsoon rain', fog: 0.0026, haze: '#8f989f', cloud: 1, overcast: 0.72, rain: 0.7, wind: 1.1, lightning: 0, adhesion: 'wet' },
-  storm: { name: 'Thunderstorm', fog: 0.0038, haze: '#6f777e', cloud: 1, overcast: 0.9, rain: 1, wind: 1.9, lightning: 0.07, adhesion: 'wet' },
+  clear: { name: 'Clear', fog: 0.00022, haze: '#b9cadb', cloud: 0.18, overcast: 0, rain: 0, snow: 0, wind: 0.35, lightning: 0, adhesion: 'dry' },
+  hazy:  { name: 'Hazy summer', fog: 0.00075, haze: '#cdbd9c', cloud: 0.2, overcast: 0.12, rain: 0, snow: 0, wind: 0.5, lightning: 0, adhesion: 'dry' },
+  fog:   { name: 'Winter fog', fog: 0.016, haze: '#c3c7cb', cloud: 0.9, overcast: 0.75, rain: 0, snow: 0, wind: 0.05, lightning: 0, adhesion: 'damp' },
+  rain:  { name: 'Monsoon rain', fog: 0.0026, haze: '#8f989f', cloud: 1, overcast: 0.72, rain: 0.7, snow: 0, wind: 1.1, lightning: 0, adhesion: 'wet' },
+  storm: { name: 'Thunderstorm', fog: 0.0038, haze: '#6f777e', cloud: 1, overcast: 0.9, rain: 1, snow: 0, wind: 1.9, lightning: 0.07, adhesion: 'wet' },
+  snow:  { name: 'Snowfall', fog: 0.0042, haze: '#dce4ea', cloud: 1, overcast: 0.65, rain: 0, snow: 0.8, wind: 0.6, lightning: 0, adhesion: 'damp' },
 };
 
 const RAIN_N = 5000;
@@ -75,7 +78,7 @@ export class Weather {
     const k = Math.min(1, dt / 8);
     const P = this.p, T = this.target;
     P.fog = lerp(P.fog, T.fog, k); P.cloud = lerp(P.cloud, T.cloud, k); P.overcast = lerp(P.overcast, T.overcast, k);
-    P.rain = lerp(P.rain, T.rain, k); P.wind = lerp(P.wind, T.wind, k); P.lightning = T.lightning; P.adhesion = T.adhesion;
+    P.rain = lerp(P.rain, T.rain, k); P.snow = lerp(P.snow, T.snow, k); P.wind = lerp(P.wind, T.wind, k); P.lightning = T.lightning; P.adhesion = T.adhesion;
     P.haze.lerp(T.haze, k);
     // Record Mode's fine control over the preset
     const o = this.override;
@@ -97,11 +100,15 @@ export class Weather {
     }
 
     // rain streaks: wrap a 60x30x60 m box around the camera; tilt with wind and train speed
-    this.rainMesh.visible = P.rain > 0.02 && !sheltered;
+    // (snow: the same particles as slow, short white flakes drifting on the wind)
+    const precip = Math.max(P.rain, P.snow), snowy = P.snow > P.rain;
+    this.rainMesh.visible = precip > 0.02 && !sheltered;
     if (!this.rainMesh.visible) return;
-    const n = Math.floor(RAIN_N * Math.min(1, P.rain));
-    const fall = 10 * dt;
-    const tx = -speedVec.x * 0.03 + P.wind * 0.6, tz = -speedVec.z * 0.03;
+    const mat = this.rainMesh.material as THREE.LineBasicMaterial;
+    mat.color.setHex(snowy ? 0xffffff : 0xc9d4dc); mat.opacity = snowy ? 0.85 : 0.32;
+    const n = Math.floor(RAIN_N * Math.min(1, precip));
+    const fall = (snowy ? 1.3 : 10) * dt, streak = snowy ? 0.07 : 0.7;
+    const tx = snowy ? 0.04 : -speedVec.x * 0.03 + P.wind * 0.6, tz = snowy ? 0.03 : -speedVec.z * 0.03;
     for (let i = 0; i < RAIN_N; i++) {
       const s = i * 3;
       this.seeds[s + 1] -= fall;
@@ -113,7 +120,7 @@ export class Weather {
       let x = this.seeds[s], y = this.seeds[s + 1], z = this.seeds[s + 2];
       if (i >= n || (clearRadius > 0 && x * x + z * z < clearRadius * clearRadius && y < 4) || covered?.(cam.x + x, cam.y + y - 5.35, cam.z + z)) { y = -1000; }
       this.rainPos[o] = cam.x + x; this.rainPos[o + 1] = cam.y + y - 5; this.rainPos[o + 2] = cam.z + z;
-      this.rainPos[o + 3] = cam.x + x + tx; this.rainPos[o + 4] = cam.y + y - 5 - 0.7; this.rainPos[o + 5] = cam.z + z + tz;
+      this.rainPos[o + 3] = cam.x + x + tx; this.rainPos[o + 4] = cam.y + y - 5 - streak; this.rainPos[o + 5] = cam.z + z + tz;
     }
     (this.rainMesh.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
   }
@@ -121,5 +128,5 @@ export class Weather {
 
 function toParams(id: WeatherId): WeatherParams {
   const w = WEATHER[id];
-  return { fog: w.fog, haze: new THREE.Color(w.haze), cloud: w.cloud, overcast: w.overcast, rain: w.rain, wind: w.wind, lightning: w.lightning, adhesion: w.adhesion };
+  return { fog: w.fog, haze: new THREE.Color(w.haze), cloud: w.cloud, overcast: w.overcast, rain: w.rain, snow: w.snow, wind: w.wind, lightning: w.lightning, adhesion: w.adhesion };
 }

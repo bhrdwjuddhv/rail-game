@@ -20,6 +20,7 @@
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/extensions": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
+    "@phosphor-icons/core": "^2.1.1",
     "@types/three": "^0.186.0",
     "ktx2-encoder": "^0.6.0",
     "meshoptimizer": "^1.1.1",

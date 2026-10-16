@@ -44,6 +44,17 @@ export interface JunctionKit {
   clockAt: (dx: number, lat: number, up: number, scale: number) => ClockSpot;
 }
 
+/**
+ * The two siding roads kept free of parked stock at a big junction because something moves on them:
+ * the shunting road (the first yard road, else the outermost carriage siding) and the light-engine
+ * road (the second shed road).
+ */
+export function movingRoads(code: string, lines: LineDef[]) {
+  const mine = lines.filter(l => l.station === code).map(l => l.id);
+  const cs = mine.filter(id => /-C\d+$/.test(id)).sort();
+  return { shunt: mine.find(id => id === `${code}-Y1`) ?? cs[cs.length - 1], light: mine.find(id => id === `${code}-S2`) };
+}
+
 /** where the station clock goes (local), and how big */
 export interface ClockSpot { x: number; y: number; z: number; ry: number; scale: number }
 
@@ -162,13 +173,16 @@ export function buildJunction(style: JunctionStyle, s: JunctionSite): ClockSpot 
     const mine = s.layout.lines.filter(l => l.station === st.code && /-[CSY]\d+$/.test(l.id));
     const R = RAIL_TOP;
     const bogies = (dx: number, lat: number, half: number) => { for (const e of [-1, 1]) b.box(3.0, 0.8, 2.5, M(dx + e * half, lat, R + 0.5), '#222222', 'metal'); };
-    const shed: { dx: number; dir: number; lat: number }[] = [];
+    const shed: { dx: number; dir: number; lat: number; light: boolean }[] = [];
+    const moving = movingRoads(st.code, s.layout.lines);
     for (const l of mine) {
       const e = ends.find(d => d.line === l.id);
       if (!e) continue;
       const kind = /-([CSY])\d+$/.exec(l.id)![1], dir = e.dir;
       const endDx = (e.km - st.km) * 1000 - dir * 8, room = (l.toKm - l.fromKm) * 1000 - 70;
       const lat = l.offset;
+      if (kind === 'S') { shed.push({ dx: endDx, dir, lat, light: l.id === moving.light }); continue; }
+      if (l.id === moving.shunt) continue; // the shunter works this road
       if (kind === 'C') {
         // a passenger rake: ICF blue with a cream band, or LHB red with grey
         const icf = r() < 0.5, body = icf ? '#2c5aa0' : '#a33a32', band = icf ? '#f1e3b5' : '#c9c9c9';
@@ -190,7 +204,7 @@ export function buildJunction(style: JunctionStyle, s: JunctionSite): ClockSpot 
           b.box(9.5, 0.06, 2.8, M(dx, lat, R + 3.1 + (loaded ? 0.15 : -1.0)), loaded ? '#1d1d1d' : '#3a2a20', 'std');
           bogies(dx, lat, 3.3);
         }
-      } else shed.push({ dx: endDx, dir, lat });
+      }
     }
     if (!shed.length) return;
     // the loco shed: a gabled steel shed over both roads at their end, a low wall along each side, locos inside
@@ -205,7 +219,7 @@ export function buildJunction(style: JunctionStyle, s: JunctionSite): ClockSpot 
     for (const l of [lo, hi]) b.box(110, 0.4, 0.4, M((d0 + d1) / 2, l, R + 8.4), '#5d6770', 'metal');
     const liveries = [['#b8322c', '#efefef'], ['#2d5f9a', '#f2c230'], ['#c8102e', '#f2f2f2']];
     for (const x of shed) for (let i = 0; i < 2; i++) {
-      if (r() < 0.25) continue;
+      if (r() < 0.25 || x.light) continue; // (the light engine comes and goes on its road)
       const [body, band] = liveries[Math.floor(r() * liveries.length)];
       const dx = x.dx - x.dir * (12 + i * 22);
       b.box(19.8, 3.3, 3.1, M(dx, x.lat, R + 2.95), body, 'metal');

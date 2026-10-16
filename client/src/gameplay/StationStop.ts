@@ -27,6 +27,8 @@ export interface StopHost {
   signalAhead: () => string | null;
   /** an AI train running towards this station on the player's line (km away), for loop waits */
   approaching: (st: StationInfo) => { name: string; km: number } | null;
+  /** Skip wait while another train is to pass: stop waiting for it at once (the other train follows instead) */
+  skipTrainWait?: () => void;
   message: (text: string, kind?: 'info' | 'warn' | 'good') => void;
   whistle: () => void;
   doorSound: () => void;
@@ -41,6 +43,8 @@ export class StationStop {
   readonly doors: CoachDoors;
   readonly card: StopCard;
   private st: StationInfo | null = null;
+  /** the station the train is stopped at (code), if any */
+  get stationCode() { return this.st?.code ?? null; }
   private side = 1;
   private accuracy: string | null = null;
   private accuracyT = 0;
@@ -50,6 +54,9 @@ export class StationStop {
   private lampT = 0;
   private readyShownAt = -1;
   private works = new LoadingWorks();
+
+  /** the train changed (Route Mode coupling) */
+  setConsist(c: Consist) { this.h.consist = c; }
 
   constructor(private h: StopHost, ui: HTMLElement, key: () => string | null) {
     const c = h.consist;
@@ -141,7 +148,10 @@ export class StationStop {
     const st = this.st, p = st && this.h.plan.get(st.code);
     if (!st || !p) return;
     const a = this.h.approaching(st);
-    if (a) { this.warpUntil = 'train'; this.h.setWarp(8); return; }
+    if (a) {
+      if (this.h.skipTrainWait) { this.h.skipTrainWait(); return; }
+      this.warpUntil = 'train'; this.h.setWarp(8); return;
+    }
     // nothing to wait for but the clock: jump to just before the booked time
     if (p.dep !== undefined && this.h.clock() < p.dep - 10) this.h.setClock(p.dep - 10);
   }

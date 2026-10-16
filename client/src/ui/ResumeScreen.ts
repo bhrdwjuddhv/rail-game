@@ -1,3 +1,5 @@
+import { icon } from './theme/icons';
+
 /**
  * "Tap to continue" cover over the frozen, dimmed game. Browsers only allow
  * fullscreen, orientation lock and audio inside a user gesture, so after the
@@ -11,7 +13,7 @@ export class ResumeScreen {
     this.el.className = 'resume-screen';
     this.el.hidden = true;
     this.el.setAttribute('role', 'dialog');
-    this.el.innerHTML = `<button class="go">&#9654;&nbsp; Tap to continue</button><button class="menu-link">Main Menu</button>`;
+    this.el.innerHTML = `<button class="go">${icon('play')} Tap to continue</button><button class="menu-link">Main Menu</button>`;
     this.el.querySelector('.go')!.addEventListener('click', e => { e.stopPropagation(); this.hide(); onContinue(); });
     this.el.querySelector('.menu-link')!.addEventListener('click', e => { e.stopPropagation(); onMenu(); });
     parent.appendChild(this.el);

@@ -17,8 +17,8 @@
   "avoidingLines": false,
   "yardSidings": 0,
   "carriageSidings": 3,
-  "dwellS": [60, 240],
-  "trainsInStation": 6,
+  "dwellS": [45, 180],
+  "trainsInStation": 4,
   "bullet": true,
   "trainNames": {
     "express": ["Navyug Express", "Himgiri Express", "Sahyadri Express", "Shatabdi Link", "Konkan Kanya"],

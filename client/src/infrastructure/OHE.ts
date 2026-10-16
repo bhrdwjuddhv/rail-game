@@ -86,6 +86,8 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
     const tunnel = route.inTunnel(km);
     route.alignment.sample(s, f);
     const rail = f.y + RAIL_TOP;
+    // the wire height here (a joined route: each part its own)
+    const CH = route.contactHeightAt(km);
     const offs = wiredOffsets(railway, s);
     const minO = Math.min(...offs), maxO = Math.max(...offs);
     // portals over loops, along platforms (no room for masts between the faces) and on bridges
@@ -104,11 +106,11 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
         for (const lat of [lo, hi]) {
           const p = at(lat, rail);
           batch.box(0.9, 0.9, 0.9, mat(p.x, foot - 0.45, p.z, ry), '#a9a59c', 'concrete');
-          batch.add(latticeMast(rail + CONTACT_H + 2.45 - foot), mat(p.x, foot, p.z, ry), '#ffffff');
+          batch.add(latticeMast(rail + CH + 2.45 - foot), mat(p.x, foot, p.z, ry), '#ffffff');
         }
         const c = at((lo + hi) / 2, rail);
-        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + CONTACT_H + 2.2, c.z, ry), GALV);
-        for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + CONTACT_H + 1.65, p.z, ry), GALV); }
+        batch.box(0.3, 0.5, hi - lo + 0.3, mat(c.x, rail + CH + 2.2, c.z, ry), GALV);
+        for (const o of offs) { const p = at(o, rail); batch.box(0.08, 0.6, 0.08, mat(p.x, rail + CH + 1.65, p.z, ry), GALV); }
       } else {
         // a mast outside each outer track, its cantilever reaching over that track
         // (single line: one mast on the left; double line: one each side)
@@ -120,13 +122,13 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
           // concrete foundation set into the ground (ground = formation - 5 cm), 25 cm showing; vertical I-section mast on it
           const foot = f.y - 0.05 + 0.25;
           batch.box(0.7, 0.8, 0.7, mat(p.x, foot - 0.4, p.z, ry), '#a9a59c', 'concrete');
-          batch.add(iMast(), mat(p.x, foot, p.z, ry, 0, 0, 1, (rail + CONTACT_H + SYSTEM_H + 0.5 - foot) / MAST_H, 1), '#ffffff');
+          batch.add(iMast(), mat(p.x, foot, p.z, ry, 0, 0, 1, (rail + CH + SYSTEM_H + 0.5 - foot) / MAST_H, 1), '#ffffff');
           // cantilever: top tube + bracket + registration arm
           const mid = at(track + side * 1.65, rail);
-          batch.box(0.07, 0.07, 3.6, mat(mid.x, rail + CONTACT_H + SYSTEM_H, mid.z, ry), GALV);
-          batch.box(0.07, 0.07, 3.7, mat(mid.x, rail + CONTACT_H + 0.65, mid.z, ry, 0.2 * -side), GALV);
+          batch.box(0.07, 0.07, 3.6, mat(mid.x, rail + CH + SYSTEM_H, mid.z, ry), GALV);
+          batch.box(0.07, 0.07, 3.7, mat(mid.x, rail + CH + 0.65, mid.z, ry, 0.2 * -side), GALV);
           const ins = at(lat - side * 0.4, rail);
-          batch.cyl(0.08, 0.08, 0.5, 8, mat(ins.x, rail + CONTACT_H + SYSTEM_H, ins.z, ry, Math.PI / 2), '#6b4d3a');
+          batch.cyl(0.08, 0.08, 0.5, 8, mat(ins.x, rail + CH + SYSTEM_H, ins.z, ry, Math.PI / 2), '#6b4d3a');
         }
       }
     }
@@ -134,12 +136,12 @@ export function buildOHE(railway: Railway, s0: number, s1: number, ox: number, o
     const s2 = masts[i + 1];
     if (s2 === undefined) continue;
     route.alignment.sample(s2, g);
-    const rail2 = g.y + RAIL_TOP;
+    const rail2 = g.y + RAIL_TOP, CH2 = route.contactHeightAt(s2 / 1000);
     const stag = (i % 2 ? 0.2 : -0.2), stag2 = -stag;
     for (const o of offs) {
       if (!wiredOffsets(railway, s2).includes(o)) continue;
-      const a1 = at(o + stag, rail + CONTACT_H);
-      const pB = { x: g.x - Math.sin(g.heading) * (o + stag2) - ox, y: rail2 + CONTACT_H, z: g.z + Math.cos(g.heading) * (o + stag2) - oz };
+      const a1 = at(o + stag, rail + CH);
+      const pB = { x: g.x - Math.sin(g.heading) * (o + stag2) - ox, y: rail2 + CH2, z: g.z + Math.cos(g.heading) * (o + stag2) - oz };
       lines.push(a1.x, a1.y, a1.z, pB.x, pB.y, pB.z);
       // catenary with parabolic sag, droppers every ~9 m
       const N = 8;

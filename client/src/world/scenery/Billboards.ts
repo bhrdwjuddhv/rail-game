@@ -1,7 +1,10 @@
 import * as THREE from 'three/webgpu';
 import ADS_RAW from '../../../../data/ads.json';
+import ADS_MOCK from '../../../../data/ads.mock.json';
+import { houseAdList, houseArt } from './HouseAds';
+import { biomeOf } from '@rail/shared/track/Route';
 import adsUrl from '../../../../data/ads.json?url';
-import { Ad, AdFormat, AdSlot, AdsFile, adRuns, BillboardType, FORMAT_ASPECT, parseAds, pickAds, todayString } from '@rail/shared/ads/Ads';
+import { Ad, AdFormat, AdSlot, AdsFile, adRuns, advertiseHere, BillboardType, FORMAT_ASPECT, parseAds, pickAds, todayString } from '@rail/shared/ads/Ads';
 import type { Railway } from '@rail/shared/track/Railway';
 import { bus } from '@rail/shared/events';
 import { GeoBatch, mat } from '../../core/GeoBatch';
@@ -55,10 +58,16 @@ export class Billboards {
   private markers: THREE.Group | null = null;
   private readonly today = todayString();
   onClick: ((c: ClickedAd) => void) | null = null;
+  /** God Mode "Show sample ads": the fictional campaigns in data/ads.mock.json run too (off by default) */
+  static sampleAds = false;
+  /** how many ads came from the files (the house designs follow them in file.ads) */
+  private real = 0;
+  /** billboards showing a real ad / the "advertise here" board / filler art */
+  houseCounts = { real: 0, advertise: 0, filler: 0 };
 
   constructor(private dom: HTMLElement, private camera: () => THREE.Camera, private railway: Railway, field: TerrainField, private seed: number, private small: boolean) {
     this.group.name = 'billboards';
-    this.file = parseAds(ADS_RAW, m => console.warn(`[ads] ${m}`));
+    this.file = this.load(ADS_RAW);
     const plan = planBillboards(railway, field, this.file.settings);
     this.slots = plan.slots; this.dropped = plan.dropped; this.stats = plan.stats;
     this.pick();
@@ -72,9 +81,33 @@ export class Billboards {
   /** km buckets (surveyed) that have billboards: Game streams one group per bucket */
   get buckets() { return [...new Set(this.slots.map(s => Math.floor(s.s / 1000)))]; }
 
+  /** The ads file (and the sample campaigns when switched on), then the house designs after its ads. */
+  private load(raw: unknown) {
+    const r = raw as { ads?: unknown[] };
+    const f = parseAds(Billboards.sampleAds ? { ...r, ads: [...(r.ads ?? []), ...ADS_MOCK.ads] } : raw, m => console.warn(`[ads] ${m}`));
+    this.real = f.ads.length;
+    f.ads.push(...houseAdList(f.house));
+    return f;
+  }
+
   private pick() {
     const at: AdSlot[] = this.slots.map(s => ({ s: s.s, side: s.side, route: this.railway.main.data.id, region: s.region, type: s.type, count: s.type === 'led' ? 3 : 1 }));
     this.picks = pickAds(at, this.file, this.seed, this.today);
+    // billboards no ad took: "advertise here" on the best spots (LED screens, station approaches, big hoardings), filler art elsewhere
+    const h = this.file.house, idx = (id: string) => this.file.ads.findIndex(a => a.id === id);
+    const stations = this.railway.main.stations.filter(st => st.type !== 'halt').map(st => st.km * 1000);
+    const free = this.slots.map((s, i) => ({ i, s: s.s, score: (s.type === 'led' ? 4 : 0) + (stations.some(k => Math.abs(k - s.s) < 1500) ? 2 : 0) + (s.type === 'wide' || s.type === 'unipole' || s.type === 'rooftop' ? 1 : 0) }))
+      .filter(e => !this.picks[e.i].length);
+    const adv = h.fillerEnabled ? advertiseHere(free, h.advertiseHereShare) : new Set(free.map(e => e.i));
+    this.houseCounts = { real: this.slots.length - free.length, advertise: adv.size, filler: free.length - adv.size };
+    for (const e of free) {
+      const sl = this.slots[e.i];
+      if (adv.has(e.i)) { this.picks[e.i] = [idx('_advertise-here')]; continue; }
+      const reg = this.railway.main.regions[sl.region], b = reg ? biomeOf(reg) : 'plains';
+      const art = b === 'snow' ? 'snow' : b === 'ghats' ? 'ghats' : b === 'desert' || b === 'hills' ? 'desert' : b === 'coast' ? 'coast' : 'plains';
+      const scenic = idx(`_scenic-${art}`), safety = idx(`_safety-${sl.id % 4}`);
+      this.picks[e.i] = sl.type === 'led' ? [scenic, safety] : (sl.id * 7919) % 100 < 45 ? [safety] : [scenic];
+    }
   }
 
   // ------------------------------------------------------------------ building
@@ -309,7 +342,7 @@ export class Billboards {
     if (t) return t;
     const ad = this.file.ads[i];
     const aspect = FORMAT_ASPECT[format];
-    const fb = drawnAd(ad, format);
+    const fb = ad.house ? houseArt(ad, format) : drawnAd(ad, format);
     t = fb.clone();
     t.needsUpdate = true;
     this.texs.set(key, t);
@@ -372,18 +405,18 @@ export class Billboards {
     for (const sl of this.slots) {
       const at = { route, region: sl.region, type: sl.type };
       const ok = this.file.ads.map((a, i) => (adRuns(a, at, this.today) ? i : -1)).filter(i => i >= 0);
-      const sum = ok.reduce((t, i) => t + this.file.ads[i].frequency, 0);
+      const sum = Math.max(1, ok.reduce((t, i) => t + this.file.ads[i].frequency, 0));
       for (const i of ok) exp[i] += this.file.ads[i].frequency / sum;
     }
     const total = this.slots.length || 1;
-    return this.file.ads.map((a, i) => ({ id: a.id, frequency: a.frequency, share: exp[i] / total, expected: Math.round(exp[i]), count: this.picks.filter(p => p[0] === i).length }));
+    return this.file.ads.slice(0, this.real).map((a, i) => ({ id: a.id, frequency: a.frequency, share: exp[i] / total, expected: Math.round(exp[i]), count: this.picks.filter(p => p[0] === i).length }));
   }
 
   /** Reload the ads file (no restart): new picks, built billboards refilled. */
   async reload() {
     try {
       const raw = await (await fetch(`${adsUrl}${adsUrl.includes('?') ? '&' : '?'}t=${Date.now()}`)).json();
-      this.file = parseAds(raw, m => console.warn(`[ads] ${m}`));
+      this.file = this.load(raw);
     } catch (e) { console.warn('[ads] could not reload the ads file', e); return false; }
     for (const t of this.texs.values()) t.dispose();
     this.texs.clear(); this.mats.clear();
@@ -429,6 +462,8 @@ export class Billboards {
       slot = w.slot; ad = w.ad;
     }
     const a = this.file.ads[ad];
+    // filler art is just scenery; the "advertise here" board opens its card
+    if (a.house && a.house !== 'advertise') return null;
     const img = a.images[slot.format] ?? a.images.standard ?? a.images.wide ?? a.images.screen ?? a.images.portrait;
     return { ad: a, image: img ? `${import.meta.env.BASE_URL}assets/ads/${img}` : null, slot };
   }

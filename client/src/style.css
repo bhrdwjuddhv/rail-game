@@ -251,7 +251,9 @@ pre.err { white-space: pre-wrap; font-size: 12px; color: #ffb3ad; max-height: 50
 .panto-ind svg { width: 150px; height: 128px; }
 .panto-ind .pi-wire { stroke: #8a929a; stroke-width: 2.5; stroke-dasharray: 6 4; }
 .panto-ind .pi-wire.live { stroke: #ffcf4a; stroke-dasharray: none; filter: drop-shadow(0 0 3px #ffcf4a); }
-.panto-ind .pi-roof { fill: #3a4a5a; }
+/* duotone, like the icons: outline in full colour, fills at the secondary opacity */
+.panto-ind .pi-roof { fill: var(--c-text, #eaf0f6); opacity: var(--icon-duo, 0.3); }
+.panto-ind .pi-fill { fill: var(--c-primary, #2f8cff); opacity: var(--icon-duo, 0.3); }
 .panto-ind .pi-ins { fill: #b07a4a; }
 .panto-ind .pi-arms { fill: none; stroke: #d9dde1; stroke-width: 3.5; stroke-linejoin: round; }
 .panto-ind .pi-head { stroke: #e8e8e8; stroke-width: 5; stroke-linecap: round; }

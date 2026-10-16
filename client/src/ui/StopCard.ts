@@ -1,3 +1,5 @@
+import { icon } from './theme/icons';
+
 /**
  * Contextual card for a station stop (desktop: bottom centre; touch: above
  * the bottom bar). It shows only what the moment needs:
@@ -28,7 +30,7 @@ export class StopCard {
     this.el.hidden = true;
     this.el.innerHTML = `
       <div class="sc-acc"></div>
-      <div class="sc-prog"><div class="sc-bar"><i></i></div><span class="sc-ptext"></span><button data-a="fast" title="Speed up x4">&#9193; x4</button></div>
+      <div class="sc-prog"><div class="sc-bar"><i></i></div><span class="sc-ptext"></span><button data-a="fast" title="Speed up x4">${icon('fastForward')} x4</button></div>
       <button data-a="start" class="sc-main"></button>
       <div class="sc-wait"><span class="sc-wtext"></span><button data-a="skip"></button></div>
       <div class="sc-status"></div>`;

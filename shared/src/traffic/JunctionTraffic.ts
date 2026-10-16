@@ -16,7 +16,7 @@ export interface JunctionTrafficConfig {
 }
 
 /** What a train is, for the departure boards: its name, kind and platform line here. */
-export interface JunctionTrainInfo { name: string; kind: 'express' | 'mail' | 'local' | 'goods' | 'bullet'; line?: string }
+export interface JunctionTrainInfo { name: string; kind: 'express' | 'mail' | 'local' | 'goods' | 'bullet'; line?: string; passing?: boolean }
 
 /**
  * Keeps a big junction busy. Trains come in from both routes (each direction
@@ -37,6 +37,11 @@ export class JunctionTraffic {
   private n = 0;
   private cooldown = 0;
   private populated = false;
+  /** directions whose arrival bay is kept for the player's train (a journey ending here) */
+  private reservedBay = new Set<Route>();
+
+  /** Keep this direction's arrival bay free: no locals terminate in it (the player's journey ends there). */
+  reserveBay(view: Route) { this.reservedBay.add(view); }
 
   constructor(private ctl: RailControl, readonly j: JunctionData, private cfg: JunctionTrafficConfig) {
     this.r = rng(cfg.seed);
@@ -65,29 +70,32 @@ export class JunctionTraffic {
     return ids.filter(id => lc.interlocking.lineClear(st, id, occ, '') && !lc.interlocking.routes.some(r => r.station === st && r.lineId === id));
   }
 
-  private make(lc: LineControl, st: StationInfo, kind: JunctionTrainInfo['kind'], def: Partial<AITrainDef> & { startKm: number; line: string }): AITrain {
+  private make(lc: LineControl, st: StationInfo, kind: JunctionTrainInfo['kind'], def: Partial<AITrainDef> & { startKm: number; line: string }, passing = false): AITrain {
     const names = this.j.trainNames;
     const name = kind === 'goods' ? `Goods ${100 + (this.n % 900)}` : kind === 'bullet' ? 'Vande Gati Bullet' : this.pick(names[kind]);
-    const coaches = kind === 'express' ? 18 + Math.floor(this.r() * 5) : kind === 'mail' ? 16 + Math.floor(this.r() * 4) : kind === 'local' ? 8 : 40;
+    const coaches = kind === 'express' ? 16 + Math.floor(this.r() * 4) : kind === 'mail' ? 14 + Math.floor(this.r() * 4) : kind === 'local' ? 8 : 40;
     const full: AITrainDef = {
       id: `jt-${this.j.code}-${++this.n}`, name,
       maxKmph: kind === 'goods' ? 65 : kind === 'local' ? 90 : kind === 'bullet' ? 160 : 110,
       wagons: kind === 'bullet' ? 0 : coaches, carLengthM: kind === 'goods' ? WAGON_M : COACH_M, kind: kind === 'goods' ? 'goods' : 'passenger',
-      stops: kind === 'goods' ? [] : [{ station: st.code, line: '', dwellS: Math.round(this.j.dwellS[0] + this.r() * (this.j.dwellS[1] - this.j.dwellS[0])) }],
-      despawnKm: st.exitKm + 2.5, track: lc.route.running.id,
+      stops: kind === 'goods' || passing ? [] : [{ station: st.code, line: '', dwellS: Math.round(this.j.dwellS[0] + this.r() * (this.j.dwellS[1] - this.j.dwellS[0])) }],
+      // out of sight beyond the exit, and before the next station (its loops and signals are not for these trains)
+      // (passenger stock starts briskly: each departure has to clear the exit ladder before the next can leave)
+      accel: kind === 'goods' ? 0.2 : 0.4,
+      despawnKm: Math.min(st.exitKm + 2.5, ...lc.route.stations.filter(o => o.type !== 'halt' && o.entryKm > st.exitKm).map(o => o.entryKm - 0.3)), track: lc.route.running.id,
       ...(kind === 'bullet' && this.cfg.bullet ? { loco: this.cfg.bullet.loco, lengthM: this.cfg.bullet.lengthM } : {}),
       ...def,
     } as AITrainDef;
     const t = new AITrain(full, lc.route, lc.block);
     this.trains.push(t);
-    this.info.set(t, { name: full.name, kind });
+    this.info.set(t, { name: full.name, kind, passing: passing || kind === 'goods' });
     this.onSpawn?.(t, lc.route);
     return t;
   }
 
   private lengthOf(kind: JunctionTrainInfo['kind']) {
     if (kind === 'bullet') return this.cfg.bullet?.lengthM ?? 72;
-    const c = kind === 'express' ? 22 : kind === 'mail' ? 19 : kind === 'local' ? 8 : 40;
+    const c = kind === 'express' ? 19 : kind === 'mail' ? 17 : kind === 'local' ? 8 : 40;
     return AI_LOCO_LEN + c * (kind === 'goods' ? WAGON_M : COACH_M);
   }
 
@@ -130,7 +138,7 @@ export class JunctionTraffic {
     this.cooldown -= dt;
     if (this.cooldown > 0) return;
     // still to arrive or standing (a train pulling out over the ladder is on its way: not counted)
-    const coming = this.trains.filter(t => this.views().some(v => v.lc.trains.includes(t) && t.headKm <= v.st.platformToKm + 0.02));
+    const coming = this.trains.filter(t => !this.info.get(t)?.passing && this.views().some(v => v.lc.trains.includes(t) && t.headKm <= v.st.platformToKm + 0.02));
     // trains take minutes to come in over the ladders: up to three on their way at once, so enough stand at the platforms
     const inbound = coming.filter(t => this.views().some(v => v.lc.trains.includes(t) && t.headKm < v.st.platformFromKm)).length;
     if (coming.length >= this.cfg.inStation + 2) return;
@@ -139,8 +147,22 @@ export class JunctionTraffic {
     this.spawnOne(player, inbound >= 3);
   }
 
+  /**
+   * Trains on one side ready to leave but not yet given the road. A side lets a train out only every minute and a
+   * half or so (each must clear the exit ladder before the next can be routed over it), so no more are sent in
+   * on a side while two are already queuing to leave.
+   */
+  private queued(lc: LineControl, st: StationInfo) {
+    return this.trains.filter(t => {
+      if (!lc.trains.includes(t)) return false;
+      const s = lc.dispatcher.stationState(t.id, st.code);
+      return !!s && s.readySince !== undefined && !s.departed && !lc.interlocking.find(t.id, st, 'departure');
+    }).length;
+  }
+
   private spawnOne(player?: { view: Route; headKm: number }, bayOnly = false) {
-    const views = this.views();
+    const views = this.views().filter(x => this.queued(x.lc, x.st) < 2);
+    if (!views.length) return;
     const v = this.pick(views), { lc, st } = v;
     // the player's train on its way in on this side: keep a platform for it (no more trains in ahead of it)
     const playerComing = player && player.view === lc.route && player.headKm < st.platformFromKm && player.headKm > st.entryKm - 8;
@@ -156,16 +178,21 @@ export class JunctionTraffic {
       return;
     }
     if (bayOnly) return;
-    // inbound: in from 2.2 km out on this side's running line (before its distant signal), if that stretch is clear
-    const head = st.entryKm - 2.2;
+    // inbound: in from 2.2 km out on this side's running line (before its distant signal), if that stretch is clear,
+    // and wholly clear of the station before it (never appearing inside another station's limits)
+    const prev = Math.max(0, ...lc.route.stations.filter(o => o.type !== 'halt' && o.exitKm < st.entryKm).map(o => o.exitKm));
+    const head = Math.max(st.entryKm - 2.2, prev + 0.2 + this.lengthOf('express') / 1000);
+    if (head > st.entryKm - 0.5) return;
     const occ = this.ctl.occupantsFor(lc);
     const busy = occ.some(o => o.headKm > head - 2 && o.tailKm < head + 1.5 && Math.abs(o.offsetAt(Math.min(o.headKm, Math.max(o.tailKm, head))) - lc.route.running.offset) < 1.5);
     if (busy || head < 0.3) return;
     // a goods train round the avoiding line (it passes: not counted as calling)
     if (roll > 0.25 && roll < 0.4 && st.avoiding) { this.make(lc, st, 'goods', { startKm: head, line: lc.route.running.id }); return; }
+    // an express running through on the through line at speed (no stop: it never takes a platform)
+    if (roll >= 0.55 && roll < 0.65) { this.make(lc, st, 'express', { startKm: head, line: lc.route.running.id, maxKmph: 120 }, true); return; }
     if (playerComing && freePl.length <= 1) return;
     // a local terminating in the bay at this end
-    if (roll > 0.4 && roll < 0.55 && st.bayIn && this.freeLines(lc, st, [st.bayIn]).length) {
+    if (roll > 0.4 && roll < 0.55 && st.bayIn && !this.reservedBay.has(lc.route) && this.freeLines(lc, st, [st.bayIn]).length) {
       const bay = st.lineInfo.find(l => l.id === st.bayIn)!;
       const t = this.make(lc, st, 'local', { startKm: head, line: lc.route.running.id, endAtKm: bay.toKm - 0.012, endDwellS: 90, despawnKm: bay.toKm + 1, stops: [{ station: st.code, line: st.bayIn, dwellS: 90 }] });
       this.info.get(t)!.line = st.bayIn;

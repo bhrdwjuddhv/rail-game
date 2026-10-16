@@ -129,6 +129,7 @@ export function shiftRoute(d: RouteData, dkm: number): RouteData {
     stations: d.stations.map(s => ({ ...s, km: k(s.km), crossovers: s.crossovers?.map(c => ({ ...c, km: k(c.km) })) })),
     signals: d.signals.map(s => ({ ...s, km: k(s.km) })),
     speedLimits: d.speedLimits.map(range),
+    oheSections: d.oheSections?.map(range),
     structures: d.structures.map(range),
     levelCrossings: d.levelCrossings.map(l => ({ ...l, km: k(l.km) })),
     scenery: d.scenery.map(range),
@@ -142,6 +143,8 @@ export function shiftRoute(d: RouteData, dkm: number): RouteData {
 }
 
 const lengthOf = (d: RouteData) => d.segments.reduce((a, s) => a + s.lengthM, 0) / 1000;
+/** a route's wire height stretch by stretch (one stretch: its own height) */
+const wireSections = (d: RouteData, fromKm: number, lengthKm: number) => d.oheSections ?? [{ fromKm, toKm: fromKm + lengthKm, heightM: d.oheContactHeightM ?? 5.55 }];
 
 /** id of the route joining a junction's two routes */
 export const joinedRouteId = (j: JunctionData) => `${j.connects[0].route}~${j.id}~${j.connects[1].route}`;
@@ -156,9 +159,34 @@ export function joinThroughJunction(j: JunctionData, routes: Record<string, Rout
   const [ca, cb] = j.connects;
   const a0 = routes[ca.route], b0 = routes[cb.route];
   if (!a0 || !b0) return null;
-  const turn = (d: RouteData) => mirrorRouteData(d, lengthOf(d));
+  const turn = turnRoute;
   const A = ca.end === 'end' ? a0 : turn(a0);
   const B1 = cb.end === 'start' ? b0 : turn(b0);
+  return joinRoutes(A, j, B1, joinedRouteId(j), `${a0.name} → ${j.name} → ${b0.name}`);
+}
+
+/** A route turned round end for end (its far end first). */
+export const turnRoute = (d: RouteData) => mirrorRouteData(d, lengthOf(d));
+
+/**
+ * The junction seen from its other side: a train coming from route B towards route A meets the same
+ * station mirrored (connects swapped, building, fort and camera spots on the other side), so routes
+ * can be joined through it either way (Route Mode paths).
+ */
+export function flipJunction(j: JunctionData): JunctionData {
+  return {
+    ...j, connects: [j.connects[1], j.connects[0]], buildingSide: -j.buildingSide as 1 | -1,
+    fortOffsetM: j.fortOffsetM === undefined ? undefined : -j.fortOffsetM,
+    roadOffsetM: j.roadOffsetM === undefined ? undefined : -j.roadOffsetM,
+    postcards: j.postcards?.map(p => ({ ...p, atKm: -p.atKm, offsetM: -p.offsetM, lookKm: p.lookKm === undefined ? undefined : -p.lookKm })),
+  };
+}
+
+/**
+ * Route data A (its end at the junction) and B1 (its start there) joined through junction j (in that
+ * orientation) as one route with the given id and name. A may itself be a joined route (chains).
+ */
+export function joinRoutes(A: RouteData, j: JunctionData, B1: RouteData, id: string, name: string): RouteData {
   const la = lengthOf(A), J = JUNCTION_SECTION_KM, j0 = la, j1 = la + J, mid = la + J / 2;
   const B = shiftRoute(B1, j1);
   const st = junctionStation(j, +mid.toFixed(6));
@@ -168,8 +196,10 @@ export function joinThroughJunction(j: JunctionData, routes: Record<string, Rout
   const seaA = A.sea && { ...A.sea, toKm: A.sea.toKm ?? j1 - 0.3 };
   return {
     ...A,
-    id: joinedRouteId(j), name: `${a0.name} → ${j.name} → ${b0.name}`, lengthKm: +(la + J + lengthOf(B1)).toFixed(3),
-    freight: false, oheContactHeightM: Math.max(a0.oheContactHeightM ?? 5.55, b0.oheContactHeightM ?? 5.55),
+    id, name, lengthKm: +(la + J + lengthOf(B1)).toFixed(3),
+    // each part keeps its own wire height (high-rise only where the freight corridor's is); the junction the lower
+    freight: false, oheContactHeightM: Math.max(A.oheContactHeightM ?? 5.55, B1.oheContactHeightM ?? 5.55),
+    oheSections: [...wireSections(A, 0, la), { fromKm: j0, toKm: j1, heightM: Math.min(A.oheContactHeightM ?? 5.55, B1.oheContactHeightM ?? 5.55) }, ...wireSections(B, j1, lengthOf(B1))],
     segments: [...A.segments, { type: 'straight', lengthM: J * 1000 }, ...B.segments],
     profile: [...A.profile, { km: j0, gradient: 'level' }, ...B.profile],
     regions: [...A.regions.map(r => ({ ...r, toKm: Math.min(r.toKm, j0) })).filter(r => r.toKm > r.fromKm), { fromKm: j0, toKm: j1, region: j.region }, ...B.regions.map(r => ({ ...r, fromKm: Math.max(r.fromKm, j1) }))],

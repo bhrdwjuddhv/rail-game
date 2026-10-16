@@ -527,16 +527,19 @@ export class LocoModel {
     this.syncLod();
   }
 
-  /** pos 0 = down, 1 = touching the contact wire (no-op for a diesel). */
-  setPantograph(pos: number) {
+  /**
+   * pos 0 = down, 1 = touching the contact wire (no-op for a diesel). `wireH`: the wire's height above rail
+   * where the loco is: raised, the pan head presses on it (the arms part-way up, not stretched to their stop).
+   */
+  setPantograph(pos: number, wireH = CONTACT_H) {
     // a 3D model's own rigged arms, and our pantographs standing in for arms it cannot move (proceduralPantographs)
-    if (this.glb) for (const l of this.glb) for (const r of l.pantos) poseRig(r, pos);
+    if (this.glb) for (const l of this.glb) for (const r of l.pantos) poseRig(r, pos, wireH);
     if (!this.pantos.length) return;
     const L1 = 1.75, L2 = 1.8;
     for (const p of this.pantos) {
       // up: the head on the wire straight above the base centre; the knee from the two arm lengths
       const dir = Math.sign(-p.hinge.x) || 1;
-      const hx = -p.hinge.x, hy = CONTACT_H - p.base.position.y - p.hinge.y;
+      const hx = -p.hinge.x, hy = wireH - p.base.position.y - p.hinge.y;
       const d = Math.hypot(hx, hy);
       const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
       const k = Math.sqrt(Math.max(0, L1 * L1 - a * a));

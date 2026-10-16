@@ -3,6 +3,7 @@ import type { Route } from '../track/Route';
 import type { ConsistSpec } from '../train/Consist';
 import type { AITrainDef } from './AITrain';
 import type { TimetableEntry } from './Timetable';
+import type { Journey } from '../routemode/Journey';
 
 export interface ScenarioData {
   id: string; name: string; difficulty: string; description: string; route: string;
@@ -21,7 +22,11 @@ export interface ScenarioData {
 
 /** Overrides chosen in the menus (free roam start, consist builder, time/weather). */
 /** route: Free Roam on another route (its first station unless startStation is given) */
-export interface ScenarioOverrides { route?: string; startKm?: number; startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number }
+export interface ScenarioOverrides {
+  route?: string; startKm?: number; startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number;
+  /** Route Mode: the journey (its route and scenario are built from it before the run starts) */
+  journey?: Journey;
+}
 
 export function applyOverrides(s: ScenarioData, o: ScenarioOverrides, route: Route): ScenarioData {
   const out: ScenarioData = JSON.parse(JSON.stringify(s));

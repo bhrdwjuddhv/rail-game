@@ -6,6 +6,7 @@ import type { RecordCameras } from './RecordCameras';
 import type { FilmLook } from './FilmLook';
 import type { WorldTab } from './WorldTab';
 import type { RecordSettings } from './RecordSettings';
+import { icon } from '../ui/theme/icons';
 
 const KEY = 'railbharat.record.scenes.v1';
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -98,7 +99,7 @@ export class Scenes {
       ${names.length ? `<table class="rec-list">${names.map(n => {
         const sc = all[n] as Partial<SceneFile>;
         return `<tr><td>${esc(n)}<br><small class="dim">${esc(sc.route ?? '')} &middot; ${Array.isArray(sc.trains) ? sc.trains.length : 0} trains &middot; ${esc((sc.savedAt ?? '').slice(0, 16).replace('T', ' '))}</small></td>
-          <td class="acts"><button data-l="${esc(n)}">Load</button><button data-x="${esc(n)}" title="Export this one">&#8681;</button><button data-d="${esc(n)}" title="Delete">&#10005;</button></td></tr>`;
+          <td class="acts"><button data-l="${esc(n)}">Load</button><button data-x="${esc(n)}" title="Export this one" aria-label="Export">${icon('download')}</button><button data-d="${esc(n)}" title="Delete" aria-label="Delete">${icon('trash')}</button></td></tr>`;
       }).join('')}</table>` : '<p class="note">No saved scenes yet.</p>'}`;
   }
 

@@ -1,5 +1,6 @@
 import type { Tutorial } from '../gameplay/Tutorial';
 import { tutorialPrefs } from '../gameplay/Tutorial';
+import { icon } from './theme/icons';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -49,7 +50,7 @@ export class TutorialCard {
       this.lastDone = t.stepDone;
       const s = t.step;
       this.el.querySelector('.tc-count')!.textContent = `Step ${t.index + 1} of ${t.count}`;
-      this.body.innerHTML = `<p>${esc(t.text())}</p>${t.key(s) ? `<p class="tc-key">Press <kbd>${esc(t.key(s)!)}</kbd></p>` : ''}${t.stepDone ? '<p class="tc-ok">&#10004; Done</p>' : ''}`;
+      this.body.innerHTML = `<p>${esc(t.text())}</p>${t.key(s) ? `<p class="tc-key">Press <kbd>${esc(t.key(s)!)}</kbd></p>` : ''}${t.stepDone ? `<p class="tc-ok">${icon('check')} Done</p>` : ''}`;
       this.el.querySelectorAll('.tc-dots i').forEach((d, i) => { d.className = i < t.index ? 'past' : i === t.index ? 'now' : ''; });
       const last = t.index === t.count - 1;
       const next = this.el.querySelector<HTMLButtonElement>('[data-a="next"]')!;

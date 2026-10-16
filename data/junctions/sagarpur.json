@@ -22,7 +22,7 @@
     60,
     240
   ],
-  "trainsInStation": 5,
+  "trainsInStation": 4,
   "bullet": false,
   "trainNames": {
     "express": [

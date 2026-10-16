@@ -1,5 +1,6 @@
 import { bus } from '@rail/shared/events';
 import { isTouch } from '../input/Device';
+import { icon } from './theme/icons';
 
 export interface HudData {
   speed: number; units: string; limit: number; notch: string; reverser: string;
@@ -37,7 +38,7 @@ export class HUD {
     this.root = document.createElement('div');
     this.root.id = 'hud';
     this.root.innerHTML = `
-      <button class="pause-btn" title="Menu (Esc)" aria-label="Open menu"><span aria-hidden="true">&#10074;&#10074;</span> Menu</button>
+      <button class="pause-btn" title="Menu (Esc)" aria-label="Open menu">${icon('pause')} Menu</button>
       <div class="god-badge" hidden>GOD MODE</div>
       <div class="hud-panel">
         <div class="row big"><span data-k="speed">0</span><small data-k="units">km/h</small><span class="limit" data-k="limit">--</span></div>
@@ -72,7 +73,9 @@ export class HUD {
   message(text: string, kind: string, ms: number) {
     const d = document.createElement('div');
     d.className = `msg ${kind}`;
-    d.textContent = text;
+    // a toast with its kind's icon (the text stays plain text)
+    d.innerHTML = icon(kind === 'good' ? 'check' : kind === 'warn' || kind === 'penalty' ? 'warning' : 'info');
+    d.append(text);
     this.msgs.appendChild(d);
     if (isTouch) ms = Math.min(ms, 3000);
     while (this.msgs.children.length > (isTouch ? 2 : 6)) this.msgs.firstElementChild!.remove();

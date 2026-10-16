@@ -8,12 +8,18 @@ import { settingsPanel } from './Settings';
 import { assets } from '../core/AssetRegistry';
 import { isTouch } from '../input/Device';
 import CREDITS from '../../../data/credits.json';
+import { RouteModeMenu } from './routemode/RouteModeMenu';
+import type { Journey, JourneyStop } from '@rail/shared/routemode/Journey';
+import type { JourneySummary } from '../routemode/JourneyRun';
+import { icon } from './theme/icons';
 
 export interface PauseCallbacks {
   title: string; godActive: boolean;
   resume(): void; tutorial(): void; godMode(): void; restart(): void; quit(): void;
   /** leave Record Mode (shown only while it is open; it starts from the main menu) */
   record?: () => void;
+  /** Route Mode: edit the plan for the stations still ahead */
+  plan?: () => void;
 }
 
 export interface MenuCallbacks {
@@ -27,7 +33,7 @@ const TOUCH_HELP_HTML = `
 <div class="cols help">
 <section><h3>Getting moving</h3>
 <ol><li>Tap the <b>pantograph</b> button in the bottom bar and wait for its LED to turn green</li>
-<li>Tap <b>&#8943;</b> and close the <b>Main breaker</b>, then <b>Release</b> the loco brake</li>
+<li>Tap <b>${icon('more')}</b> and close the <b>Main breaker</b>, then <b>Release</b> the loco brake</li>
 <li>Tap <b>F</b> on the <b>REVERSER</b> switch (top right)</li>
 <li>Push the <b>BRAKE</b> lever up to <b>Run</b>; wait for a yellow or green signal (top-left card)</li>
 <li>Push the <b>THROTTLE</b> lever up a few notches</li></ol>
@@ -37,7 +43,7 @@ const TOUCH_HELP_HTML = `
 <tr><td>LEDs</td><td>Green on, grey off, blinking amber while changing</td></tr>
 <tr><td>Horn (blue)</td><td>Tap for a short blast, hold for a long one</td></tr>
 <tr><td>Left cards</td><td>Next signal, next speed limit, next station. Tap them for all the gauges</td></tr>
-<tr><td>&#8943; More</td><td>Main breaker, sander, vigilance, flasher, loco brake, free camera, all gauges, map</td></tr>
+<tr><td>${icon('more')} More</td><td>Main breaker, sander, vigilance, flasher, loco brake, free camera, all gauges, map</td></tr>
 <tr><td>VIGILANCE</td><td>Pops up when the vigilance alarm sounds: tap it</td></tr></table></section>
 <section><h3>View</h3><table>
 <tr><td>One finger</td><td>Drag to look around (cab) or orbit (chase)</td></tr><tr><td>Two fingers</td><td>Pinch to zoom</td></tr>
@@ -105,6 +111,18 @@ export class Menus {
     this.refreshBg = setImg;
   }
 
+  /** Route Mode: journeys from the main menu; the plan editor from the pause menu */
+  private routeMode = new RouteModeMenu({
+    show: (el, back) => this.show(el, back),
+    main: () => this.main(),
+    start: (j: Journey) => this.cb.start('route-mode', { journey: j }),
+  });
+
+  /** Pause menu "Change plan for remaining stops": the timeline for the stations ahead. */
+  editJourney(j: Journey, ahead: string[], done: (stops: JourneyStop[]) => void, back: () => void) {
+    this.routeMode.editRemaining(j, ahead, done, back);
+  }
+
   /** Set by the game once a run starts: in-game menus show the (blurred) game, not the artwork. */
   inGame = false;
   private bg = document.createElement('div');
@@ -158,18 +176,21 @@ export class Menus {
     const el = html(`<div class="menu main">
       <div class="title"><h1>Rail Bharat</h1><p>Indian broad-gauge electric locomotive simulator</p></div>
       <div class="buttons vertical">
-        <button data-a="scenarios">Scenarios</button><button data-a="free">Free roam</button>
-        ${isTouch ? '' : '<button data-a="record">&#127916;&nbsp; Record Mode <small>studio for making videos</small></button>'}
-        <button data-a="tutorial">Tutorial: how to start the train</button>
-        <button data-a="tutorial-diesel">Tutorial: start a diesel loco</button>
-        <button data-a="online" class="soon" aria-disabled="true" title="Multiplayer is on its way">Play Online <small>Coming soon</small></button>
-        <button data-a="settings">Settings</button><button data-a="help">Controls &amp; help</button>
+        <button data-a="scenarios">${icon('scenarios')}Scenarios</button>
+        <button data-a="free">${icon('compass')}Free roam</button>
+        <button data-a="route">${icon('route')}Route Mode <small>journeys across the network</small></button>
+        ${isTouch ? '' : `<button data-a="record">${icon('film')}Record Mode <small>studio for making videos</small></button>`}
+        <button data-a="tutorial">${icon('tutorial')}Tutorial: how to start the train</button>
+        <button data-a="tutorial-diesel">${icon('engineStart')}Tutorial: start a diesel loco</button>
+        <button data-a="online" class="soon" aria-disabled="true" title="Multiplayer is on its way">${icon('globe')}Play Online <small>Coming soon</small></button>
+        <button data-a="settings">${icon('gear')}Settings</button><button data-a="help">${icon('help')}Controls &amp; help</button>
       </div>
       <p class="note">Fictional operator, stations and liveries. Everything is generated in the browser.</p></div>`);
     el.addEventListener('click', e => {
       const a = (e.target as HTMLElement).closest('button')?.dataset.a;
       if (a === 'scenarios') this.scenarios();
       if (a === 'free') this.freeRoam();
+      if (a === 'route') this.routeMode.open();
       if (a === 'record') this.recordSetup();
       if (a === 'tutorial') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear' }, { tutorial: true });
       if (a === 'settings') this.show(settingsPanel(() => this.main(), this.cb.captureKey), () => this.main());
@@ -186,7 +207,7 @@ export class Menus {
 
   scenarios() {
     const best = loadSave().best;
-    const list = Object.values(SCENARIOS).filter(s => s.id !== 'free-roam');
+    const list = Object.values(SCENARIOS).filter(s => s.id !== 'free-roam' && s.id !== 'route-mode');
     // grouped by route, each with its length and stations
     const routes = [...new Set(list.map(s => s.route))];
     const routeHead = (id: string) => {
@@ -198,7 +219,7 @@ export class Menus {
       <p class="meta">${esc(ROUTES[s.route]?.name ?? s.route)} &middot; ${s.time} &middot; ${WEATHER[s.weather].name} &middot; ${s.consist.coaches.reduce((a, c) => a + c.count, 0)} ${s.consist.coaches.every(c => COACHES[c.type]?.kind && COACHES[c.type].kind !== 'coach') ? 'wagons' : 'coaches'}
       ${best[s.id] ? `&middot; Best: <b>${best[s.id].score} (${best[s.id].grade})</b>` : ''}</p>
       <button data-id="${s.id}">Drive</button></div>`;
-    const el = html(`<div class="menu scen"><h2>Scenarios</h2>
+    const el = html(`<div class="menu scen"><h2>${icon('scenarios')} Scenarios</h2>
       <h3>Locomotive</h3>${locoPicker('', true)}
       ${routes.map(id => `${routeHead(id)}<div class="cards">${list.filter(s => s.route === id).map(card).join('')}</div>`).join('')}
       <div class="buttons"><button data-a="back">Back</button></div></div>`);
@@ -219,7 +240,7 @@ export class Menus {
   recordSetup(routeId = SCENARIOS['free-roam'].route) {
     const fr = SCENARIOS['free-roam'];
     const route = ROUTES[routeId] ?? ROUTES[fr.route];
-    const el = html(`<div class="menu free rec-setup"><h2>&#127916; Record Mode</h2>
+    const el = html(`<div class="menu free rec-setup"><h2>${icon('film')} Record Mode</h2>
       <p class="sub">Pick the place and the light. You start in a free camera above the station; spawn trains, set cameras and film looks inside.</p>
       <div class="cols"><section>
         <label>Route <select data-f="route">${Object.values(ROUTES).map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
@@ -244,7 +265,7 @@ export class Menus {
     const route = ROUTES[routeId] ?? ROUTES[fr.route];
     const counts: Record<string, number> = {};
     for (const c of Object.values(COACHES)) if (c.windows !== 'none') counts[c.id] = fr.consist.coaches.find(x => x.type === c.id)?.count ?? 0;
-    const el = html(`<div class="menu free"><h2>Free roam</h2>
+    const el = html(`<div class="menu free"><h2>${icon('compass')} Free roam</h2>
       <div class="cols"><section><h3>Start</h3>
         <label>Route <select data-f="route">${Object.values(ROUTES).map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
         <label>Station <select data-f="station">${route.stations.map(s => `<option value="${s.code}">${esc(s.name)} (${s.code}, km ${s.km})</option>`).join('')}</select></label>
@@ -304,14 +325,15 @@ export class Menus {
   /** Pause menu (opened by the top-left button or Esc). */
   pause(cb: PauseCallbacks) {
     const el = html(`<div class="menu pause"><h2>Paused</h2><p class="sub">${esc(cb.title)}</p><div class="buttons vertical">
-      <button data-a="resume">&#9654;&nbsp; Resume</button>
-      <button data-a="tutorial">&#127891;&nbsp; Tutorial &mdash; how to start the train</button>
-      <button data-a="god">&#9889;&nbsp; God Mode${cb.godActive ? ' <span class="pill">ON</span>' : ''}</button>
-      ${cb.record ? '<button data-a="record">&#127916;&nbsp; Exit Record Mode</button>' : ''}
-      <button data-a="controls">&#9000;&nbsp; Controls</button>
-      <button data-a="settings">&#9881;&nbsp; Settings</button>
-      <button data-a="restart">&#8635;&nbsp; Restart scenario</button>
-      <button data-a="quit">&#8962;&nbsp; Main Menu</button></div>
+      <button data-a="resume">${icon('play')}Resume</button>
+      <button data-a="tutorial">${icon('tutorial')}Tutorial &mdash; how to start the train</button>
+      <button data-a="god">${icon('lightning')}God Mode${cb.godActive ? ' <span class="pill">ON</span>' : ''}</button>
+      ${cb.record ? `<button data-a="record">${icon('film')}Exit Record Mode</button>` : ''}
+      ${cb.plan ? `<button data-a="plan">${icon('route')}Change plan for remaining stops</button>` : ''}
+      <button data-a="controls">${icon('keyboard')}Controls</button>
+      <button data-a="settings">${icon('gear')}Settings</button>
+      <button data-a="restart">${icon('restart')}Restart scenario</button>
+      <button data-a="quit">${icon('home')}Main Menu</button></div>
       ${isTouch ? '' : '<p class="note">&uarr; &darr; to choose, Enter to select, Esc to resume</p>'}</div>`);
     const again = () => this.pause(cb);
     el.addEventListener('click', e => {
@@ -320,6 +342,7 @@ export class Menus {
       if (a === 'tutorial') cb.tutorial();
       if (a === 'god') cb.godMode();
       if (a === 'record') cb.record?.();
+      if (a === 'plan') cb.plan?.();
       if (a === 'controls') this.help(again);
       if (a === 'settings') this.show(settingsPanel(again, this.cb.captureKey), again);
       if (a === 'restart') this.confirm('Restart this scenario?', 'Your current progress will be lost.', 'Restart', cb.restart, again);
@@ -380,6 +403,27 @@ export class Menus {
     this.show(el);
   }
 
+  /** End of a Route Mode journey: time, distance, stops on the mark, smoothness (no strict scoring). */
+  journeyReport(s: JourneySummary, cb: { restart(): void; quit(): void }) {
+    const onMark = s.stops.filter(x => Math.abs(x.errM) <= 5).length;
+    const m = Math.round(s.minutes);
+    const el = html(`<div class="menu report journey-report"><h2>${icon('check')} Journey complete</h2><p class="sub">${esc(s.title)}</p>
+      <div class="jr-stats">
+        <div>${icon('clock')}<b>${m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`}</b><small>on the way</small></div>
+        <div>${icon('route')}<b>${s.km.toFixed(1)} km</b><small>driven</small></div>
+        <div>${icon('platform')}<b>${onMark} / ${s.stops.length}</b><small>stops within 5 m of the mark</small></div>
+        <div>${icon('star')}<b>${s.smooth}%</b><small>smoothness${s.bumps ? ` (${s.bumps} hard bump${s.bumps > 1 ? 's' : ''})` : ''}</small></div>
+      </div>
+      ${s.stops.length ? `<table class="totals">${s.stops.map(x => `<tr><td>${esc(x.name)}</td><td class="${Math.abs(x.errM) <= 5 ? 'pos' : 'neg'}">${Math.abs(x.errM).toFixed(1)} m ${x.errM > 0 ? 'past' : 'short'}</td></tr>`).join('')}</table>` : ''}
+      <div class="buttons"><button data-a="restart">${icon('restart')}Drive it again</button><button data-a="quit">${icon('home')}Main menu</button></div></div>`);
+    el.addEventListener('click', e => {
+      const a = (e.target as HTMLElement).closest('button')?.dataset.a;
+      if (a === 'restart') cb.restart();
+      if (a === 'quit') cb.quit();
+    });
+    this.show(el);
+  }
+
   loading(text: string, progress: number) {
     let el = this.current?.classList.contains('loading') ? this.current : null;
     if (!el) {
@@ -391,7 +435,7 @@ export class Menus {
   }
 
   clickToStart(onGo: () => void) {
-    const el = html(`<div class="menu loading"><h1>Ready</h1><p>${isTouch ? 'Menu &rarr; Controls shows how the touch controls work.' : 'Press F1 any time for the controls.'}</p><div class="buttons"><button data-a="go">Start driving</button></div></div>`);
+    const el = html(`<div class="menu loading"><h1>Ready</h1><p>${isTouch ? 'Menu &rarr; Controls shows how the touch controls work.' : 'Press F1 any time for the controls.'}</p><div class="buttons"><button data-a="go">${icon('play')}Start driving</button></div></div>`);
     el.addEventListener('click', e => { if ((e.target as HTMLElement).closest('button')?.dataset.a === 'go') onGo(); });
     this.show(el);
   }

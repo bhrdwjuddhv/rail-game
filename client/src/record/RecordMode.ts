@@ -9,6 +9,7 @@ import { FilmLook } from './FilmLook';
 import { WorldTab } from './WorldTab';
 import { RecordSettings } from './RecordSettings';
 import { Scenes } from './Scenes';
+import { icon } from '../ui/theme/icons';
 
 type Tab = 'trains' | 'camera' | 'world' | 'scenes' | 'settings';
 const TABS: [Tab, string][] = [['trains', 'Trains'], ['camera', 'Camera'], ['world', 'World'], ['scenes', 'Scenes'], ['settings', 'Settings']];
@@ -168,9 +169,9 @@ export class RecordMode implements RecordRunner, Studio {
     const p = this.panel;
     p.className = 'rec-panel';
     p.innerHTML = `
-      <header><b>&#127916; Record Mode</b><span class="rec-fps" hidden></span><button data-x="hide" title="Hide this menu (Tab); the Menu button brings it back">Hide</button><button data-x="clean" title="Hide everything for recording: menu, messages, guides, cursor (H brings it back)">Clean view</button><button data-x="exit" title="Leave Record Mode">Exit</button></header>
+      <header><b>${icon('film')} Record Mode</b><span class="rec-fps" hidden></span><button data-x="hide" title="Hide this menu (Tab); the Menu button brings it back">Hide</button><button data-x="clean" title="Hide everything for recording: menu, messages, guides, cursor (H brings it back)">Clean view</button><button data-x="exit" title="Leave Record Mode">Exit</button></header>
       <div class="rec-time">
-        <button data-x="freeze" class="rec-freeze">&#10074;&#10074; Freeze</button>
+        <button data-x="freeze" class="rec-freeze">${icon('pause')} Freeze</button>
         <label>Speed <input type="range" min="0.1" max="2" step="0.05" value="1" data-x="slow"><output>1&times;</output></label>
         <span class="rec-presets">${SLOW_PRESETS.map(v => `<button data-slow="${v}">${v}&times;</button>`).join('')}</span>
       </div>
@@ -194,7 +195,7 @@ export class RecordMode implements RecordRunner, Studio {
     p.addEventListener('input', e => { const t = e.target as HTMLInputElement; if (t.dataset.x === 'slow') this.setSlow(Number(t.value)); });
     this.toasts.className = 'rec-toasts';
     this.showBtn.className = 'rec-show';
-    this.showBtn.innerHTML = '&#9776; Menu';
+    this.showBtn.innerHTML = `${icon('menu')} Menu`;
     this.showBtn.title = 'Show the Record Mode menu (Tab)';
     this.showBtn.addEventListener('click', () => { this.showBtn.blur(); this.toggleMenu(); });
     this.hint.className = 'rec-hint';
@@ -255,7 +256,7 @@ export class RecordMode implements RecordRunner, Studio {
     this.applyScale();
     const b = this.panel.querySelector('.rec-freeze')!;
     b.classList.toggle('on', on);
-    b.innerHTML = on ? '&#9654; Unfreeze' : '&#10074;&#10074; Freeze';
+    b.innerHTML = on ? `${icon('play')} Unfreeze` : `${icon('pause')} Freeze`;
     // sounds stop with the world and carry on where they were
     const a = this.h.audio;
     if (a) { if (on) a.ctx.suspend().catch(() => {}); else a.ctx.resume().catch(() => {}); }

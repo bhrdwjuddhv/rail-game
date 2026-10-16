@@ -1,1 +1,1 @@
-export type WeatherId = 'clear' | 'hazy' | 'fog' | 'rain' | 'storm';
+export type WeatherId = 'clear' | 'hazy' | 'fog' | 'rain' | 'storm' | 'snow';

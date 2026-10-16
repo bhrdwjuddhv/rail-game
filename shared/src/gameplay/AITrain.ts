@@ -22,6 +22,8 @@ export interface AITrainDef {
   stock?: string;
   /** locomotive (data/locomotives id) when not the default for its kind (a trainset: lengthM is its length) */
   loco?: string;
+  /** starting acceleration (m/s², default 0.25) */
+  accel?: number;
   /** whole train length (m) instead of loco + wagons */
   lengthM?: number;
   /** a terminating train: it stops with its head here (a bay's end) and leaves service endDwellS later */
@@ -66,6 +68,7 @@ export class AITrain implements WorkedTrain {
   }
 
   get tailKm() { return this.headKm - this.length / 1000; }
+  get leavesKm() { return this.def.despawnKm; }
   offsetAt(km: number) { return this.path.offsetAt(km); }
 
   update(dt: number) {
@@ -100,7 +103,7 @@ export class AITrain implements WorkedTrain {
       target = Math.min(target, Math.sqrt(2 * b * Math.max(0, d - 1)));
       if (d < 4 && this.speed < 0.3) { this.endWait += dt; if (this.endWait > (this.def.endDwellS ?? 60)) this.gone = true; }
     }
-    this.speed = approach(this.speed, target, target > this.speed ? 0.25 : 0.7, dt);
+    this.speed = approach(this.speed, target, target > this.speed ? (this.def.accel ?? 0.25) : 0.7, dt);
     if (this.speed < 0.05 && target < 0.05) this.speed = 0;
     this.headKm += (this.speed * dt) / 1000;
     this.path.update(this.headKm, this.tailKm);

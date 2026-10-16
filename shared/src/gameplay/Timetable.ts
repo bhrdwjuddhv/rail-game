@@ -43,6 +43,12 @@ export interface WorkedTrain extends Occupant {
   /** the speed it runs at on the open line (km/h), for overtaking decisions */
   cruiseKmph?: number;
   name?: string;
+  /** the player's train (never held in a loop while the middle line is free for the train behind) */
+  player?: boolean;
+  /** never turned into a loop to let another train by (the player's Route Mode journey) */
+  neverGiveWay?: boolean;
+  /** where it leaves the railway (AI traffic despawning), if before the end of the line */
+  leavesKm?: number;
 }
 
 interface StationState {
@@ -51,6 +57,8 @@ interface StationState {
   giveWay?: string; giveWaySince?: number; giveWayTold?: boolean;
   /** sent along the middle line from here to overtake this train (told once) */
   overtakeTold?: boolean;
+  /** when it was first ready to leave from inside the station (a big junction lets them out in that order) */
+  readySince?: number;
 }
 
 export interface DispatchListener {
@@ -108,6 +116,14 @@ export class Dispatcher {
     else if (f) return false;
     if (!f || f.tailKm > st.exitKm || clock - (s.giveWaySince ?? clock) > GIVE_WAY_MAX_S) { s.giveWay = undefined; return true; }
     return false;
+  }
+
+  /**
+   * The train asked not to wait any longer for a train to pass (Skip wait): it stops giving way at every
+   * station it is at; the other train follows it out instead.
+   */
+  cancelGiveWay(trainId: string) {
+    for (const s of this.state.get(trainId)?.values() ?? []) { s.giveWay = undefined; s.giveWaySince = undefined; }
   }
 
   /** Mark a train as already standing at a platform (scenario start). */
@@ -174,7 +190,10 @@ export class Dispatcher {
    * where this direction has a loop long enough for `t`. Returns the follower.
    */
   overtaker(t: WorkedTrain, st: StationInfo, trains: WorkedTrain[]): WorkedTrain | null {
+    if (t.neverGiveWay) return null;
     if (st.type === 'halt' || !this.loopAt(st) || t.headKm - t.tailKm > st.exitKm - st.entryKm - 0.25) return null;
+    // the player's train with the middle line free through here: the faster train goes round along it, the player is not held
+    if (t.player && this.route.middle && this.interlocking.middleFree(st, this.route.middleSectionEnd(st) ?? undefined)) return null;
     const cruise = (x: WorkedTrain) => x.cruiseKmph ?? 80;
     // the leader: its cruising speed, or slower if it is dawdling (never assumed below half of it)
     const vt = Math.min(cruise(t), Math.max(Math.abs(t.speed) * 3.6, cruise(t) * 0.5)), pt = t.priority ?? 2;
@@ -206,6 +225,8 @@ export class Dispatcher {
   middleOvertake(t: WorkedTrain, st: StationInfo, trains: WorkedTrain[]): { leader: WorkedTrain; to: StationInfo } | null {
     const to = this.route.middleSectionEnd(st);
     if (!to || to.entryKm - st.exitKm < 1.2) return null;
+    // a train leaving the railway before the section's end has nowhere to rejoin its line (it would stand on the middle line)
+    if ((t.leavesKm ?? Infinity) < to.entryKm + 0.3) return null;
     for (const h of this.route.stations) if (h.type === 'halt' && h.km > st.exitKm && h.km < to.entryKm && t.plan.get(h.code)?.stop) return null;
     const cruise = (x: WorkedTrain) => x.cruiseKmph ?? 80;
     const vt = cruise(t), pt = t.priority ?? 2, run = this.route.running.offset;
@@ -272,6 +293,12 @@ export class Dispatcher {
               only = true;
             } else if ((t.priority ?? 2) <= 1 && st.avoiding && !s.giveWay) prefs = [st.avoiding, line];
           }
+          // a train calling here stands at a platform: never received onto the middle line or a line without one
+          if (plan.stop && !only && !plan.line) {
+            const withPf = new Set(st.platforms.flatMap(p => p.lines));
+            const pf = st.lineInfo.map(l => l.id).filter(id => withPf.has(id) && id !== MIDDLE_LINE);
+            if (pf.length) { prefs = [...prefs.filter(id => pf.includes(id)), ...pf.filter(id => !prefs.includes(id))]; only = true; }
+          }
           const r = this.interlocking.requestReception(t.id, st, prefs, occupants, fromMiddle, only);
           if (r && s.giveWay && !s.giveWayTold && r.lineId === line) {
             s.giveWayTold = true;
@@ -279,7 +306,7 @@ export class Dispatcher {
             if (f) for (const l of this.listeners) l.givingWay?.(t, st, f);
           }
           const home = this.block.stationSignals(st.code).find(x => x.def.kind === 'home' && (x.def.line === MIDDLE_LINE) === fromMiddle);
-          if (!r && home && !only) { // (never called on into an occupied junction platform: it waits for a free one)
+          if (!r && home && !(only && st.platformLines?.length)) { // (never called on into an occupied junction platform: it waits for a free one)
             const nearHome = home.km - t.headKm < 0.4 && home.km > t.headKm;
             s.waitHome = nearHome && Math.abs(t.speed) < 0.1 ? s.waitHome + dt : 0;
             if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line, occupants, fromMiddle);
@@ -305,6 +332,15 @@ export class Dispatcher {
           // only once the train is received here (or inside the station): a departure route set ahead of that
           // could be for the wrong line (a train arriving along the middle line is received onto its own)
           if (t.headKm > st.entryKm + 0.1 || recv?.trainId === t.id) {
+            s.readySince ??= clock;
+            // a big junction: every departure on this side merges onto the one running line, so whoever asked
+            // first each time the exit came free would always win and a train further down the list could wait
+            // for ever. They leave in the order they became ready: none asks while one ready before it still waits.
+            const behind = !!st.platformLines?.length && !this.interlocking.find(t.id, st, 'departure') && trains.some(o => {
+              const os = o !== t && !this.manual.has(o.id) ? this.stationState(o.id, st.code) : undefined;
+              return !!os && !os.departed && os.readySince !== undefined && os.readySince < s.readySince! && !this.interlocking.find(o.id, st, 'departure');
+            });
+            if (behind) continue;
             const crossTo = plan.exitLine ? this.crossoverTo(st, lineId, plan.exitLine) : undefined;
             // overtaking along the middle line to the next station, when a slower train is in the way and
             // the section is free; otherwise the normal departure

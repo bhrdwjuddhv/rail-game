@@ -1,6 +1,7 @@
 import { WEATHER, WeatherId } from '../environment/Weather';
 import type { GodMode, GodSettings } from '../gameplay/GodMode';
 import type { StationInfo } from '@rail/shared/track/Route';
+import { icon } from './theme/icons';
 
 export interface GodPanelHooks {
   stations: StationInfo[];
@@ -33,6 +34,9 @@ export interface GodPanelHooks {
     markers(): boolean; setMarkers(on: boolean): void;
     reload(): Promise<boolean>;
     jumpNext(): void;
+    /** billboards with a real ad / the "advertise here" board / filler art */
+    house(): { real: number; advertise: number; filler: number };
+    sampleAds(): boolean; setSampleAds(on: boolean): Promise<boolean>;
   };
 }
 
@@ -76,7 +80,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     `<label class="tog" title="${esc(hint)}"><input type="checkbox" data-g="${k}" ${s[k] ? 'checked' : ''}><span>${esc(label)}</span>${hint ? `<small>${esc(hint)}</small>` : ''}</label>`;
   const hours = h.getHours();
   el.innerHTML = `
-    <h2>&#9889; God Mode</h2>
+    <h2>${icon('lightning')} God Mode</h2>
     <label class="tog master"><input type="checkbox" data-g="active" ${god.active ? 'checked' : ''}><span>Activate God Mode</span></label>
     <p class="note warn" data-k="scoring" ${god.usedThisRun ? '' : 'hidden'}>Scoring and achievements are disabled for this run.</p>
     <div class="cols god-sections ${god.active ? '' : 'off'}">
@@ -88,7 +92,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
       <section><h3>World</h3>
         <label>Time of day <input type="range" min="0" max="23.99" step="0.05" value="${hours.toFixed(2)}" data-w="hours"><output>${fmtH(hours)}</output></label>
         ${tog('freezeTime', 'Freeze time', '')}
-        <label>Time speed <input type="range" min="1" max="10" step="1" value="${s.timeSpeed}" data-n="timeSpeed"><output>${s.timeSpeed}&times;</output></label>
+        <label title="Fast-forward: the train, the other trains and the clock all run this many times faster">Time speed <input type="range" min="1" max="10" step="1" value="${s.timeSpeed}" data-n="timeSpeed"><output>${s.timeSpeed}&times;</output></label>
         <label>Weather <select data-w="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}" ${w === h.currentWeather() ? 'selected' : ''}>${WEATHER[w].name}</option>`).join('')}</select></label>
         ${h.freeRoam ? `<label title="Show the whole route as one landscape (the terrain rebuilds around you)">Scenery preview <select data-w="scenery"><option value="">Route's own</option>${h.regions.map(r => `<option value="${r.id}" ${r.id === h.sceneryPreview() ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>` : ''}
         <h3>Teleport</h3>
@@ -105,6 +109,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
         <h3>Billboards</h3>
         <p class="note" data-k="bb-stats"></p>
         <label class="tog" title="Every slot on the minimap and as markers in the world: green in sight, yellow moved, red dropped"><input type="checkbox" data-b="markers" ${h.billboards.markers() ? 'checked' : ''}><span>Show billboard slots (and blocked ones)</span></label>
+        <label class="tog" title="The fictional sample campaigns in data/ads.mock.json, for testing (off: only data/ads.json)"><input type="checkbox" data-b="sample" ${h.billboards.sampleAds() ? 'checked' : ''}><span>Show sample ads</span></label>
         <div class="buttons left"><button data-a="bb-jump">Jump to next billboard</button><button data-a="bb-reload" title="Read data/ads.json again (no restart)">Reload ads file</button></div>
         <div class="bb-ads" data-k="bb-ads"></div>
         ${h.bugCameras.length ? `<label>Bug check cameras <select data-t="bugcam">${h.bugCameras.map(c => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></label>
@@ -119,7 +124,8 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
   const bbStats = el.querySelector<HTMLElement>('[data-k="bb-stats"]')!, bbAds = el.querySelector<HTMLElement>('[data-k="bb-ads"]')!;
   const showAds = () => {
     const b = h.billboards, st = b.stats;
-    bbStats.textContent = `${st.slots} billboards on ${b.routeName} (${st.ok} in place, ${st.moved} moved, ${st.dropped} dropped): ${Object.entries(st.byType).map(([k, n]) => `${n} ${k}`).join(', ')}`;
+    const hc = b.house();
+    bbStats.textContent = `${st.slots} billboards on ${b.routeName} (${st.ok} in place, ${st.moved} moved, ${st.dropped} dropped): ${Object.entries(st.byType).map(([k, n]) => `${n} ${k}`).join(', ')}. Showing: ${hc.real} real ads, ${hc.advertise} "advertise here", ${hc.filler} filler.`;
     bbAds.innerHTML = `<table><tr><th>Ad</th><th>Freq.</th><th>Share</th><th>Billboards</th></tr>${b.report().map(r =>
       `<tr><td>${esc(r.id)}</td><td>${r.frequency.toFixed(2)}</td><td>${r.share ? `about ${Math.round(r.share * 100)}% &asymp; ${r.expected}` : 'not shown here'}</td><td>${r.count}</td></tr>`).join('')}</table>`;
   };
@@ -137,6 +143,7 @@ export function godModePanel(god: GodMode, h: GodPanelHooks): HTMLElement {
     if ((t as HTMLElement).dataset.w === 'weather') { god.set('weather', t.value as WeatherId); h.setWeather(t.value as WeatherId); }
     if ((t as HTMLElement).dataset.w === 'scenery') h.setSceneryPreview(t.value || null);
     if ((t as HTMLElement).dataset.b === 'markers') h.billboards.setMarkers((t as HTMLInputElement).checked);
+    if ((t as HTMLElement).dataset.b === 'sample') void h.billboards.setSampleAds((t as HTMLInputElement).checked).then(() => showAds());
   });
   el.addEventListener('input', e => {
     const t = e.target as HTMLInputElement;

@@ -2,6 +2,7 @@ import { TrainDynamics } from '@rail/shared/physics/TrainDynamics';
 TrainDynamics.strictNaN = import.meta.env.DEV;
 import './style.css';
 import './touch.css';
+import './ui/theme/tokens.css';
 import { AudioEngine } from './audio/AudioEngine';
 import { assets } from './core/AssetRegistry';
 import { textures } from './core/TextureLibrary';
@@ -16,6 +17,7 @@ import type { ScenarioOverrides } from '@rail/shared/gameplay/Scenario';
 import type { BenchConfig, BenchView } from './core/Benchmark';
 import type { Quality } from './core/Settings';
 import { Menus } from './ui/Menus';
+import { prepareJourney } from './routemode/prepare';
 import { setVegetationRenderer } from './world/scenery/Vegetation';
 import { initModelLoader } from './train/LocoModelLoader';
 
@@ -102,6 +104,12 @@ async function boot() {
     running = true;
     lockControlMode();
     if (!auto) enterGameScreen(); // still inside the Start tap
+    // Route Mode: the journey's route and scenario are built first (also after a reload)
+    if (overrides.journey && !prepareJourney(overrides.journey)) {
+      menus.error('The stations of this journey no longer connect (the routes have changed since it was saved).');
+      running = false;
+      return;
+    }
     const data = SCENARIOS[id];
     let audio: AudioEngine | null = null;
     try { audio = new AudioEngine(); } catch { /* no Web Audio: play silent */ }
@@ -128,6 +136,7 @@ async function boot() {
   const q = params.get('scenario');
   if (q && SCENARIOS[q]) auto = { id: q, overrides: params.get('loco') ? { loco: params.get('loco')! } : {} };
   if (benchCfg) auto = { id: benchAt.scenario, overrides: { time: '12:00', weather: 'clear', timeScale: 1, consist: { loco: 'ep-7', coaches: [{ type: 'general', count: 6 }, { type: 'sleeper', count: 6 }], loaded: true }, ...benchAt.overrides } };
+  if (auto?.overrides?.journey) prepareJourney(auto.overrides.journey);
   if (auto && SCENARIOS[auto.id]) start(auto.id, auto.overrides, true, { record: !!auto.record });
   else menus.main();
 }
