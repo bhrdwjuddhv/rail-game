@@ -108,6 +108,8 @@ export interface RecordHost {
   /** build the track and lineside chunks again (OHE masts shown / hidden) */
   rebuildLineside(): void;
   setFpsCap(fps: number): void;
+  /** High-Quality Render: a fixed world time per frame (null: real time), and a gate the next frame waits on */
+  setFrameClock(fixedS: number | null, gate: (() => boolean) | null): void;
   /** wall time of the last frame (ms) */
   frameMs(): number;
   requestRender(): void;

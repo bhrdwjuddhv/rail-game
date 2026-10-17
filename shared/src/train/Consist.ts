@@ -55,6 +55,20 @@ export interface DieselData {
 /** what a cab console screen shows (PanelCab) */
 export type ScreenKind = 'main' | 'signal' | 'brake' | 'power';
 
+/**
+ * A moving part of a model's own cab (interior 'rig'): pivoting at its origin, turned about its own
+ * axis (three.js axes, `sign` as modelled) from its rest pose as a cab value changes.
+ */
+export interface LocoRigPart {
+  node: string; axis: 'x' | 'y' | 'z'; sign: 1 | -1;
+  /** the value moving it (RigCab: notch, controller, reverser, trainBrake, locoBrake, headlight, horn, speed, bp, bc, mr, amps, flow, fuelPressure, fuelPump, engine, cabLight, flasher) */
+  drive: string;
+  /** value -> angle (degrees) at two points, in between linear, clamped beyond */
+  at: [[number, number], [number, number]];
+  /** the cab control this part is: clicked like it, and what the tutorial points at (also gauge:bpbc, gauge:speed, display) */
+  control?: string;
+}
+
 export interface LocoModelFile {
   /** source GLB, relative to client/public */
   file: string;
@@ -68,6 +82,8 @@ export interface LocoModelFile {
    * merges a bogie's wheels into one mesh)
    */
   bogies: { node: string | string[]; wheels: string[] }[];
+  /** the wheels' axle in their own frame (default +x: models built along z) */
+  wheelAxis?: [number, number, number];
   /**
    * Use only part of the file: parts whose centre lies in [min, max] along a
    * source-model axis (0 x, 1 y, 2 z). For a twin-section loco modelled whole,
@@ -89,7 +105,13 @@ export interface LocoModelFile {
    * gamepad or the touch controls. `eye`: driver's eye (m, loco frame).
    */
   cab?: {
-    eye: [number, number, number]; interior?: 'wag12' | 'wag9' | 'panel';
+    eye: [number, number, number]; interior?: 'wag12' | 'wag9' | 'panel' | 'rig';
+    /** interior 'rig': the model's own levers, needles and switches, turned live (RigCab) */
+    rig?: LocoRigPart[];
+    /** interior 'rig': screen meshes (0-1 UVs) drawn live: mesh name -> what it shows */
+    screens?: Record<string, 'drive' | 'engine'>;
+    /** interior 'rig': lamps and lit buttons by material name, alight while a value (RigValues) is on (>= 0.5); blink: flashing */
+    lamps?: Record<string, { drive: string; color?: string; blink?: boolean }>;
     /**
      * interior 'panel': a separate driver's console model, loaded only when the
      * cab view is wanted (it is heavy). Fitted like the body (loco frame of the
@@ -113,6 +135,8 @@ export interface LocoModelFile {
   remove?: string[];
   /** where our headlight and marker lamps go on the model (m, loco frame, front cab; mirrored for the rear one) */
   lights: { head: [number, number]; markers: [number, number, number] };
+  /** colours for materials by name (#rrggbb): for ones exported without a colour (they come out white) */
+  materialColors?: Record<string, string>;
   /** roughness / metalness for the model's materials (exported models are often flat 0.5 / 0) */
   look?: { roughness: number; metalness: number };
   /** text repainted on the model's textures by the optimiser (texture index, pixel rect x y w h) */

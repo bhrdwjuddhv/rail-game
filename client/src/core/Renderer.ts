@@ -122,8 +122,10 @@ export class RenderSystem {
   }
 
   setMaxPixelRatio(r: number) { this.maxPixelRatio = r; }
+  /** Record Mode's fixed output size: exactly its pixels (not the screen's pixel ratio, nor a browser zoomed out) */
+  exactPixels = false;
   setRenderScale(scale: number) {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.maxPixelRatio) * scale);
+    this.renderer.setPixelRatio((this.exactPixels ? 1 : Math.min(window.devicePixelRatio, this.maxPixelRatio)) * scale);
     this.resizeComposer();
   }
 

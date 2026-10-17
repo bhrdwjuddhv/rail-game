@@ -5,6 +5,7 @@ import { materials } from '../core/Materials';
 import { CONTACT_H } from '../infrastructure/OHE';
 import { LocoData, sectionsOf } from '@rail/shared/train/Consist';
 import { GlbLevel, instanceLevel, loadLocoModel, partConfig, poseRig } from './LocoModelLoader';
+import { RigCab } from './cab/RigCab';
 
 export const BODY_FLOOR = 1.25;  // underside of body above rail
 export const ROOF_H = 4.05;      // roof above rail
@@ -104,6 +105,8 @@ export class LocoModel {
   readonly wheelsets: THREE.Object3D[] = [];
   /** the loco's 3D model (data.model) once loaded: one per LOD level */
   private glb: GlbLevel[] | null = null;
+  /** the model's own rigged cab (model.cab.interior 'rig'), once loaded: its near level's levers and needles */
+  rig: RigCab | null = null;
   /** our lamp meshes (repositioned onto a 3D model) */
   private lamps: { mesh: THREE.Object3D; end: number; z?: number }[] = [];
   private inCab = false;
@@ -479,6 +482,8 @@ export class LocoModel {
     this.headlight.position.set(hx + 0.2, hy - 0.05, 0);
     this.beam.position.set(hx + 0.3, hy - 0.05, 0);
     this.glb = levels;
+    const cab = this.data.model?.cab;
+    if (cab?.interior === 'rig' && this.section === 0) this.rig = new RigCab(levels[0].root, cab.rig ?? [], cab.screens, cab.lamps);
     this.setCabView(this.inCab);
     this.syncLod();
   }
@@ -493,7 +498,9 @@ export class LocoModel {
   /** Wheel rotation (procedural: about the lateral axis; a 3D model's wheels about their own axle). */
   spin(angle: number) {
     for (const ws of this.wheelsets) ws.rotation.z = angle;
-    if (this.glb) for (const l of this.glb) for (const w of l.wheels) w.quaternion.copy(w.userData.restQ).multiply(_spinQ.setFromAxisAngle(_axleX, -angle));
+    if (!this.glb) return;
+    const ax = this.data.model?.wheelAxis ? _axle.fromArray(this.data.model.wheelAxis) : _axleX;
+    for (const l of this.glb) for (const w of l.wheels) w.quaternion.copy(w.userData.restQ).multiply(_spinQ.setFromAxisAngle(ax, -angle));
   }
 
   /** The 3D model is loaded and brings its own cab for the first-person view (data.model.cab). */
@@ -590,7 +597,7 @@ export class LocoModel {
   }
 }
 
-const _spinQ = new THREE.Quaternion(), _axleX = new THREE.Vector3(1, 0, 0);
+const _spinQ = new THREE.Quaternion(), _axleX = new THREE.Vector3(1, 0, 0), _axle = new THREE.Vector3();
 
 function wheelset(d: number) {
   const g = new THREE.Group();

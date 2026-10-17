@@ -221,6 +221,23 @@ function fit(scene: THREE.Object3D, cfg: LocoModelFile) {
     g.updateMatrixWorld(true);
     g.attach(n);
   });
+  // wheelsets turn about their axle: a pivot at each one's centre (a model's wheel origin is often elsewhere,
+  // e.g. the bogie's), facing as the wheel does (wheelAxis is in that frame)
+  fitted.updateMatrixWorld(true);
+  for (const name of cfg.bogies.flatMap(b => b.wheels)) {
+    const n = byName(scene, name);
+    if (!n?.parent) continue;
+    const box = new THREE.Box3().setFromObject(n);
+    if (box.isEmpty()) continue;
+    const g = new THREE.Group();
+    g.name = n.name;
+    n.name = `${n.name}-wheel`;
+    g.position.copy(n.parent.worldToLocal(box.getCenter(new THREE.Vector3())));
+    g.quaternion.copy(n.quaternion);
+    n.parent.add(g);
+    g.updateMatrixWorld(true);
+    g.attach(n);
+  }
   fitted.updateMatrixWorld(true);
   // a plain lit look, and shadows; window glass see-through (tagged by the optimiser, or by name in a source file)
   const glassNames = new Set(cfg.glassMaterials ?? []);
@@ -235,12 +252,16 @@ function fit(scene: THREE.Object3D, cfg: LocoModelFile) {
       return;
     }
     if (cfg.look && mat.isMeshStandardMaterial) { mat.roughness = cfg.look.roughness; mat.metalness = cfg.look.metalness; }
+    const tint = cfg.materialColors?.[mat.name];
+    if (tint && mat.isMeshStandardMaterial) mat.color.set(tint);
     m.castShadow = m.receiveShadow = true;
   });
   // merge the static body per material: moving parts and cab parts stay separate
   const moving = new Set<THREE.Object3D>();
   cfg.bogies.forEach((b, i) => { const n = byName(scene, bogieName(b, i)); if (n) moving.add(n); });
   for (const p of cfg.pantographs) for (const k of [p.lower, p.upper, p.joint]) { const n = k ? byName(scene, k) : null; if (n) moving.add(n); }
+  // a rigged cab: its levers, needles and screens stay parts of their own (RigCab turns and draws them)
+  for (const k of [...(cfg.cab?.rig ?? []).map(p => p.node), ...Object.keys(cfg.cab?.screens ?? {})]) { const n = byName(scene, k); if (n) moving.add(n); }
   const cabNodes = cfg.hideInCab.map(n => byName(scene, n)).filter((n): n is THREE.Object3D => !!n);
   const cabGroup = new THREE.Group();
   cabGroup.name = 'glb-cab';

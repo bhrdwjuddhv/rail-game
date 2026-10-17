@@ -84,7 +84,7 @@ export class RouteModeMenu {
     const keep = new Map(this.j.stops.map(s => [s.code, s]));
     this.j.stops = defaultStops(r, this.j.from, this.j.to).map(d => {
       const k = keep.get(d.code);
-      return k ? { ...k, stop: d.code === this.j.from || d.code === this.j.to || !!this.net.junctionByCode(d.code) ? true : k.stop } : d;
+      return k ? { ...k, stop: d.code === this.j.from || d.code === this.j.to ? true : k.stop } : d;
     });
   }
   private size() { return trainSize(this.j.consist, LOCOS, COACHES); }
@@ -105,7 +105,7 @@ export class RouteModeMenu {
     const row = (j: Journey, i: number, saved: boolean) => `<div class="rm-saved card">
       <div><b>${esc(j.name ?? `${this.name(j.from)} → ${this.name(j.to)}`)}</b>
       <small>${esc(this.name(j.from))} → ${esc(this.name(j.to))}${j.via.length ? ` · via ${j.via.map(v => esc(this.net.junctions.find(x => x.id === v)?.name ?? v)).join(', ')}` : ''} · ${esc(LOCOS[j.consist.loco]?.name ?? j.consist.loco)} · ${j.time}</small></div>
-      <div class="rm-saved-btns"><button data-go="${saved ? 's' : 'r'}${i}">${icon('play')}Start</button><button data-edit="${saved ? 's' : 'r'}${i}">${icon('sliders')}Edit</button>${saved ? `<button data-del="${i}" aria-label="Delete">${icon('trash')}</button>` : ''}</div></div>`;
+      <div class="rm-saved-btns"><button data-go="${saved ? 's' : 'r'}${i}">${icon('play')}Start</button><button data-edit="${saved ? 's' : 'r'}${i}">${icon('sliders')}Edit</button><button data-del="${saved ? 's' : 'r'}${i}" title="Delete this journey">${icon('trash')}Delete</button></div></div>`;
     const el = html(`<div class="menu rm rm-start"><h2>${icon('route')} Route Mode</h2>
       <p class="sub">Drive from any station to any other: across the routes, through the junctions. Plan the stops, pick up and leave coaches, change locos.</p>
       <button class="btn-primary btn-lg rm-new" data-a="new">${icon('plus')}Plan a new journey</button>
@@ -120,7 +120,7 @@ export class RouteModeMenu {
       if (b.dataset.a === 'new') { this.j = this.blank(); this.step = 0; this.picking = 'from'; this.render(); }
       if (b.dataset.go) this.go(clone(pick(b.dataset.go)));
       if (b.dataset.edit) { this.j = clone(pick(b.dataset.edit)); this.step = 0; this.render(); }
-      if (b.dataset.del) { st.saved.splice(Number(b.dataset.del), 1); saveStore(st); this.open(); }
+      if (b.dataset.del) { (b.dataset.del[0] === 's' ? st.saved : st.recent).splice(Number(b.dataset.del.slice(1)), 1); saveStore(st); this.open(); }
     });
     this.host.show(el, () => this.host.main());
   }
@@ -316,9 +316,11 @@ export class RouteModeMenu {
     let left = this.vehicles().length;
     const first = this.stations()[0]?.km ?? 0;
     const locos = Object.values(LOCOS).filter(l => !l.trainset);
+    // a fixed trainset (the bullet train): no coaches to leave or pick up, no loco to change
+    const trainset = !!LOCOS[this.j.consist.loco]?.trainset;
     const rows = this.stations().map(s => {
       const p = this.j.stops.find(x => x.code === s.code) ?? { code: s.code, stop: false, dwellS: 60 };
-      const end = s.code === this.j.from || s.code === this.j.to, start = s.code === this.j.from, fixed = end || !!s.junction;
+      const end = s.code === this.j.from || s.code === this.j.to, start = s.code === this.j.from, fixed = end;
       if (p.stop && p.decouple) left -= p.decouple;
       if (p.stop && p.couple) for (const c of p.couple) left += c.count;
       if (only && !only.includes(s.code)) return '';
@@ -330,7 +332,7 @@ export class RouteModeMenu {
         : `<label>${icon('users')}<select data-work="${s.code}"><option value="board"${work === 'board' ? ' selected' : ''}>Passengers board and alight</option><option value=""${!work ? ' selected' : ''}>No passenger work</option></select></label>`;
       // what is planned here, shown on the closed row
       const planned = [p.decouple ? icon('decouple') : '', p.couple?.length ? icon('couple') : '', p.changeLoco ? icon('loco') : ''].join('');
-      const acts = isOpen && start ? `<div class="rm-acts">${workSel}</div>` : isOpen ? `<div class="rm-acts">${workSel}
+      const acts = isOpen && (start || trainset) ? `<div class="rm-acts">${workSel}</div>` : isOpen ? `<div class="rm-acts">${workSel}
         <label>${icon('decouple')}<select data-dec="${s.code}"><option value="0">Keep all</option>${Array.from({ length: Math.max(0, left + (p.decouple ?? 0) - 1) }, (_, i) => `<option value="${i + 1}"${p.decouple === i + 1 ? ' selected' : ''}>Leave the last ${i + 1}</option>`).join('')}</select></label>
         <label>${icon('couple')}<select data-ctype="${s.code}"><option value="">Pick up none</option>${Object.values(COACHES).map(c => `<option value="${c.id}"${p.couple?.[0]?.type === c.id ? ' selected' : ''}>Pick up ${esc(c.name)}</option>`).join('')}</select>
         ${p.couple?.length ? `<input type="number" min="1" max="40" value="${p.couple[0].count}" data-ccount="${s.code}" aria-label="How many">` : ''}</label>
@@ -338,9 +340,9 @@ export class RouteModeMenu {
       return `<li class="rm-tl${s.junction ? ' jn' : ''}${p.stop ? ' stop' : ''}${isOpen ? ' open' : ''}">
         <span class="rm-tl-dot">${s.junction ? icon('junction') : ''}</span>
         <div class="rm-tl-main"><div class="rm-tl-top">${canAct
-          ? `<button type="button" class="rm-tl-name" data-open="${s.code}" aria-expanded="${isOpen}" title="Shunting here: leave or pick up coaches${s.junction ? ', change the loco' : ''}"><b>${esc(s.name)}</b><small>${s.code} · ${(s.km - first).toFixed(1)} km${s.junction ? ' · Junction' : ''}</small><span class="rm-tl-planned">${planned}</span>${icon('caretDown', 'rm-caret')}</button>`
+          ? `<button type="button" class="rm-tl-name" data-open="${s.code}" aria-expanded="${isOpen}" title="${trainset ? 'Platform work here' : `Shunting here: leave or pick up coaches${s.junction ? ', change the loco' : ''}`}"><b>${esc(s.name)}</b><small>${s.code} · ${(s.km - first).toFixed(1)} km${s.junction ? ' · Junction' : ''}</small><span class="rm-tl-planned">${planned}</span>${icon('caretDown', 'rm-caret')}</button>`
           : `<span class="rm-tl-name"><b>${esc(s.name)}</b><small>${s.code} · ${(s.km - first).toFixed(1)} km${s.junction ? ' · Junction' : ''}</small></span>`}
-          <span class="rm-tl-ctl">${fixed ? `<span class="chip on"${end ? '' : ' title="Trains always stop at junctions"'}>${start ? 'Start' : end ? 'End' : 'Stop'}</span>` : chip(p.stop ? 'Stop' : 'Pass', { on: p.stop, data: { stop: s.code }, icon: p.stop ? 'platform' : 'arrowRight' })}
+          <span class="rm-tl-ctl">${fixed ? `<span class="chip on">${start ? 'Start' : 'End'}</span>` : chip(p.stop ? 'Stop' : 'Pass', { on: p.stop, data: { stop: s.code }, icon: p.stop ? 'platform' : 'arrowRight' })}
           ${p.stop && !start ? `<select data-dwell="${s.code}" aria-label="Stop time">${DWELLS.map(d => `<option value="${d}"${p.dwellS === d ? ' selected' : ''}>${d < 60 ? `${d} s` : `${d / 60} min`}</option>`).join('')}</select>` : ''}</span></div>
           ${acts}${this.warningList(s.code)}</div></li>`;
     }).join('');
@@ -351,8 +353,10 @@ export class RouteModeMenu {
 
   private toggleStop(code: string) {
     const p = this.j.stops.find(x => x.code === code);
-    // (start, end and junctions are always stops)
-    if (p && code !== this.j.from && code !== this.j.to && !this.net.junctionByCode(code)) p.stop = !p.stop;
+    // (the start and the end are always stops; a station with shunting or a loco change planned stays one)
+    if (!p || code === this.j.from || code === this.j.to) return;
+    if (p.stop && (p.decouple || p.couple?.length || p.changeLoco)) { toast('Shunting is planned here: take it off first to pass this station', 'info'); return; }
+    p.stop = !p.stop;
   }
   private planInput(t: HTMLInputElement) {
     const d = t.dataset, stop = (c: string) => this.j.stops.find(x => x.code === c)!;

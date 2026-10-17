@@ -9,16 +9,20 @@ import { FilmLook } from './FilmLook';
 import { WorldTab } from './WorldTab';
 import { RecordSettings } from './RecordSettings';
 import { Scenes } from './Scenes';
+import { Capture } from './Capture';
 import { icon } from '../ui/theme/icons';
 
-type Tab = 'trains' | 'camera' | 'world' | 'scenes' | 'settings';
-const TABS: [Tab, string][] = [['trains', 'Trains'], ['camera', 'Camera'], ['world', 'World'], ['scenes', 'Scenes'], ['settings', 'Settings']];
+type Tab = 'trains' | 'camera' | 'world' | 'scenes' | 'capture' | 'settings';
+const TABS: [Tab, string][] = [['trains', 'Trains'], ['camera', 'Camera'], ['world', 'World'], ['scenes', 'Scenes'], ['capture', 'Capture'], ['settings', 'Settings']];
 const SLOW_PRESETS = [0.25, 0.5, 1, 2];
 
 const HELP = `<h3>Record Mode keys</h3><table>
 <tr><td>Tab</td><td>Show / hide the Mod Menu</td></tr>
 <tr><td>H</td><td>Clean view: no menu, hints, guides or cursor (H again brings them back)</td></tr>
 <tr><td>Space</td><td>Freeze the world (cameras still move)</td></tr>
+<tr><td>F9</td><td>Start / stop recording (Capture tab: Live or High-Quality)</td></tr>
+<tr><td>F10, Ctrl + Shift + S</td><td>Screenshot (only the picture, at the Capture tab's size)</td></tr>
+<tr><td>L</td><td>Follow: lock the shot to the train / let go</td></tr>
 <tr><td>1 &ndash; 9</td><td>Jump to a camera bookmark</td></tr>
 <tr><td>Shift + 1 &ndash; 9</td><td>Glide to a bookmark</td></tr>
 <tr><td>Ctrl / Alt + 1 &ndash; 9</td><td>Save the camera as a bookmark (Alt if the browser keeps Ctrl + number for tabs)</td></tr>
@@ -41,6 +45,7 @@ export class RecordMode implements RecordRunner, Studio {
   readonly world: WorldTab;
   readonly settings: RecordSettings;
   readonly scenes: Scenes;
+  readonly capture: Capture;
   private panel = document.createElement('div');
   private toasts = document.createElement('div');
   private hint = document.createElement('div');
@@ -67,6 +72,7 @@ export class RecordMode implements RecordRunner, Studio {
     this.world = new WorldTab(this, this.trains);
     this.settings = new RecordSettings(this);
     this.scenes = new Scenes(this, { trains: this.trains, cams: this.cams, film: this.film, world: this.world, settings: this.settings });
+    this.capture = new Capture(this, this.settings, this.film);
     this.cams.setFilm(this.film.el);
 
     // what the parts read from each other
@@ -77,6 +83,8 @@ export class RecordMode implements RecordRunner, Studio {
     // the outline goes round the solid parts only (not the headlight beam or glass)
     const solid = new WeakMap<THREE.Object3D, { list: THREE.Object3D[]; at: number }>();
     this.film.outlined = () => {
+      // (never in a recording or a screenshot: the outline is the studio's, not the picture's)
+      if (this.capture?.busy) return null;
       const r = this.trains.selected;
       if (!r || !this.trains.alive(r)) return null;
       const g = this.trains.info(r).view.group;
@@ -179,8 +187,8 @@ export class RecordMode implements RecordRunner, Studio {
       <nav>${TABS.map(([id, n]) => `<button data-tab="${id}">${n}</button>`).join('')}</nav>
       <div class="rec-body"></div>`;
     const body = p.querySelector('.rec-body')!;
-    for (const el of [this.trains.el, this.cams.el, this.world.el, this.scenes.el, this.settings.el]) body.appendChild(el);
-    this.trains.bind(); this.cams.bind(); this.film.bind(); this.world.bind(); this.scenes.bind(); this.settings.bind();
+    for (const el of [this.trains.el, this.cams.el, this.world.el, this.scenes.el, this.capture.el, this.settings.el]) body.appendChild(el);
+    this.trains.bind(); this.cams.bind(); this.film.bind(); this.world.bind(); this.scenes.bind(); this.capture.bind(); this.settings.bind();
     p.addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('button');
       if (!b) return;
@@ -215,12 +223,13 @@ export class RecordMode implements RecordRunner, Studio {
   private showTab(t: Tab) {
     this.tab = t;
     this.panel.querySelectorAll<HTMLButtonElement>('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-    const els: Record<Tab, HTMLElement> = { trains: this.trains.el, camera: this.cams.el, world: this.world.el, scenes: this.scenes.el, settings: this.settings.el };
+    const els: Record<Tab, HTMLElement> = { trains: this.trains.el, camera: this.cams.el, world: this.world.el, scenes: this.scenes.el, capture: this.capture.el, settings: this.settings.el };
     for (const [k, el] of Object.entries(els)) el.hidden = k !== t;
     if (t === 'trains') this.trains.render();
     if (t === 'camera') this.cams.render();
     if (t === 'world') this.world.render();
     if (t === 'scenes') this.scenes.render();
+    if (t === 'capture') this.capture.render_();
     if (t === 'settings') this.settings.render();
   }
 
@@ -292,8 +301,13 @@ export class RecordMode implements RecordRunner, Studio {
       if (e.ctrlKey || e.altKey || e.metaKey) this.cams.save(i); else this.cams.jump(i, e.shiftKey);
       return;
     }
-    if (e.repeat && e.code !== 'ArrowUp' && e.code !== 'ArrowDown') { if (['Tab', 'Space', 'KeyH', 'F1'].includes(e.code)) own(); return; }
+    if (e.repeat && e.code !== 'ArrowUp' && e.code !== 'ArrowDown') { if (['Tab', 'Space', 'KeyH', 'F1', 'F9', 'F10', 'KeyL'].includes(e.code)) own(); return; }
+    // capture: record, screenshot (also Ctrl + Shift + S), follow
+    if (e.code === 'KeyS' && e.shiftKey && (e.ctrlKey || e.metaKey)) { own(); void this.capture.screenshot(); return; }
     switch (e.code) {
+      case 'F9': own(); void this.capture.toggle(); return;
+      case 'F10': own(); void this.capture.screenshot(); return;
+      case 'KeyL': if (e.ctrlKey || e.altKey || e.metaKey) return; own(); this.cams.toggleFollow(); this.cams.render(); return;
       case 'Tab': own(); this.toggleMenu(); return;
       case 'KeyH': own(); this.setUi(!this.ui); return;
       case 'Space': own(); this.freeze(!this.isFrozen); return;
@@ -406,6 +420,7 @@ export class RecordMode implements RecordRunner, Studio {
   frame(dt: number, wdt: number) {
     this.trains.frame(dt, wdt);
     this.cams.frame(dt);
+    this.capture.frame(dt);
     const low = this.settings.frame(dt);
     const badge = this.panel.querySelector<HTMLElement>('.rec-fps')!;
     badge.hidden = low === null;
@@ -413,7 +428,7 @@ export class RecordMode implements RecordRunner, Studio {
   }
 
   afterCamera() { this.film.afterCamera(); }
-  afterRender() { this.cams.afterRender(); }
+  afterRender() { this.cams.afterRender(); this.capture.afterRender(); }
 
   /** The game was resumed from its pause menu: Record Mode's sound and screen as they were. */
   resumed() {
@@ -454,6 +469,7 @@ export class RecordMode implements RecordRunner, Studio {
     removeEventListener('pointerup', this.onUp);
     for (const el of [this.panel, this.showBtn, this.toasts, this.hint, this.help, this.banner]) el.remove();
     document.body.classList.remove('rec-on', 'rec-clean', 'rec-picking');
+    this.capture.dispose();
     this.film.dispose();
     this.cams.dispose();
     this.world.reset();

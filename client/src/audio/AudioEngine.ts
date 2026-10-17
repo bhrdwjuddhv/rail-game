@@ -11,6 +11,8 @@ export type Bus = 'train' | 'horn' | 'env' | 'station' | 'ui';
 export class AudioEngine {
   readonly ctx: AudioContext;
   readonly master: GainNode;
+  /** the final mix, as it goes to the speakers (Record Mode's live recording taps it) */
+  readonly out: AudioNode;
   readonly buses: Record<Bus, GainNode>;
   /** outside-world sounds go through this (muffled in the cab) */
   readonly exterior: BiquadFilterNode;
@@ -27,6 +29,7 @@ export class AudioEngine {
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -12; comp.ratio.value = 6;
     this.master.connect(comp).connect(c.destination);
+    this.out = comp;
     this.buses = { train: c.createGain(), horn: c.createGain(), env: c.createGain(), station: c.createGain(), ui: c.createGain() };
     // every source is tracked (weakly) so Record Mode's slow motion can lower the pitch of what is playing
     const track = <T extends AudioBufferSourceNode | OscillatorNode>(n: T) => {

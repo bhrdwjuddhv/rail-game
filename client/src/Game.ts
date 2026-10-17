@@ -82,7 +82,7 @@ import { Railway } from '@rail/shared/track/Railway';
 import { DEFAULT_TRAFFIC, FREIGHT_TRAFFIC, TrafficManager } from '@rail/shared/traffic/TrafficManager';
 import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import { formatGradient } from '@rail/shared/track/Gradient';
-import { biomeOf, Route, RouteData } from '@rail/shared/track/Route';
+import { biomeOf, MIDDLE_LINE, Route, RouteData } from '@rail/shared/track/Route';
 import { buildTrackChunk, CHUNK_M, SwitchView } from './track/TrackMeshBuilder';
 import { TrackGraph, TrackPath, Ramp } from '@rail/shared/track/TrackGraph';
 import { CabControls, CONTROL_NAMES } from './train/cab/CabControls';
@@ -90,7 +90,7 @@ import { CabModel, cabLayout } from './train/cab/CabModel';
 import { TrainView } from './train/Coach';
 import { Consist, Vehicle } from '@rail/shared/train/Consist';
 import { LocoSystems } from '@rail/shared/train/LocoSystems';
-import { BRAKE_POSITIONS } from '@rail/shared/physics/BrakeSystem';
+import { BRAKE_POSITIONS, BrakeSystem } from '@rail/shared/physics/BrakeSystem';
 import { TrainDynamics } from '@rail/shared/physics/TrainDynamics';
 import { HUD } from './ui/HUD';
 import type { Menus } from './ui/Menus';
@@ -113,6 +113,9 @@ const TEX_PREFETCH_M = 1500, TEX_RELEASE_M = 2100;
 
 const CAMERA_NAMES = ["Driver's cab", 'Front', 'Rear', 'Side', 'Chase', 'Cinematic', 'Free'];
 const FREE_CAM_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyF']);
+
+/** an AI train in the game: its movement, how it is drawn, and the line view it runs in */
+interface AIEntry { train: AITrain; view: TrainView; route: Route; carM: number; side?: number }
 
 /**
  * Composition root: builds every system for one run and drives the fixed-step
@@ -159,7 +162,7 @@ export class Game {
   private get block() { return this.lc.block; }
   private get dispatcher() { return this.lc.dispatcher; }
   /** scenario AI trains and opposite-line traffic, each drawn in the view it runs in */
-  private ai: { train: AITrain; view: TrainView; route: Route; carM: number; side?: number }[] = [];
+  private ai: AIEntry[] = [];
   /** scheduled trains on the other line of a double track, coming toward the player */
   private oncoming: TrafficManager | null = null;
   /** Free Roam: trains on the player's own line (overtaking in station loops) */
@@ -425,10 +428,17 @@ export class Game {
       headKm: () => this.dyn.headKm, speed: () => this.dyn.speed, offsetAt: km => this.path.offsetAt(km),
       clock: () => this.time.run, setClock: v => { this.time.seconds = v; }, setWarp: x => { this.warp = x; this.engine.speed = x * this.rec.scale; },
       signalAhead: () => this.block.nextSignal(this.dyn.headKm, this.path.offsetAt(this.dyn.headKm), true, this.pathOffset)?.aspect ?? null,
+      held: code => this.journey?.holdText(code) ?? null,
+      stopTarget: st => this.stopTargetKm(st),
+      skipHeld: () => this.journey?.skipWork(),
       approaching: st => (this.noWaitAt === st.code ? null : this.trainToPass(st)),
       skipTrainWait: () => {
-        // Skip wait while giving way: the player goes first, the other train follows
+        // Skip wait while giving way: the player goes first, the other train stops where it is (short of the
+        // station's points) and follows later
         for (const l of this.ctl.lines) l.dispatcher.cancelGiveWay('player');
+        const st = this.stop.stationCode ? this.line.station(this.stop.stationCode) : undefined;
+        const other = st ? this.trainToPass(st)?.a : undefined;
+        if (st && other && other.train.headKm < st.entryKm - 0.05) this.makeWay(other, 'stop');
         this.noWaitAt = this.stop.stationCode ?? '';
         bus.emit('message', { text: 'Not waiting: you leave first, the other train follows you', kind: 'info', ms: 4000 });
       },
@@ -451,7 +461,8 @@ export class Game {
       if (end && bay && (bay.toKm - bay.fromKm) * 1000 - 40 > this.consist.length) {
         const p = this.plan.get(end.code);
         this.plan.set(end.code, { ...(p ?? { station: end.code, stop: true }), line: bay.id, stop: true });
-        this.endBay = { code: end.code, km: bay.toKm - 0.02 };
+        // (the mark: just short of the buffer stop's face, 3.1 m from the line's end: buffered up gently is on it)
+        this.endBay = { code: end.code, km: bay.toKm - 0.0046 };
         this.junctionTraffic.find(x => x.jt.j.code === end.code)?.jt.reserveBay(this.line);
       }
     }
@@ -459,7 +470,9 @@ export class Game {
     for (const l of this.ctl.lines) {
       // departure is given when the stop's work is done (doors closed, loading over), not after a fixed dwell
       // (a Route Mode journey also waits for its planned work there: coaches left or picked up, a loco change)
-      l.dispatcher.gates.set('player', code => this.stop.work.ready(code) && !this.journey?.holds(code));
+      l.dispatcher.gates.set('player', code => this.stop.work.ready(code));
+      // (and never before the journey's work there is done, even on auto-drive)
+      l.dispatcher.holds.set('player', code => !!this.journey?.holds(code));
       l.dispatcher.listeners.push({
         arrived: (t, st, clock) => { if (t.id === 'player' && l === this.lc) { this.rules.arrived(st, clock, this.dyn.headKm); this.stop.arrive(st, false); } },
         departed: (t, st, clock) => { if (t.id === 'player' && l === this.lc) { this.rules.departed(st, !!this.dispatcher.stationState('player', st.code)?.arrived, clock); this.stop.leave(); } },
@@ -468,6 +481,15 @@ export class Game {
           if (l !== this.lc) return;
           if (t.id === 'player') bus.emit('message', { text: `Routed into the loop at ${st.name}: ${f.name ?? 'a faster train'} will overtake. Wait for the starter signal.`, kind: 'info', ms: 9000 });
           else if (f.id === 'player') bus.emit('message', { text: `${t.name ?? 'A slower train'} is waiting in the loop at ${st.name} for you to pass.`, kind: 'info', ms: 7000 });
+        },
+        // a change of line out on the open line (Route ahead), given or not
+        interchanged: (t, ix, onto) => {
+          if (l !== this.lc || t.id !== 'player') return;
+          bus.emit('message', { text: onto === 'middle' ? `Points set: onto the middle line ahead (between ${ix.from.name} and ${ix.to.name})` : `Points set: back to your running line ahead`, kind: 'info', ms: 6000 });
+        },
+        interchangeRefused: (t, _ix, onto) => {
+          if (l !== this.lc || t.id !== 'player') return;
+          bus.emit('message', { text: onto === 'middle' ? 'No line change: the middle line ahead was not free' : 'No line change: your running line was not clear', kind: 'warn', ms: 6000 });
         },
         overtaking: (t, st, leader, to) => {
           if (l !== this.lc) return;
@@ -495,9 +517,11 @@ export class Game {
       // the full gauges, track profile and map are pop-ups from the More drawer: tap one to close it
       this.hud.root.querySelector('.hud-panel')!.addEventListener('click', () => { if (this.hud.root.classList.contains('details')) this.hud.toggleDetails(); });
       this.minimap.canvas.addEventListener('click', () => this.minimap.canvas.classList.remove('shown'));
+      const game = this;
       this.touch = new TouchControls(ui, {
-        sys: this.sys, notches: loco.notches,
-        brake: () => ({ handle: this.dyn.brakes.handle, independent: this.dyn.brakes.independent }),
+        // (whichever loco the player drives: their own, or the shunter in Route Mode's Shunt myself)
+        get sys() { return game.sys; }, notches: loco.notches,
+        brake: () => ({ handle: this.drivenBrakes.handle, independent: this.drivenBrakes.independent }),
         act: (a, down) => this.onAction(a, down, new KeyboardEvent(down ? 'keydown' : 'keyup')),
         setReverser: r => this.sys.setReverser(r),
         camera: i => this.cameras.select(i, this.cameraContext(0.016)),
@@ -673,6 +697,12 @@ export class Game {
     }
   }
 
+  /** Shunt myself: the player's own loco systems while their controls drive the shunter's, and the shunter's brakes */
+  private ownSys: LocoSystems | null = null;
+  private shunterBrakes: BrakeSystem | null = null;
+  /** the brakes the player's handles work: their train's, or the shunter's */
+  private get drivenBrakes() { return this.shunterBrakes ?? this.dyn.brakes; }
+
   /** the camera to come back to after watching the shunting */
   private camBeforeShunt = 0;
   /** the station where the player chose not to wait for a train to pass (Skip wait) */
@@ -695,7 +725,7 @@ export class Game {
       spec: () => this.spec,
       rebuildTrain: spec => this.rebuildTrain(spec),
       arrived: code => !!st(code)?.arrived, departed: code => !!st(code)?.departed,
-      stopKm: code => { if (this.endBay?.code === code) return this.endBay.km; const s = this.line.station(code); return s ? this.line.stopKm(s, this.consist.length) : null; },
+      stopKm: code => { const s = this.line.station(code); return s ? this.stopTargetKm(s) : null; },
       showLoco: on => { for (const l of this.trainView.locos) l.group.visible = on; },
       lc: () => this.lc,
       manual: id => this.dispatcher.manual.add(id),
@@ -723,6 +753,35 @@ export class Game {
       },
       message: (text, kind = 'info') => bus.emit('message', { text, kind, ms: 5000 }),
       clock: () => this.time.run,
+      inCab: () => !!this.cameras.mode.inCab,
+      driveCam: on => {
+        if (on) { this.camBeforeShunt = this.cameras.index; this.cameras.select(0, this.cameraContext(0.016)); }
+        else this.cameras.select(this.camBeforeShunt, this.cameraContext(0.016));
+      },
+      secure: () => { this.sys.setThrottle(0); this.sys.regen = 0; this.dyn.brakes.independent = 1; },
+      takeControls: loco => {
+        // the shunter's own systems: engine running, fuel pump on, brakes off, reverser in the middle (ready to go)
+        const b = new BrakeSystem(new Consist(loco, COACHES, { loco: loco.id, coaches: [] }).vehicles);
+        b.handle = BRAKE_POSITIONS.indexOf('Running'); b.independent = 0;
+        const s = new LocoSystems(loco, b);
+        if (s.isDiesel) { s.fuelPump = true; s.engine = 'running'; s.engineRpm = loco.diesel?.idleRpm ?? 400; }
+        s.headlight = 1;
+        this.ownSys ??= this.sys;
+        this.sys = s;
+        this.shunterBrakes = b;
+      },
+      shunterLevers: (dir, braking) => {
+        const b = this.shunterBrakes;
+        if (!b || !this.ownSys) return;
+        if (dir) this.sys.setReverser(dir as -1 | 1);
+        this.sys.notch = dir && !braking ? Math.min(4, this.sys.loco.notches) : 0;
+        b.independent = braking || !dir ? 1 : 0;
+      },
+      returnControls: () => {
+        if (this.ownSys) this.sys = this.ownSys;
+        this.ownSys = null;
+        this.shunterBrakes = null;
+      },
     };
   }
 
@@ -1006,6 +1065,7 @@ export class Game {
   /** Name of a line at a station as a driver would say it. */
   private lineLabel(st: StationInfo, id: string) {
     const pf = st.platforms.find(p => p.lines.includes(id));
+    if (id === MIDDLE_LINE) return 'Middle line (no platform)';
     if (id === this.line.running.id) return `Main line (${id})${pf ? ` - Platform ${pf.num}` : ''}`;
     return `Loop ${id}${pf ? ` - Platform ${pf.num}` : ""}`;
   }
@@ -1019,6 +1079,21 @@ export class Game {
     if (this.routePicker.open) { this.routePicker.hide(); return; }
     if (this.scenario.rules) { bus.emit('message', { text: 'In scenarios the route follows the timetable plan', kind: 'info' }); return; }
     const st = this.stationAhead();
+    // an interchange on the open line before the next station: change between the running and middle lines there
+    const head = this.dyn.headKm, onMiddle = Math.abs(this.path.offsetAt(head)) < 1;
+    const ix = this.line.interchanges.find(x => this.line.graph.byId.get(onMiddle ? x.off : x.on)!.def.rampStart > head + 0.15 && (!st || x.km < st.entryKm));
+    if (ix) {
+      const wanted = this.dispatcher.interchangeWanted.get('player');
+      const here = onMiddle ? 'middle' : 'running', other = onMiddle ? 'running' : 'middle';
+      const label = (k: string) => (k === 'middle' ? 'Middle line' : `Running line (${this.line.running.id})`);
+      const choices: RouteChoice[] = [here, other].map(k => ({ id: k, label: k === here ? `Stay on the ${label(k).toLowerCase()}` : `Change to the ${label(k).toLowerCase()}`, current: (wanted?.ix === ix ? wanted.onto : here) === k }));
+      this.routePicker.show(`Interchange, ${(this.line.canonicalKm(ix.km)).toFixed(1)} km`, choices, id => {
+        if (id === here) { this.dispatcher.interchangeWanted.delete('player'); return; }
+        this.dispatcher.interchangeWanted.set('player', { ix, onto: id as 'middle' | 'running' });
+        bus.emit('message', { text: `Line change asked for at the interchange ahead: set when ${id === 'middle' ? 'the middle line is free' : 'your line is clear'}`, kind: 'info' });
+      });
+      return;
+    }
     if (!st) { bus.emit('message', { text: 'No junction or loop ahead to route into', kind: 'info' }); return; }
     const cur = this.player.plan.get(st.code)?.line || this.line.running.id;
     const choices: RouteChoice[] = st.lineInfo.map(l => ({ id: l.id, label: this.lineLabel(st, l.id), current: l.id === cur }));
@@ -1335,6 +1410,28 @@ export class Game {
     this.applyGod();
   }
 
+  /** What a rigged cab's parts follow (LocoRigPart.drive). */
+  private rigValues() {
+    const s = this.sys, d = this.dyn, b = d.brakes;
+    return {
+      notch: s.notch, regen: s.regen, controller: s.notch > 0 ? s.notch / s.loco.notches : -s.regen / s.loco.regen.notches,
+      reverser: s.reverser, trainBrake: b.handle / (BRAKE_POSITIONS.length - 1), locoBrake: b.independent,
+      headlight: s.headlight, horn: s.hornLow || s.hornHigh ? 1 : 0, speed: Math.abs(d.speedKmph), bp: b.locoBP, bc: b.locoBC, mr: b.mr,
+      flow: Math.max(0, b.er - b.locoBP), amps: d.traction.motorCurrent, rpm: s.engineRpm,
+      engine: s.engine === 'running' ? 1 : s.engine === 'cranking' ? 0.5 : 0, fuelPump: s.fuelPump ? 1 : 0,
+      fuelPressure: s.fuelPump ? (s.engine === 'running' ? 4 + 2 * (s.notch / s.loco.notches) : 3) : 0,
+      cabLight: s.cabLight ? 1 : 0, flasher: s.flasher ? 1 : 0,
+      // lamps: brakes on, an alarm (wheel slip, overspeed, the vigilance warning)
+      brakeOn: b.locoBC > 0.3 ? 1 : 0, alert: d.traction.slipping || s.overspeed || s.vigilanceState !== 'ok' ? 1 : 0, sander: s.sander ? 1 : 0,
+    };
+  }
+
+  /** a cab control's part (what the tutorial points at): the model's own rigged cab, or ours */
+  private controlAnchor(id: string) {
+    const rig = this.trainView.loco.rig;
+    return rig ? rig.anchor(id) : this.controls.anchor(id);
+  }
+
   private setTutorialHighlight(id: string | null) {
     this.hudPulse?.classList.remove('tut-pulse');
     this.hudPulse = null;
@@ -1342,7 +1439,7 @@ export class Game {
     if (id === 'hud:limit') {
       this.hudPulse = document.querySelector('.hud-panel .limit');
       this.hudPulse?.classList.add('tut-pulse');
-      this.highlight.set(this.controls.anchor('display'), 0.12);
+      this.highlight.set(this.controlAnchor('display'), 0.12);
       return;
     }
     if (id === 'signal') {
@@ -1351,7 +1448,7 @@ export class Game {
       this.highlight.set(v ? v.group : null, 1.6, 6.5);
       return;
     }
-    this.highlight.set(this.controls.anchor(id), id.startsWith('gauge:') ? 0.11 : 0.08);
+    this.highlight.set(this.controlAnchor(id), id.startsWith('gauge:') ? 0.11 : 0.08);
   }
 
   /** "Show me": point the cab camera at the step's control (or its gauge). */
@@ -1361,7 +1458,7 @@ export class Game {
     if (this.cameras.index !== 0) this.cameras.select(0, this.cameraContext(0.016));
     const target = step.showMe ?? step.highlight;
     if (!target || target === 'signal' || target === 'hud:limit') { this.cabCam.yaw = 0; this.cabCam.pitch = -0.05; return; }
-    const a = this.controls.anchor(target);
+    const a = this.controlAnchor(target);
     if (!a) return;
     const p = a.getWorldPosition(new THREE.Vector3());
     this.trainView.loco.body.worldToLocal(p);
@@ -1407,13 +1504,87 @@ export class Game {
   private trainToPass(st: StationInfo) {
     const off = this.path.offsetAt(this.dyn.headKm);
     if (Math.abs(off - this.line.running.offset) < 0.5) return null; // on the main line: nothing can pass
-    let best: { name: string; km: number } | null = null;
+    let best: { name: string; km: number; a: AIEntry } | null = null;
     for (const a of this.ai) {
-      if (a.route !== this.line || a.train.gone) continue;
+      if (a.route !== this.line || a.train.gone || this.madeWay.has(a.train)) continue;
       const km = st.platformToKm - a.train.headKm;
-      if (km > 0 && km < 25 && (!best || km < best.km)) best = { name: a.train.def.name, km };
+      if (km > 0 && km < 25 && (!best || km < best.km)) best = { name: a.train.def.name, km, a };
     }
     return best;
+  }
+
+  /** AI trains made to stand aside for the player (Skip wait / Skip signal): left alone by the dispatcher until then (run clock) */
+  private madeWay = new Map<AITrain, number>();
+
+  /**
+   * Out of the player's way: the train stops where it is (`stop`), or moves across onto the middle line where
+   * that is free (`middle`; claimed there, the other direction shares it). Its routes are given up and the
+   * dispatcher leaves it alone for a while.
+   */
+  private makeWay(a: { train: AITrain; route: Route }, how: 'stop' | 'middle') {
+    const lc = this.ctl.of(a.route), t = a.train;
+    if (how === 'middle') {
+      if (!a.route.middle) return false;
+      const lo = t.tailKm - 0.4, hi = t.headKm + 1.5;
+      for (const o of this.ctl.occupantsFor(lc)) {
+        if (o.id === t.id || o.headKm < lo || o.tailKm > hi) continue;
+        for (let km = Math.max(lo, o.tailKm); km <= Math.min(hi, o.headKm); km += 0.05) if (Math.abs(o.offsetAt(km)) < 1) return false;
+      }
+      const ends = a.route.stations.filter(s => s.type !== 'halt');
+      const prev = [...ends].reverse().find(s => s.km <= t.headKm), next = ends.find(s => s.km > t.headKm);
+      if (prev && next && !lc.interlocking.claimSection(t.id, prev, next)) return false;
+      t.moveToLine(0);
+    } else t.holdS = 120;
+    lc.interlocking.releaseTrain(t.id);
+    lc.dispatcher.manual.add(t.id);
+    this.madeWay.set(t, this.time.run + (how === 'stop' ? 120 : 8));
+    return true;
+  }
+
+  /** The train ahead on the player's own line that a red signal in front of them is for (within 6 km), if any. */
+  private signalBlocker() {
+    const head = this.dyn.headKm;
+    let best: AIEntry | null = null;
+    for (const a of this.ai) {
+      const t = a.train;
+      if (a.route !== this.line || t.gone || this.madeWay.has(t) || t.tailKm < head || t.tailKm - head > 6) continue;
+      if (Math.abs(t.offsetAt(t.tailKm) - this.pathOffset(t.tailKm)) > 1) continue;
+      if (!best || t.tailKm < best.train.tailKm) best = a;
+    }
+    return best;
+  }
+
+  /** Skip signal: the train ahead goes onto the middle line (or, where there is none free, out of service) so the player can pass. */
+  private skipSignal() {
+    const a = this.signalBlocker();
+    if (!a) { bus.emit('message', { text: 'No train ahead on your line to move: the signal is held for another reason', kind: 'info' }); return; }
+    if (this.makeWay(a, 'middle')) { bus.emit('message', { text: `${a.train.def.name} moved onto the middle line: your line is clear`, kind: 'info', ms: 5000 }); return; }
+    a.train.gone = true;
+    this.ctl.of(a.route).interlocking.releaseTrain(a.train.id);
+    bus.emit('message', { text: `${a.train.def.name} taken off the line: your line is clear`, kind: 'info', ms: 5000 });
+  }
+
+  /** The Skip signal button: shown while the player stands at a red signal with a train ahead on their line. */
+  private skipSignalBtn: HTMLButtonElement | null = null;
+  private skipSignalT = 0;
+  private updateSkipSignal(dt: number) {
+    if ((this.skipSignalT -= dt) > 0) return;
+    this.skipSignalT = 0.5;
+    for (const [t, until] of this.madeWay) {
+      if (this.time.run < until && !t.gone) continue;
+      for (const l of this.ctl.lines) l.dispatcher.manual.delete(t.id);
+      this.madeWay.delete(t);
+    }
+    const ns = this.nextSignal();
+    const show = this.started && !this.journey?.driving && Math.abs(this.dyn.speed) < 0.1 && !!ns && ns.aspect === 'R' && ns.km - this.dyn.headKm < 0.6 && !!this.signalBlocker();
+    if (show && !this.skipSignalBtn) {
+      const b = this.skipSignalBtn = document.createElement('button');
+      b.className = 'skip-signal';
+      b.textContent = 'Skip signal: move the train ahead onto the middle line';
+      b.addEventListener('click', () => this.skipSignal());
+      this.ui.appendChild(b);
+    }
+    if (this.skipSignalBtn) this.skipSignalBtn.hidden = !show;
   }
 
   /** The station the player's train is at or near (within 1.5 km), and what the train is doing there, for the crowds. */
@@ -1510,6 +1681,8 @@ export class Game {
     syncViewport();
     this.pausedNeedsRender = true;
     const w = this.rec.output?.w ?? innerWidth, h = this.rec.output?.h ?? innerHeight;
+    // a fixed output size (Record Mode, its captures): exactly its pixels, whatever the screen and adaptive resolution do
+    if (this.rs.exactPixels !== !!this.rec.output) { this.rs.exactPixels = !!this.rec.output; this.appliedScale = this.renderScale(); this.rs.setRenderScale(this.appliedScale); }
     this.rs.resize(w, h);
     this.cameras.camera.aspect = w / h;
     this.cameras.camera.updateProjectionMatrix();
@@ -1637,7 +1810,12 @@ export class Game {
     if (!this.cameras.mode.inCab) return null;
     this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.rcam);
     // a model's own cab: only a console with hit boxes is clickable (otherwise keyboard / gamepad / touch drive it)
-    const targets = !this.trainView.loco.usesModelCab ? this.controls.hitTargets : this.panel?.ready ? this.panel.hitTargets : [];
+    if (this.journey?.driving) {
+      const hit = this.raycaster.intersectObjects(this.journey.shunterRig()?.hitTargets ?? [], false)[0];
+      return hit && hit.distance < 2.5 ? (hit.object.userData.control as string) : null;
+    }
+    const rig = this.trainView.loco.rig;
+    const targets = !this.trainView.loco.usesModelCab ? this.controls.hitTargets : rig ? rig.hitTargets : this.panel?.ready ? this.panel.hitTargets : [];
     const hit = this.raycaster.intersectObjects(targets, false)[0];
     return hit && hit.distance < 2.5 ? (hit.object.userData.control as string) : null;
   }
@@ -1701,9 +1879,12 @@ export class Game {
         decel: e.instantBrakes ? Math.max(0.45, brake * 0.8) : undefined,
         nextStop: e.obeySignals ? this.block.nextSignal(d.headKm, this.path.offsetAt(d.headKm), true, this.pathOffset) : null,
         stationStopKm: this.nextBookedStopKm(),
-        hold: this.stop.holding,
+        // (also while a Route Mode journey's shunting, coupling or loco change here is not done, or the player drives the shunter)
+        hold: this.stop.holding || !!this.journey?.driving || !!this.journey?.holdsHere(),
         endKm: this.line.lengthKm - 0.04,
       };
+      // (auto-drive is the driver: it answers the vigilance alarm, and resets a penalty once stopped)
+      if (e.autoDrive && s.vigilanceState !== 'ok') s.acknowledgeVigilance(d.speed);
       if (e.autoDrive) this.autoDriver.drive(dt, d, s, targets);
       else this.autoDriver.autoStop(d, s, targets);
     }
@@ -1714,8 +1895,16 @@ export class Game {
     // doors open: no traction (interlock)
     const doorsOpen = this.stop.blocksTraction;
     if (doorsOpen && s.notch > 0 && this.t - this.doorHintAt > 4) { this.doorHintAt = this.t; bus.emit('message', { text: isTouch ? 'Close doors first' : `Close doors first (${settings.get().keys.doors.replace(/^Key/, '')})`, kind: 'warn', ms: 3000 }); }
-    d.step(dt, { notch: s.notch, regenNotch: s.regen, reverser: s.reverser, sander: s.sander, powerAvailable: s.powerAvailable && !doorsOpen }, env);
+    const away = !!this.ownSys; // (in the shunter: the controls are its, the train stands)
+    d.step(dt, { notch: away ? 0 : s.notch, regenNotch: away ? 0 : s.regen, reverser: away ? 0 : s.reverser, sander: s.sander, powerAvailable: s.powerAvailable && !doorsOpen && !away }, env);
     if (this.bench) d.speed = this.bench.cfg.speedKmph / 3.6;
+    // God Mode instant brakes: the train stops at once (up to 12 m/s², as hard as the brake asked: the train
+    // brake's service range, emergency, or the loco brake)
+    if (e.instantBrakes) {
+      const b = d.brakes, svc = BRAKE_POSITIONS.indexOf('Service 1');
+      const ask = b.emergency ? 1 : Math.max(b.handle >= svc ? (b.handle - svc + 1) / (BRAKE_POSITIONS.length - svc) : 0, b.independent);
+      if (ask > 0 && d.speed !== 0) { const dv = 12 * ask * dt; d.speed = Math.abs(d.speed) <= dv ? 0 : d.speed - Math.sign(d.speed) * dv; }
+    }
     this.journey?.afterStep();
     this.bufferStops();
     for (const id of this.path.update(d.headKm, d.tailKm)) bus.emit('switch-crossed', { id });
@@ -1772,7 +1961,7 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
   private cameraContext(dt: number): CameraContext {
-    const tg = this.rec.cameraTarget?.();
+    const tg = this.rec.cameraTarget?.() ?? this.journey?.cameraTarget();
     if (tg) {
       return {
         dt, time: this.t, train: tg.view, route: tg.route, field: this.field, headKm: tg.headKm, speed: tg.speed,
@@ -1842,7 +2031,8 @@ export class Game {
       a.view.loco.setLights(night > 0.3 || this.weather.p.fog > 0.004 ? 2 : 1, true, false, this.t, 1);
     }
     this.updateYardMoves(wdt, night, this.cameras.camera.position);
-    this.journey?.update(wdt, night);
+    this.journey?.update(dt * this.engine.speed, night);
+    this.updateSkipSignal(dt);
     if (!this.playerHidden) { this.updatePassing(wdt); this.updateSmoke(wdt); }
     this.recordRunner?.frame(dt, wdt);
 
@@ -1852,7 +2042,9 @@ export class Game {
     this.recordRunner?.afterCamera?.(dt);
     this.syncRenderCamera();
     const cam = this.cameras.camera;
-    const inCab = !!this.cameras.mode.inCab;
+    // (Shunt myself: the camera is in the shunter's cab, not ours)
+    const away = !!this.journey?.driving;
+    const inCab = !!this.cameras.mode.inCab && !away;
     this.cab.group.visible = inCab;
     if (this.modelInterior) this.modelInterior.group.visible = inCab && this.trainView.loco.usesModelCab;
     if (this.panel) {
@@ -1929,6 +2121,8 @@ export class Game {
     lm.setBeam(headlightOn ? Math.min(0.12, (night * 0.06 + this.weather.p.fog * 3)) * (s.headlight === 2 ? 1 : 0.5) * this.rec.beam : 0);
 
     // cab
+    const shRig = away && this.cameras.mode.inCab ? this.journey!.shunterRig() : null;
+    if (shRig) { const b = this.drivenBrakes; shRig.update(dt, { ...this.rigValues(), speed: this.journey!.shunterKmph(), trainBrake: b.handle / (BRAKE_POSITIONS.length - 1), locoBrake: b.independent, bp: 5, bc: b.independent * 3.5, mr: 9 }); }
     if (inCab) {
       this.cab.update(wdt, this.sheltered ? 0 : this.weather.p.rain, d.speed, s.wipers);
       this.cab.setCabLight(s.cabLight);
@@ -1942,7 +2136,10 @@ export class Game {
         pantoDown: s.pantoDown, vcbOpen: !s.vcb, km: this.line.canonicalKm(d.headKm), nextSignal: ns ? ns.id : '-', signalDist: ns ? (ns.km - d.headKm) * 1000 : 99999,
         aspect: ns ? ns.aspect : '-', clock: formatClock(this.time.seconds, true), units: units === 'mph' ? 'mph' : 'km/h', displaySpeed: Math.abs(d.speedKmph) * conv,
       };
-      if (this.modelInterior?.group.visible) this.modelInterior.update(dt, readings, night);
+      const rig = this.trainView.loco.rig;
+      // the model's own levers, needles and screens (data model.cab.rig)
+      if (rig) rig.update(dt, this.rigValues());
+      else if (this.modelInterior?.group.visible) this.modelInterior.update(dt, readings, night);
       else if (this.panel) {
         const L = this.line, head = d.headKm, st = L.stations.find(x => x.platformToKm > head + 0.01);
         const stDist = st ? ((this.plan.get(st.code) ? L.stopKm(st, this.consist.length) : st.platformFromKm) - head) * 1000 : 0;
@@ -2022,7 +2219,7 @@ export class Game {
     // dynamic resolution, from the last frame's time (not in benchmarks: they measure a fixed setup).
     // Changed before rendering: resizing clears the canvas, so a change after it showed a blank frame.
     const st = settings.get();
-    if (st.adaptiveQuality && !this.bench && !this.rec.noAdaptive) {
+    if (st.adaptiveQuality && !this.bench && !this.rec.noAdaptive && !this.rec.output) {
       const sc = this.adaptiveRes.update(this.engine.rawMs, this.rs.gpuMs, st.renderScale, dt);
       if (Math.abs(sc - this.appliedScale) > 1e-3) { this.appliedScale = sc; this.rs.setRenderScale(sc); }
     } else if (Math.abs(this.renderScale() - this.appliedScale) > 1e-3) { this.appliedScale = this.renderScale(); this.rs.setRenderScale(this.appliedScale); }
@@ -2131,9 +2328,14 @@ export class Game {
       const p = this.plan.get(st.code);
       if (!p?.stop || this.dispatcher.stationState('player', st.code)?.arrived) continue;
       // a journey ending in a junction's bay: up to the buffer stop
-      return this.endBay?.code === st.code ? this.endBay.km : this.line.stopKm(st, this.consist.length);
+      return this.stopTargetKm(st);
     }
     return null;
+  }
+
+  /** Where the head stops at a station: its stop mark, or a journey's end bay just short of the buffer stop. */
+  private stopTargetKm(st: StationInfo) {
+    return this.endBay?.code === st.code ? this.endBay.km : this.line.stopKm(st, this.consist.length);
   }
 
   /** dead ends (buffer stops) of each direction's view, found once */
@@ -2348,7 +2550,7 @@ export class Game {
     const L = this.line;
     const st = L.stations.find(x => x.platformToKm > head + 0.01);
     const stopping = st ? !!this.plan.get(st.code) : false;
-    const stDist = st ? ((stopping ? L.stopKm(st, this.consist.length) : st.platformFromKm) - head) * 1000 : 0;
+    const stDist = st ? ((stopping ? this.stopTargetKm(st) : st.platformFromKm) - head) * 1000 : 0;
     // next lower limit
     let restriction: { kmph: number; dist: number } | null = null;
     for (let km = head + 0.02; km < head + 4; km += 0.02) {
@@ -2481,6 +2683,7 @@ export class Game {
         this.pausedNeedsRender = true;
       },
       setFpsCap: fps => { this.engine.minFrameMs = fps > 0 ? 1000 / fps : 0; },
+      setFrameClock: (fixedS, gate) => { this.engine.fixedFrameS = fixedS; this.engine.gate = gate; this.engine.resetClock(); },
       frameMs: () => this.engine.rawMs,
       requestRender: () => { this.pausedNeedsRender = true; },
       paused: () => this.engine.paused,

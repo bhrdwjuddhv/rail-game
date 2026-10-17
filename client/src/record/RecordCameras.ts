@@ -6,8 +6,10 @@ import { lookAtQuat } from '../camera/CameraManager';
 import type { SceneFile } from '@rail/shared/record/SceneFile';
 import type { CamTarget, Studio } from './host';
 import type { RecordTrains, TrainRef } from './RecordTrains';
+import { icon } from '../ui/theme/icons';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _q = new THREE.Quaternion(), _m = new THREE.Matrix4(), _e = new THREE.Euler();
+const _up = new THREE.Vector3(0, 1, 0), _x = new THREE.Vector3(1, 0, 0);
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export type Shake = 'none' | 'light' | 'handheld';
@@ -184,6 +186,109 @@ export class TracksideCam implements CameraMode {
   }
 }
 
+/** Which car of the followed train the Follow camera holds on to. */
+export type FollowCar = 'loco' | 'last' | number;
+
+/**
+ * Follow (lock to train): the shot as framed when Follow was pressed, kept relative to a car of the train,
+ * placed every frame from the train as drawn (after interpolation: no jitter). With "lock rotation" the
+ * camera turns with the car on curves (a camera rigged beside it); without, it keeps its world direction
+ * and only moves along. Smoothing 0 is a rigid lock, more a soft lag (a chase car). Dragging, the wheel
+ * and W A S D / Q E change the held framing, which stays locked.
+ */
+export class FollowCam implements CameraMode {
+  readonly name = 'Follow';
+  readonly near = 0.1;
+  groundClearance = 0.3;
+  target: () => CamTarget | null = () => null;
+  car: FollowCar = 'loco';
+  lockRotation = true;
+  /** 0 rigid .. 1 soft */
+  smoothing = 0;
+  /** follow the car's heading only (not its sway and pitch) */
+  ignoreBounce = false;
+  avoidWalls = true;
+  /** pushes a point out of the ground and tunnel walls (set by the cameras) */
+  avoid: ((p: THREE.Vector3) => void) | null = null;
+  /** the framing: in the car's frame (rotation locked) and in the world (moving along only) */
+  private local = new THREE.Vector3();
+  private localQ = new THREE.Quaternion();
+  private worldOff = new THREE.Vector3();
+  private worldQ = new THREE.Quaternion();
+  private fov = 50;
+  private R = new THREE.Quaternion();
+  private cur = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), ok: false };
+
+  /** the held car's frame: where it is drawn, and its rotation (heading only when ignoring bounce) */
+  private carFrame(tg: CamTarget, pos: THREE.Vector3, rot: THREE.Quaternion) {
+    const ms = tg.view.vehicleMatrices, n = ms.length;
+    const i = this.car === 'loco' ? 0 : this.car === 'last' ? n - 1 : clamp(this.car, 0, n - 1);
+    pos.setFromMatrixPosition(ms[i]);
+    rot.setFromRotationMatrix(_m.extractRotation(ms[i]));
+    if (this.ignoreBounce) {
+      const f = _v2.set(1, 0, 0).applyQuaternion(rot);
+      rot.setFromAxisAngle(_up, Math.atan2(-f.z, f.x));
+    }
+  }
+
+  /** Hold this framing (a camera pose) on the target's car. False: no train to follow. */
+  lock(pos: THREE.Vector3, quat: THREE.Quaternion, fov: number) {
+    const tg = this.target();
+    if (!tg) return false;
+    const o = new THREE.Vector3();
+    this.carFrame(tg, o, this.R);
+    const inv = this.R.clone().invert();
+    this.local.copy(pos).sub(o).applyQuaternion(inv);
+    this.localQ.copy(inv).multiply(quat);
+    this.worldOff.copy(pos).sub(o);
+    this.worldQ.copy(quat);
+    this.fov = fov;
+    this.cur.pos.copy(pos); this.cur.quat.copy(quat); this.cur.ok = true;
+    return true;
+  }
+  /** re-held from the shot as it is now (after a change of car or options: nothing jumps) */
+  relock() { if (this.cur.ok) this.lock(this.cur.pos.clone(), this.cur.quat.clone(), this.fov); }
+
+  enter() {}
+
+  private held(out: THREE.Quaternion) { return this.lockRotation ? out.copy(this.R).multiply(this.localQ) : out.copy(this.worldQ); }
+
+  drag(dx: number, dy: number) {
+    const q = this.held(new THREE.Quaternion());
+    q.premultiply(_q.setFromAxisAngle(_up, -dx * 0.0035)).multiply(_q.setFromAxisAngle(_x, -dy * 0.0035));
+    if (this.lockRotation) this.localQ.copy(this.R).invert().multiply(q); else this.worldQ.copy(q);
+  }
+  /** the wheel moves the camera along its view, nearer or further */
+  wheel(dy: number) { this.nudge(new THREE.Vector3(0, 0, dy > 0 ? 1.5 : -1.5)); }
+  /** the held position moved by `d` in the camera's own axes (x right, y up, -z forward) */
+  private nudge(d: THREE.Vector3) {
+    const w = d.applyQuaternion(this.held(new THREE.Quaternion()));
+    if (this.lockRotation) this.local.add(w.applyQuaternion(this.R.clone().invert())); else this.worldOff.add(w);
+  }
+
+  update(ctx: CameraContext, out: Pose) {
+    const tg = this.target();
+    if (!tg) { if (this.cur.ok) { out.pos.copy(this.cur.pos); out.quat.copy(this.cur.quat); } return; }
+    const o = new THREE.Vector3();
+    this.carFrame(tg, o, this.R);
+    const k = ctx.keys, sp = (k('ShiftLeft') || k('ShiftRight') ? 40 : 8) * ctx.dt;
+    const mv = new THREE.Vector3((k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0), (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0), (k('KeyS') ? 1 : 0) - (k('KeyW') ? 1 : 0));
+    if (mv.lengthSq()) this.nudge(mv.multiplyScalar(sp));
+    // the framing now: turning with the car, or keeping its world direction and only moving along
+    const pos = this.lockRotation ? this.local.clone().applyQuaternion(this.R).add(o) : o.clone().add(this.worldOff);
+    const quat = this.held(new THREE.Quaternion());
+    if (this.avoidWalls) this.avoid?.(pos);
+    // smoothing: 0 a rigid lock; more, a lag that eases in
+    const a = this.smoothing <= 0 || !this.cur.ok ? 1 : 1 - Math.exp(-ctx.dt * (1.5 + 18 * (1 - this.smoothing)));
+    this.cur.pos.lerp(pos, a);
+    this.cur.quat.slerp(quat, a);
+    this.cur.ok = true;
+    out.pos.copy(this.cur.pos);
+    out.quat.copy(this.cur.quat);
+    out.fov = this.fov;
+  }
+}
+
 /** A bookmark held (world or train-relative), or a glide from where the camera was to it. */
 export interface Bookmark { pos: THREE.Vector3; quat: THREE.Quaternion; fov: number; relative: boolean; train: TrainRef | null; thumb?: string }
 
@@ -222,7 +327,8 @@ export class RecordCameras {
   readonly attach = new AttachCam();
   readonly trackside = new TracksideCam();
   readonly bookmark = new BookmarkCam();
-  private idx: Record<'drone' | 'orbit' | 'attach' | 'trackside' | 'bookmark', number>;
+  readonly followCam = new FollowCam();
+  private idx: Record<'drone' | 'orbit' | 'attach' | 'trackside' | 'bookmark' | 'follow', number>;
   readonly marks: (Bookmark | null)[] = Array(9).fill(null);
   glideS = 4;
   relative = false;
@@ -238,11 +344,12 @@ export class RecordCameras {
     const h = st.h;
     this.idx = {
       drone: h.addCamera(this.drone), orbit: h.addCamera(this.orbit), attach: h.addCamera(this.attach),
-      trackside: h.addCamera(this.trackside), bookmark: h.addCamera(this.bookmark),
+      trackside: h.addCamera(this.trackside), bookmark: h.addCamera(this.bookmark), follow: h.addCamera(this.followCam),
     };
     // the followed train; else yours; else (studio without a train of yours) the first one spawned
     const target = () => this.trains.camTarget(this.follow) ?? this.trains.camTarget({ kind: 'player' }) ?? (this.trains.list[0] ? this.trains.camTarget({ kind: 'spawned', s: this.trains.list[0] }) : null);
-    this.orbit.target = this.attach.target = this.trackside.target = target;
+    this.orbit.target = this.attach.target = this.trackside.target = this.followCam.target = target;
+    this.followCam.avoid = p => this.keepOut(p);
     this.attach.hideLead = on => {
       const tg = on ? target() : null;
       const lead = tg && this.follow.kind !== 'player' ? tg.view.locos[0]?.group ?? null : null;
@@ -263,6 +370,14 @@ export class RecordCameras {
     this.el.className = 'rec-cams';
   }
 
+  /** the Follow camera's car choices for the followed train: the loco, each coach, the last */
+  private carOptions(): [string, string][] {
+    const tg = this.trains.camTarget(this.follow) ?? this.trains.camTarget({ kind: 'player' });
+    const n = tg?.view.vehicleMatrices.length ?? 1;
+    const coaches: [string, string][] = Array.from({ length: Math.max(0, Math.min(n - 2, 40)) }, (_, i) => [String(i + 1), `Car ${i + 2}`]);
+    return [['loco', 'The loco'], ...coaches, ['last', 'The last car']];
+  }
+
   /** Index of a mode in the camera manager (drone, orbit...). */
   use(mode: keyof RecordCameras['idx'], cut = false) {
     const h = this.st.h;
@@ -275,9 +390,49 @@ export class RecordCameras {
   /** The game's own cameras (cab, chase...) follow the selected train too. */
   existing(i: number) { this.st.h.cameras.select(i, this.ctx()); this.render(); }
 
+  get following() { return this.st.h.cameras.index === this.idx.follow; }
+
+  /**
+   * L / the Follow button: lock the shot as it is now to the followed train (from any camera), or let go of
+   * it (the camera stays where it is, as the drone).
+   */
+  toggleFollow() {
+    const h = this.st.h, c = h.cameras.camera;
+    if (this.following) {
+      this.drone.place(c.position, c.quaternion);
+      this.use('drone', true);
+      this.st.toast('Unfollowed: the camera stays here (drone)');
+      return;
+    }
+    this.manual();
+    if (!this.followCam.lock(c.position.clone(), c.quaternion.clone(), c.fov)) { this.st.toast('No train to follow: select one in Trains', true); return; }
+    this.use('follow', true);
+    this.st.toast('Following: the shot moves with the train (L lets go; drag, wheel, W A S D / Q E adjust it)');
+  }
+
+  /**
+   * Avoid walls: out of the ground on the open line; in a tunnel, inside its bore (the ground there is the
+   * hill above).
+   */
+  private keepOut(p: THREE.Vector3) {
+    const h = this.st.h, n = h.field.nearest(p.x, p.z, 60), r = h.route;
+    const t = n && r.tunnels.find(x => n.km >= x.fromKm && n.km <= x.toKm);
+    if (t && n) {
+      const f = newFrame();
+      r.alignment.sample(n.km * 1000, f);
+      const half = r.halfSpacing + 2.6, dx = p.x - f.x, dz = p.z - f.z, d = Math.hypot(dx, dz);
+      if (d > half) { p.x = f.x + (dx / d) * half; p.z = f.z + (dz / d) * half; }
+      p.y = clamp(p.y, f.y + 0.6, f.y + 6.2);
+      return;
+    }
+    const g = h.field.height(p.x, p.z);
+    if (p.y < g + 0.4) p.y = g + 0.4;
+  }
+
   // ------------------------------------------------------------------ bookmarks
   save(slot: number) {
-    const c = this.st.h.cameras.camera, tg = this.relative ? this.trains.camTarget(this.follow) : null;
+    // (saved while following: relative to that train)
+    const c = this.st.h.cameras.camera, tg = this.relative || this.following ? this.trains.camTarget(this.follow) : null;
     const b: Bookmark = { pos: c.position.clone(), quat: c.quaternion.clone(), fov: c.fov, relative: !!tg, train: tg ? this.follow : null };
     if (tg) {
       const inv = _m.copy(tg.view.vehicleMatrices[0]).invert();
@@ -409,14 +564,15 @@ export class RecordCameras {
   setFilm(el: HTMLElement) { this.filmEl = el; this.render(); }
 
   render() {
-    const h = this.st.h, cur = h.cameras.index, a = this.attach, d = this.director;
+    const h = this.st.h, cur = h.cameras.index, a = this.attach, d = this.director, f = this.followCam;
     const btn = (mode: keyof RecordCameras['idx'], label: string) => `<button data-cm="${mode}" class="${cur === this.idx[mode] ? 'on' : ''}">${label}</button>`;
     const sl = (k: string, label: string, min: number, max: number, step: number, v: number, unit = '') => `<label>${label} <input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-cs="${k}"><output>${Number(v.toFixed(2))}${unit}</output></label>`;
     const followName = this.trains.alive(this.follow) ? this.trains.info(this.follow).name : this.trains.list[0]?.name ?? 'no train yet';
     this.el.innerHTML = `
       <p class="note">Following <b>${esc(followName)}</b> (select a train in Trains to follow it).</p>
       <div class="rec-modes">${btn('drone', 'Drone')}${btn('orbit', 'Orbit')}${btn('attach', 'Attached')}${btn('trackside', 'Trackside')}
-        <button data-cd="toggle" class="${d.on ? 'on' : ''}">Auto Director</button></div>
+        <button data-cd="toggle" class="${d.on ? 'on' : ''}">Auto Director</button>
+        <button data-cf="toggle" class="${this.following ? 'on' : ''}" title="Lock the shot to the train (L)">${icon('lock')} ${this.following ? 'Unfollow' : 'Follow'} (L)</button></div>
       <div class="rec-modes small">${EXISTING.map((n, i) => `<button data-ce="${i}" class="${cur === i ? 'on' : ''}">${n}</button>`).join('')}</div>
       <details ${cur === this.idx.drone ? 'open' : ''}><summary>Drone</summary>
         <p class="note">W A S D move, Q / E down / up, drag to look, Shift fast, Ctrl slow, wheel: speed.</p>
@@ -434,6 +590,13 @@ export class RecordCameras {
         <div class="buttons left"><button data-ct="place">Place here</button></div>
         ${this.trackside.spots.length ? `<label>Camera <select data-cc="spot">${this.trackside.spots.map((s, i) => `<option value="${i}" ${i === this.trackside.index ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></label>` : '<p class="note">Fly the drone to a spot, then Place here.</p>'}
         <label>Looks at <select data-cc="follow"><option value="1" ${this.trackside.follow ? 'selected' : ''}>The selected train</option><option value="0" ${this.trackside.follow ? '' : 'selected'}>Fixed (as placed)</option></select></label></details>
+      <details ${this.following ? 'open' : ''}><summary>Follow (lock to train)</summary>
+        <p class="note">Frame the shot with any camera, then Follow: it keeps the same place and angle on the train at any speed. Drag, wheel and W A S D / Q E adjust it while following.</p>
+        <label>Car <select data-cc="fcar">${this.carOptions().map(([v, n]) => `<option value="${v}" ${String(f.car) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label class="tog"><input type="checkbox" data-cc="frot" ${f.lockRotation ? 'checked' : ''}><span>Lock rotation with the train (turns with it on curves)</span></label>
+        ${sl('fsmooth', 'Smoothing', 0, 1, 0.05, f.smoothing)}
+        <label class="tog"><input type="checkbox" data-cc="fbounce" ${f.ignoreBounce ? 'checked' : ''}><span>Ignore bounce (steady: the heading, not the body's sway)</span></label>
+        <label class="tog"><input type="checkbox" data-cc="fwalls" ${f.avoidWalls ? 'checked' : ''}><span>Avoid walls (out of the ground and tunnel walls)</span></label></details>
       <details ${d.on ? 'open' : ''}><summary>Auto Director</summary>
         ${sl('dirMin', 'Shortest shot', 3, 20, 1, d.minS, ' s')}${sl('dirMax', 'Longest shot', 5, 30, 1, d.maxS, ' s')}
         <label>Trains <select data-cc="which"><option value="selected" ${d.which === 'selected' ? 'selected' : ''}>The selected one</option><option value="random" ${d.which === 'random' ? 'selected' : ''}>Any (random)</option><option value="player" ${d.which === 'player' ? 'selected' : ''}>Yours</option></select></label>
@@ -458,6 +621,7 @@ export class RecordCameras {
       if (d.cp) { this.manual(); this.attach.setPreset(PRESETS.find(p => p.id === d.cp)!); if (this.st.h.cameras.index === this.idx.attach) this.render(); else this.use('attach'); }
       if (d.ct === 'place') { this.manual(); this.placeTrackside(); }
       if (d.cd) { this.director.on = !this.director.on; this.director.next = 0; this.render(); }
+      if (d.cf) { this.toggleFollow(); this.render(); }
       if (d.cb) { const [k, i] = d.cb.split(':'); if (k === 'save') this.save(Number(i)); else this.jump(Number(i), k === 'glide'); }
     });
     this.el.addEventListener('input', e => {
@@ -473,6 +637,7 @@ export class RecordCameras {
       if (k === 'dirMin') this.director.minS = v;
       if (k === 'dirMax') this.director.maxS = v;
       if (k === 'glideS') this.glideS = v;
+      if (k === 'fsmooth') this.followCam.smoothing = v;
     });
     this.el.addEventListener('change', e => {
       const t = e.target as HTMLInputElement, k = t.dataset.cc;
@@ -485,12 +650,17 @@ export class RecordCameras {
       if (k === 'which') this.director.which = t.value as 'selected';
       if (k === 'style') this.director.style = t.value as 'calm';
       if (k === 'relative') this.relative = t.value === '1';
+      // (the Follow camera re-held from the shot as it is: changing an option never jumps the picture)
+      if (k === 'fcar') { this.followCam.car = t.value === 'loco' || t.value === 'last' ? t.value : Number(t.value); this.followCam.relock(); }
+      if (k === 'frot') { this.followCam.lockRotation = t.checked; this.followCam.relock(); }
+      if (k === 'fbounce') { this.followCam.ignoreBounce = t.checked; this.followCam.relock(); }
+      if (k === 'fwalls') this.followCam.avoidWalls = t.checked;
     });
   }
 
   dispose() {
     const h = this.st.h, ctx = this.ctx();
     if (this.hiddenLead) this.hiddenLead.visible = true;
-    for (const m of [this.drone, this.orbit, this.attach, this.trackside, this.bookmark]) h.cameras.remove(m, 4, ctx);
+    for (const m of [this.drone, this.orbit, this.attach, this.trackside, this.bookmark, this.followCam]) h.cameras.remove(m, 4, ctx);
   }
 }

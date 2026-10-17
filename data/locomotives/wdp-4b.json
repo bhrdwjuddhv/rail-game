@@ -1,0 +1,319 @@
+{
+  "id": "wdp-4b",
+  "name": "WDP-4B",
+  "operator": "Bharat Rail Network",
+  "number": "40112",
+  "type": "diesel",
+  "bodyStyle": "diesel-hood",
+  "massT": 120,
+  "lengthM": 21.25,
+  "axles": 6,
+  "bogieCentresM": 12.58,
+  "axleSpacingM": 2.04,
+  "wheelDiameterM": 1.21,
+  "maxPowerKW": 3000,
+  "maxTractiveEffortKN": 400,
+  "maxSpeedKmph": 130,
+  "notches": 8,
+  "regen": {
+    "maxEffortKN": 220,
+    "maxPowerKW": 2600,
+    "fadeStartKmph": 18,
+    "fadeEndKmph": 6,
+    "notches": 8
+  },
+  "brakes": {
+    "maxBrakeForceKN": 130,
+    "independentMaxBarKgcm2": 3.5
+  },
+  "resistance": {
+    "aN": 1850,
+    "bNperMs": 40,
+    "cNperMs2": 7.4
+  },
+  "adhesion": {
+    "dry": 0.34,
+    "wet": 0.23,
+    "damp": 0.28,
+    "sanderBonus": 0.07
+  },
+  "electrical": {
+    "lineVoltageKV": 0.75,
+    "motorCount": 6,
+    "ampsPerKN": 3.8
+  },
+  "diesel": {
+    "engineKW": 3356,
+    "idleRpm": 269,
+    "maxRpm": 904,
+    "cylinders": 16,
+    "crankS": 5,
+    "turboLagS": 2.4,
+    "fuelLitres": 6000,
+    "stackX": 4.9
+  },
+  "livery": {
+    "body": "#a0221c",
+    "band": "#edc200",
+    "roof": "#4f5459",
+    "underframe": "#262829",
+    "logoText": "BRN",
+    "bufferBeam": "#c4271d",
+    "numbers": "#f2c418"
+  },
+  "cabLayout": "wdp4-desk-left",
+  "soundProfile": {
+    "motorBaseHz": 24,
+    "motorHzPerKmph": 3.0,
+    "hornLowHz": [
+      247,
+      311
+    ],
+    "hornHighHz": [
+      370,
+      466
+    ],
+    "blowerHz": 72
+  },
+  "model": {
+    "file": "assets/models/locos/wdm4b.glb",
+    "title": "WDP-4B",
+    "author": "FILL IN: model author",
+    "licence": "FILL IN: licence",
+    "source": "FILL IN: where the model came from",
+    "scale": 1,
+    "rotationDeg": [
+      0,
+      180,
+      0
+    ],
+    "offset": [
+      8.191,
+      -8.66,
+      15.905
+    ],
+    "bogies": [
+      {
+        "node": [
+          "WHEEL ASSEMBLY-1@LOCOMOTIVE(2)/WHEEL ASSEM^WHEEL ASSEMBLY-1@WHEEL ASSEMBLY",
+          "WHEEL ASSEMBLY-1@LOCOMOTIVE(2)/Wheel^WHEEL ASSEMBLY-1@WHEEL ASSEMBLY",
+          "WHEEL ASSEMBLY-1@LOCOMOTIVE(2)/Wheel^WHEEL ASSEMBLY-2@WHEEL ASSEMBLY",
+          "WHEEL ASSEMBLY-1@LOCOMOTIVE(2)/Wheel^WHEEL ASSEMBLY-3@WHEEL ASSEMBLY"
+        ],
+        "wheels": []
+      },
+      {
+        "node": [
+          "WHEEL ASSEMBLY-2@LOCOMOTIVE(2)/WHEEL ASSEM^WHEEL ASSEMBLY-1@WHEEL ASSEMBLY",
+          "WHEEL ASSEMBLY-2@LOCOMOTIVE(2)/Wheel^WHEEL ASSEMBLY-1@WHEEL ASSEMBLY",
+          "WHEEL ASSEMBLY-2@LOCOMOTIVE(2)/Wheel^WHEEL ASSEMBLY-2@WHEEL ASSEMBLY",
+          "WHEEL ASSEMBLY-2@LOCOMOTIVE(2)/Wheel^WHEEL ASSEMBLY-3@WHEEL ASSEMBLY"
+        ],
+        "wheels": []
+      }
+    ],
+    "pantographs": [],
+    "glassMaterials": [
+      "glass"
+    ],
+    "hideInCab": [
+      "cab_interior_root"
+    ],
+    "cab": {
+      "eye": [
+        8.31,
+        3.02,
+        -0.65
+      ],
+      "interior": "rig",
+      "rig": [
+        {
+          "node": "master_controller_handle",
+          "axis": "z",
+          "sign": -1,
+          "drive": "controller",
+          "at": [
+            [
+              -1,
+              40
+            ],
+            [
+              1,
+              -40
+            ]
+          ],
+          "control": "throttle"
+        },
+        {
+          "node": "reverser_handle",
+          "axis": "z",
+          "sign": -1,
+          "drive": "reverser",
+          "at": [
+            [
+              1,
+              -30
+            ],
+            [
+              -1,
+              30
+            ]
+          ],
+          "control": "reverser"
+        },
+        {
+          "node": "auto_brake_handle",
+          "axis": "z",
+          "sign": -1,
+          "drive": "trainBrake",
+          "at": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              45
+            ]
+          ],
+          "control": "trainBrake"
+        },
+        {
+          "node": "independent_brake_handle",
+          "axis": "z",
+          "sign": -1,
+          "drive": "locoBrake",
+          "at": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              45
+            ]
+          ],
+          "control": "locoBrake"
+        },
+        {
+          "node": "horn_lever",
+          "axis": "z",
+          "sign": -1,
+          "drive": "horn",
+          "at": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              25
+            ]
+          ],
+          "control": "hornLow"
+        },
+        {
+          "node": "gauge_1_needle",
+          "axis": "y",
+          "sign": 1,
+          "drive": "mr",
+          "at": [
+            [
+              0,
+              -135
+            ],
+            [
+              12,
+              135
+            ]
+          ]
+        },
+        {
+          "node": "gauge_2_needle",
+          "axis": "y",
+          "sign": 1,
+          "drive": "bp",
+          "at": [
+            [
+              0,
+              -135
+            ],
+            [
+              10,
+              135
+            ]
+          ],
+          "control": "gauge:bpbc"
+        },
+        {
+          "node": "gauge_3_needle",
+          "axis": "y",
+          "sign": 1,
+          "drive": "bc",
+          "at": [
+            [
+              0,
+              -135
+            ],
+            [
+              10,
+              135
+            ]
+          ]
+        },
+        {
+          "node": "fp_indicator_needle",
+          "axis": "y",
+          "sign": 1,
+          "drive": "fuelPressure",
+          "at": [
+            [
+              0,
+              -90
+            ],
+            [
+              10,
+              90
+            ]
+          ]
+        }
+      ],
+      "screens": {
+        "screen_left": "drive",
+        "screen_right": "engine"
+      },
+      "lamps": {
+        "btn_green": {
+          "drive": "engine"
+        },
+        "btn_yellow": {
+          "drive": "brakeOn"
+        },
+        "btn_orange": {
+          "drive": "alert",
+          "blink": true
+        },
+        "btn_grey": {
+          "drive": "fuelPump",
+          "color": "#d8e4ff"
+        }
+      }
+    },
+    "lights": {
+      "head": [
+        10.0,
+        3.85
+      ],
+      "markers": [
+        10.55,
+        1.55,
+        0.95
+      ]
+    },
+    "look": {
+      "roughness": 0.55,
+      "metalness": 0.05
+    },
+    "maxTriangles": 160000
+  }
+}

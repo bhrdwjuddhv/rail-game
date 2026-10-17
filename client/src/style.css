@@ -25,7 +25,11 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 .ad-card-box .buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
 .ad-card-box button { min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); color: inherit; font-size: 15px; cursor: pointer; }
 .ad-card-box button.primary { background: #2f7de1; border-color: #2f7de1; color: #fff; }
-#ui > .tutorial-card, #ui .pause-btn, #ui > .vig-pop, #ui > .stop-card { pointer-events: auto; }
+#ui > .tutorial-card, #ui .pause-btn, #ui > .vig-pop, #ui > .stop-card, #ui > .journey-card, #ui > .shunt-ctl, #ui > .shunt-panel, #ui > .skip-signal { pointer-events: auto; }
+/* Skip signal: shown while the train stands at a red signal with a train ahead on its line */
+.skip-signal { position: fixed; left: 50%; bottom: 236px; transform: translateX(-50%); z-index: 6; padding: 9px 16px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: #b3261e; color: #fff; font: 600 14px system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
+.skip-signal[hidden] { display: none; }
+html.touch .skip-signal { bottom: calc(var(--sb) + 150px); min-height: 44px; }
 /* touch: the gauges panel and map open as pop-ups that close on a tap */
 html.touch #ui > .minimap.shown, html.touch #hud.details .hud-panel { pointer-events: auto; }
 #game-canvas { width: 100%; height: 100%; display: block; touch-action: none; }

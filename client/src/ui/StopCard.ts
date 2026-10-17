@@ -49,7 +49,9 @@ export class StopCard {
     this.el.hidden = !v;
     if (!v) return;
     const q = this.q;
-    const set = (e: HTMLElement, html: string | null) => { e.hidden = html === null; if (html !== null && e.innerHTML !== html) e.innerHTML = html; };
+    // (compared with what was written last, not innerHTML: the browser's serialisation differs, which rebuilt the
+    // buttons every update and lost clicks on them)
+    const set = (e: HTMLElement, html: string | null) => { e.hidden = html === null; if (html !== null && e.dataset.html !== html) { e.innerHTML = html; e.dataset.html = html; } };
     set(q.acc, v.accuracy);
     q.prog.hidden = !v.progress;
     if (v.progress) {

@@ -47,6 +47,10 @@ import fastForward from '@phosphor-icons/core/duotone/fast-forward-duotone.svg?r
 import menu from '@phosphor-icons/core/duotone/list-duotone.svg?raw';
 import select from '@phosphor-icons/core/duotone/crosshair-duotone.svg?raw';
 import videoCamera from '@phosphor-icons/core/duotone/video-camera-duotone.svg?raw';
+import record from '@phosphor-icons/core/duotone/record-duotone.svg?raw';
+import stop from '@phosphor-icons/core/duotone/stop-duotone.svg?raw';
+import folder from '@phosphor-icons/core/duotone/folder-duotone.svg?raw';
+import lock from '@phosphor-icons/core/duotone/lock-simple-duotone.svg?raw';
 import copy from '@phosphor-icons/core/duotone/copy-duotone.svg?raw';
 import download from '@phosphor-icons/core/duotone/download-simple-duotone.svg?raw';
 import trash from '@phosphor-icons/core/duotone/trash-duotone.svg?raw';
@@ -132,7 +136,7 @@ const REGISTRY = {
   info: ph(info), star: ph(star), caretLeft: ph(caretLeft), caretRight: ph(caretRight), caretDown: ph(caretDown),
   swap: ph(swap), restart: ph(restart), home: ph(home), tutorial: ph(tutorial), lightning: ph(lightning), film: ph(film),
   keyboard: ph(keyboard), help: ph(help), scenarios: ph(scenarios), compass: ph(compass), route: ph(route), globe: ph(globe),
-  more: ph(more), fastForward: ph(fastForward), menu: ph(menu), select: ph(select), videoCamera: ph(videoCamera), copy: ph(copy),
+  more: ph(more), fastForward: ph(fastForward), menu: ph(menu), select: ph(select), videoCamera: ph(videoCamera), record: ph(record), stop: ph(stop), folder: ph(folder), lock: ph(lock), copy: ph(copy),
   download: ph(download), trash: ph(trash), plus: ph(plus), minus: ph(minus), warning: ph(warning), megaphone: ph(megaphone),
   save: ph(save), recent: ph(recent), pin: ph(pin), train: ph(train), mountains: ph(mountains), wind: ph(wind),
   sliders: ph(sliders), arrowLeft: ph(arrowLeft), arrowRight: ph(arrowRight), eye: ph(eye), eyeSlash: ph(eyeSlash),

@@ -1,7 +1,8 @@
 import type { BlockSystem } from '../signalling/BlockSystem';
 import type { Interlocking } from '../signalling/Interlocking';
 import type { Occupant } from '../signalling/Signal';
-import { MIDDLE_LINE, type Route, type StationInfo } from '../track/Route';
+import { MIDDLE_LINE, type Interchange, type Route, type StationInfo } from '../track/Route';
+import type { Switch } from '../track/TrackGraph';
 import { parseClock } from '../util';
 import type { WorkKind } from './StationWork';
 
@@ -54,7 +55,7 @@ export interface WorkedTrain extends Occupant {
 interface StationState {
   arrived: boolean; arrivedAt: number; departed: boolean; waitHome: number; departRequested: boolean;
   /** giving way here: received into the loop and held until this train has passed */
-  giveWay?: string; giveWaySince?: number; giveWayTold?: boolean;
+  giveWay?: string; giveWaySince?: number; giveWayTold?: boolean; giveWayToldFor?: string;
   /** sent along the middle line from here to overtake this train (told once) */
   overtakeTold?: boolean;
   /** when it was first ready to leave from inside the station (a big junction lets them out in that order) */
@@ -68,6 +69,10 @@ export interface DispatchListener {
   givingWay?(train: WorkedTrain, st: StationInfo, follower: WorkedTrain): void;
   /** `train` leaves `st` along the middle line to overtake `leader`, rejoining its line at `to` (or later) */
   overtaking?(train: WorkedTrain, st: StationInfo, leader: WorkedTrain, to: StationInfo): void;
+  /** `train` changed line at an interchange on the open line: onto the middle line, or back to its running line */
+  interchanged?(train: WorkedTrain, ix: Interchange, onto: 'middle' | 'running'): void;
+  /** a change of line asked for at an interchange could not be given before the train reached it */
+  interchangeRefused?(train: WorkedTrain, ix: Interchange, onto: 'middle' | 'running'): void;
 }
 
 const MIN_DWELL = 20;
@@ -93,6 +98,15 @@ export class Dispatcher {
    * loading done) instead of a minimum dwell: ready(code) gives the road.
    */
   readonly gates = new Map<string, (code: string) => boolean>();
+  /**
+   * Work a train must wait for before it leaves, whatever else lets it go (God Mode's auto-drive leaving at
+   * once included): a Route Mode journey's shunting, coupling or loco change at the station.
+   */
+  readonly holds = new Map<string, (code: string) => boolean>();
+  /** changes of line asked for at the next interchange (the player's: Route ahead) */
+  readonly interchangeWanted = new Map<string, { ix: Interchange; onto: 'middle' | 'running' }>();
+  /** interchange points set for a train: put back once its tail is past them */
+  private interchangeUse = new Map<string, { ix: Interchange; sw: Switch; onto: 'middle' | 'running' }>();
 
   constructor(private route: Route, private interlocking: Interlocking, private block: BlockSystem) {}
 
@@ -194,6 +208,11 @@ export class Dispatcher {
     if (st.type === 'halt' || !this.loopAt(st) || t.headKm - t.tailKm > st.exitKm - st.entryKm - 0.25) return null;
     // the player's train with the middle line free through here: the faster train goes round along it, the player is not held
     if (t.player && this.route.middle && this.interlocking.middleFree(st, this.route.middleSectionEnd(st) ?? undefined)) return null;
+    // the player is only ever held beside a platform (they may want to stop there): not in a loop without one,
+    // nor on the middle line (Devghati: no loops, so the middle line was its "loop")
+    if (t.player && !st.platforms.some(p => p.lines.includes(this.loopAt(st)!.id))) return null;
+    // the player is only ever held beside a platform (they may want to stop there): a loop without one, no overtake
+    if (t.player && !st.platforms.some(p => p.lines.includes(this.loopAt(st)!.id))) return null;
     const cruise = (x: WorkedTrain) => x.cruiseKmph ?? 80;
     // the leader: its cruising speed, or slower if it is dawdling (never assumed below half of it)
     const vt = Math.min(cruise(t), Math.max(Math.abs(t.speed) * 3.6, cruise(t) * 0.5)), pt = t.priority ?? 2;
@@ -223,6 +242,9 @@ export class Dispatcher {
    * on the middle line). Returns that train and the section's far station.
    */
   middleOvertake(t: WorkedTrain, st: StationInfo, trains: WorkedTrain[]): { leader: WorkedTrain; to: StationInfo } | null {
+    // the player's train keeps to its running and platform lines (they stop where they choose): slower
+    // trains stand aside for it instead
+    if (t.player) return null;
     const to = this.route.middleSectionEnd(st);
     if (!to || to.entryKm - st.exitKm < 1.2) return null;
     // a train leaving the railway before the section's end has nowhere to rejoin its line (it would stand on the middle line)
@@ -261,7 +283,7 @@ export class Dispatcher {
           const recv = this.interlocking.find(t.id, st, 'reception');
           if (!recv) {
             const f = this.overtaker(t, st, trains);
-            if (f?.id !== s.giveWay) { s.giveWay = f?.id; s.giveWaySince = undefined; s.giveWayTold = false; }
+            if (f?.id !== s.giveWay) { s.giveWay = f?.id; s.giveWaySince = undefined; s.giveWayTold = !!f && f.id === s.giveWayToldFor; }
           } else if (s.giveWay && recv.lineId !== this.loopAt(st)?.id) s.giveWay = undefined; // the loop was not free
           if (s.giveWay) line = this.loopAt(st)!.id;
         }
@@ -282,7 +304,8 @@ export class Dispatcher {
           if (had && !!had.fromMiddle !== fromMiddle && t.headKm < Math.min(...had.needs.map(n => n.sw.def.rampStart)) - 0.01) this.interlocking.release(had);
           // a big junction: a train calling here gets a platform line, never a through line (each train its own
           // turn round the platforms, so they are all used); a goods train runs round on the avoiding line
-          let prefs = fromMiddle ? [line, MIDDLE_LINE] : [line], only = false;
+          // (a train calling here never stands on the middle line, which has no platform: it crosses back, or waits)
+          let prefs = fromMiddle && !plan.stop ? [line, MIDDLE_LINE] : [line], only = false;
           // (one coming along the middle line too: it crosses back to its running line before the ladder)
           if (st.platformLines?.length && plan.line) only = true; // a booked line here (a bay): wait for it, never a through line
           else if (st.platformLines?.length) {
@@ -302,6 +325,7 @@ export class Dispatcher {
           const r = this.interlocking.requestReception(t.id, st, prefs, occupants, fromMiddle, only);
           if (r && s.giveWay && !s.giveWayTold && r.lineId === line) {
             s.giveWayTold = true;
+            s.giveWayToldFor = s.giveWay;
             const f = trains.find(x => x.id === s.giveWay);
             if (f) for (const l of this.listeners) l.givingWay?.(t, st, f);
           }
@@ -309,7 +333,8 @@ export class Dispatcher {
           if (!r && home && !(only && st.platformLines?.length)) { // (never called on into an occupied junction platform: it waits for a free one)
             const nearHome = home.km - t.headKm < 0.4 && home.km > t.headKm;
             s.waitHome = nearHome && Math.abs(t.speed) < 0.1 ? s.waitHome + dt : 0;
-            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, line, occupants, fromMiddle);
+            // (called on into the line it was waiting for: a train calling here, its platform line, not the running line)
+            if (s.waitHome > 25) this.interlocking.requestCallingOn(t.id, st, only ? prefs[0] : line, occupants, fromMiddle);
           }
         }
 
@@ -324,7 +349,7 @@ export class Dispatcher {
         // departure authority
         const gate = this.gates.get(t.id);
         const dwellOk = (!plan.stop || this.departNow.has(t.id) || (s.arrived && (gate ? gate(st.code) : clock - s.arrivedAt >= (plan.dwellS ?? MIN_DWELL)) && (plan.dep === undefined || clock >= plan.dep - 10)))
-          && this.overtaken(t, st, s, trains, clock);
+          && this.overtaken(t, st, s, trains, clock) && !this.holds.get(t.id)?.(st.code);
         if (interlocked && dwellOk && t.headKm > st.entryKm - 3) {
           const recv = this.interlocking.reception(st);
           const at = Math.max(t.tailKm, Math.min(t.headKm, st.platformToKm));
@@ -358,6 +383,67 @@ export class Dispatcher {
           for (const l of this.listeners) l.departed?.(t, st, clock);
         }
       }
+    }
+    if (this.route.interchanges.length) this.updateInterchanges(trains, occupants);
+  }
+
+  /**
+   * The open line's interchanges. A train asked to (the player, from Route ahead) joins the middle line when
+   * its section is free and nothing is near the points; a train on the middle line (an overtake, or the
+   * player asking) drops back onto its running line once it is clear behind and ahead there. The points go
+   * back to normal once the train's tail is past them.
+   */
+  private updateInterchanges(trains: WorkedTrain[], occupants: Occupant[]) {
+    const run = this.route.running.offset;
+    const on = (o: Occupant, km: number, off: number) => Math.abs(o.offsetAt(km) - off) < 1;
+    /** any other train with part of it in [a, b] on the line at `off` (any line: off = null) */
+    const near = (me: string, a: number, b: number, off: number | null) => occupants.some(o => {
+      if (o.id === me || o.headKm < a || o.tailKm > b) return false;
+      if (off === null) return true;
+      for (let km = Math.max(a, o.tailKm); km <= Math.min(b, o.headKm) + 1e-9; km += 0.02) if (on(o, km, off)) return true;
+      return false;
+    });
+    for (const [id, u] of this.interchangeUse) {
+      const t = trains.find(x => x.id === id);
+      if (t && t.tailKm <= u.sw.def.rampEnd + 0.01 && t.headKm > u.sw.def.rampStart - 3) continue;
+      u.sw.unlock(`ix:${id}`);
+      if (!u.sw.locked) u.sw.state = 'normal';
+      this.interchangeUse.delete(id);
+    }
+    for (const t of trains) {
+      if (this.manual.has(t.id) || this.interchangeUse.has(t.id)) continue;
+      const want = this.interchangeWanted.get(t.id);
+      const onMiddle = Math.abs(t.offsetAt(t.headKm)) < 1 && Math.abs(t.offsetAt(t.tailKm)) < 1;
+      // the interchange the train comes to next, and which of its points it would take
+      const ix = this.route.interchanges.find(x => this.route.graph.byId.get(onMiddle ? x.off : x.on)!.def.rampStart > t.headKm + 0.05);
+      if (!ix) { if (want) this.interchangeWanted.delete(t.id); continue; }
+      const onto: 'middle' | 'running' = onMiddle ? 'running' : 'middle';
+      const sw = this.route.graph.byId.get(onto === 'middle' ? ix.on : ix.off)!;
+      const before = sw.def.rampStart - t.headKm;
+      // a request for an interchange the train has passed, or for the other way: dropped
+      if (want && (want.ix !== ix || want.onto !== onto)) {
+        if (want.ix !== ix) for (const l of this.listeners) l.interchangeRefused?.(t, want.ix, want.onto);
+        this.interchangeWanted.delete(t.id);
+        continue;
+      }
+      // only when asked (the player), or an AI train back off the middle line after its overtake
+      if (!want && (t.player || onto === 'middle')) continue;
+      if (before > (want ? 3 : 1.5) || before < 0.12) {
+        if (want && before < 0.12) { for (const l of this.listeners) l.interchangeRefused?.(t, ix, onto); this.interchangeWanted.delete(t.id); }
+        continue;
+      }
+      // the points free to move (nobody on them), and nobody else between the train and them on its line
+      if (sw.locked || near(t.id, sw.def.rampStart - 0.03, sw.def.rampEnd + 0.03, null)) continue;
+      if (near(t.id, t.headKm, sw.def.rampEnd, onto === 'middle' ? run : 0)) continue;
+      if (onto === 'middle') {
+        // the middle line's section: nobody on it ahead, and claimed (the other direction shares it)
+        if (near(t.id, sw.def.rampStart - 0.3, ix.to.entryKm, 0) || !this.interlocking.claimSection(t.id, ix.from, ix.to, sw)) continue;
+      } else if (near(t.id, sw.def.rampStart - 1.2, sw.def.rampEnd + 1.5, run)) continue; // the running line clear behind and ahead
+      sw.state = 'reverse';
+      sw.lock(`ix:${t.id}`);
+      this.interchangeUse.set(t.id, { ix, sw, onto });
+      this.interchangeWanted.delete(t.id);
+      for (const l of this.listeners) l.interchanged?.(t, ix, onto);
     }
   }
 }

@@ -25,6 +25,11 @@ export interface StopHost {
   setWarp: (x: number) => void;
   /** the next signal ahead's aspect (R / Y / YY / G) */
   signalAhead: () => string | null;
+  /** Route Mode: what the train stands for at this station (its shunting, a loco change), and its skip */
+  held?: (code: string) => string | null;
+  /** where the head should stop at a station (a journey's end bay: at the buffer stop) */
+  stopTarget?: (st: StationInfo) => number;
+  skipHeld?: () => void;
   /** an AI train running towards this station on the player's line (km away), for loop waits */
   approaching: (st: StationInfo) => { name: string; km: number } | null;
   /** Skip wait while another train is to pass: stop waiting for it at once (the other train follows instead) */
@@ -40,7 +45,7 @@ const LOADABLE = new Set(['boxcar', 'container']);
 
 export class StationStop {
   readonly work: StationWork;
-  readonly doors: CoachDoors;
+  doors: CoachDoors;
   readonly card: StopCard;
   private st: StationInfo | null = null;
   /** the station the train is stopped at (code), if any */
@@ -55,19 +60,38 @@ export class StationStop {
   private readyShownAt = -1;
   private works = new LoadingWorks();
 
-  /** the train changed (Route Mode coupling) */
-  setConsist(c: Consist) { this.h.consist = c; }
+  /**
+   * The train changed (Route Mode coupling): its doors, its loadable wagons and the guard's lamp go with
+   * the new train (the old doors pointed at vehicles that may be gone).
+   */
+  setConsist(c: Consist) {
+    const h = this.h, open = this.doors.open;
+    h.consist = c;
+    this.wagons = this.wagonsOf(c);
+    this.doors.group.removeFromParent();
+    this.doors = new CoachDoors(c.vehicles, h.coachTypes);
+    this.doors.open = open;
+    h.scene.add(this.doors.group);
+    h.trainView().group.add(this.lamp);
+  }
+
+  private wagonsOf(c: Consist) {
+    const out: number[] = [];
+    c.vehicles.forEach((v, i) => { const t = this.h.coachTypes[v.typeId]; if (v.kind === 'coach' && t?.kind && LOADABLE.has(t.kind)) out.push(i); });
+    return out;
+  }
 
   constructor(private h: StopHost, ui: HTMLElement, key: () => string | null) {
     const c = h.consist;
     const seats = c.vehicles.reduce((a, v) => { const t = h.coachTypes[v.typeId]; return a + (v.kind === 'coach' && (t?.kind ?? 'coach') === 'coach' ? t?.seats ?? 72 : 0); }, 0);
-    c.vehicles.forEach((v, i) => { const t = h.coachTypes[v.typeId]; if (v.kind === 'coach' && t?.kind && LOADABLE.has(t.kind)) this.wagons.push(i); });
+    this.wagons = this.wagonsOf(c);
     const payload = this.wagons.reduce((a, i) => { const t = h.coachTypes[c.vehicles[i].typeId]; return a + (t.massLoadedT - t.massEmptyT); }, 0);
     const loaded = this.wagons.length ? c.vehicles[this.wagons[0]].loaded !== false : true;
     this.work = new StationWork(seats, this.wagons.length, Math.round(payload), loaded);
     this.work.onWagon = (w, isLoaded) => {
       const vi = this.wagons[w];
-      c.setLoaded(vi, isLoaded, h.coachTypes);
+      if (vi === undefined) return;
+      h.consist.setLoaded(vi, isLoaded, h.coachTypes);
       h.trainView().setLook(vi, isLoaded);
     };
     this.doors = new CoachDoors(c.vehicles, h.coachTypes);
@@ -114,7 +138,7 @@ export class StationStop {
     const pf = st.platforms.find(x => x.lines.includes(line)) ?? st.platforms.reduce((b, x) => (Math.abs(x.from - off) < Math.abs(b.from - off) ? x : b));
     this.side = Math.sign(pf.from - off) || 1;
     if (!origin) {
-      const err = (this.h.headKm() - this.h.route().stopKm(st, this.h.consist.length)) * 1000;
+      const err = (this.h.headKm() - (this.h.stopTarget?.(st) ?? this.h.route().stopKm(st, this.h.consist.length))) * 1000;
       this.accuracy = Math.abs(err) <= 2 ? 'Stopped on the mark &#10003;' : err > 0 ? `Overshot by ${Math.round(err)} m` : `Stopped ${Math.round(-err)} m short`;
       this.accuracyT = 8;
     }
@@ -134,7 +158,7 @@ export class StationStop {
     if (id === 'start') { w.start(); if (w.doorsOpen) this.h.doorSound(); }
     if (id === 'close' && w.close()) { this.h.doorSound(); this.h.whistle(); this.lampT = 8; }
     if (id === 'fast') w.fast = !w.fast;
-    if (id === 'skip') this.skip();
+    if (id === 'skip') { if (this.st && this.h.held?.(this.st.code)) this.h.skipHeld?.(); else this.skip(); }
   }
 
   /** T key: open the doors / start loading, or close the doors. */
@@ -166,7 +190,8 @@ export class StationStop {
       else if (!this.warpUntil && this.waiting()) this.skip();
     }
     // the train left the platform: the stop is over
-    if (this.st && Math.abs(this.h.speed()) > 0.5 && w.phase !== 'working') this.leave();
+    // (not while it stands for its shunting there: backing onto coaches, or drawn up to them, is still the stop)
+    if (this.st && this.h.speed() > 0.5 && w.phase !== 'working' && !this.h.held?.(this.st.code)) this.leave();
     // doors
     this.doors.open += ((w.doorsOpen || (w.job && w.job.kind !== 'board' && this.wagonDoors()) ? 1 : 0) - this.doors.open) * Math.min(1, dt * 2.2);
     this.doors.update(this.h.trainView().vehicleMatrices, this.side);
@@ -216,7 +241,9 @@ export class StationStop {
     if (ph === 'closed' || ph === 'none' || (ph === 'done' && !w.doorsOpen)) {
       const clock = this.h.clock(), wait = this.waiting();
       if (this.st && this.h.endStation === st.code) return v.accuracy ? v : null;
-      if (wait?.kind === 'train') v.wait = { text: `Waiting for ${wait.name} to pass (${wait.km.toFixed(1)} km)`, skip: this.warpUntil ? 'Skipping...' : 'Skip wait' };
+      const held = this.st ? this.h.held?.(this.st.code) : null;
+      if (held) v.wait = { text: held, skip: 'Skip shunting' };
+      else if (wait?.kind === 'train') v.wait = { text: `Waiting for ${wait.name} to pass (${wait.km.toFixed(1)} km)`, skip: this.warpUntil ? 'Skipping...' : 'Skip wait' };
       else if (wait?.kind === 'clock') v.wait = { text: `Scheduled departure ${formatClock(wait.dep)}`, skip: 'Skip to departure' };
       else {
         const asp = this.h.signalAhead();

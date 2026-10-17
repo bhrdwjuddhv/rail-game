@@ -43,7 +43,9 @@ export class AITrain implements WorkedTrain {
   headKm: number;
   speed = 0;
   readonly length: number;
-  readonly path: TrackPath;
+  path: TrackPath;
+  /** stood where it is for this long (s): making way for the player's train (Skip wait) */
+  holdS = 0;
   readonly plan = new Map<string, StopPlan>();
   gone = false;
   /** precedence: expresses before goods (Dispatcher.overtaker) */
@@ -71,8 +73,12 @@ export class AITrain implements WorkedTrain {
   get leavesKm() { return this.def.despawnKm; }
   offsetAt(km: number) { return this.path.offsetAt(km); }
 
+  /** Moved across onto the line at `offset` where it stands (Skip signal: onto the middle line, out of the player's way). */
+  moveToLine(offset: number) { this.path = new TrackPath(this.route.graph, this.headKm, this.tailKm, offset); }
+
   update(dt: number) {
     if (this.gone) return;
+    if (this.holdS > 0) { this.holdS -= dt; this.speed = 0; return; }
     const head = this.headKm;
     const off = this.path.offsetAt(head);
     let limit = this.def.maxKmph;

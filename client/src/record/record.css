@@ -88,3 +88,20 @@
 body.rec-picking #game-canvas { cursor: crosshair; }
 body.rec-clean, body.rec-clean #game-canvas { cursor: none; }
 body.rec-fixed { background: #000; }
+
+/* Capture: the REC badge (screen only, never in the video), the screenshot flash, the countdown */
+.rec-badge { position: fixed; top: 12px; left: 12px; z-index: 33; padding: 5px 11px; border-radius: 6px; background: rgba(10, 10, 12, 0.72); color: #fff; font: 600 12.5px/1.3 system-ui, sans-serif; font-variant-numeric: tabular-nums; pointer-events: none; }
+.rec-badge::first-letter { color: #ff3b30; }
+.rec-badge[hidden] { display: none; }
+.rec-flash { position: fixed; inset: 0; z-index: 34; background: #fff; opacity: 0; pointer-events: none; }
+.rec-flash.on { animation: rec-flash 0.35s ease-out; }
+@keyframes rec-flash { from { opacity: 0.55; } to { opacity: 0; } }
+.rec-count { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 34; font: 700 120px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 4px 30px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.rec-count[hidden] { display: none; }
+.rec-panel button.rec-btn { background: #8e1c17; border-color: #c4302b; color: #fff; }
+.rec-panel button.rec-btn.on { background: #c4302b; }
+.rec-panel progress { width: 100%; height: 8px; margin-top: 8px; accent-color: var(--c-saffron); }
+.rec-caps { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+.rec-caps li { display: flex; align-items: center; gap: 6px; }
+.rec-caps li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-caps li small { color: var(--c-text-dim); white-space: nowrap; }

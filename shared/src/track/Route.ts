@@ -174,6 +174,15 @@ export interface RoadDef { id: string; kind: 'lc' | 'parallel'; km: number; ax: 
 /** id of the middle line (RouteData.middleLine) at a station and along the route */
 export const MIDDLE_LINE = 'ML';
 
+/**
+ * Points halfway along a section between two stations, where a train can change between its running line
+ * and the middle line out on the open line: `on` (facing) takes it onto the middle line, `off` (trailing,
+ * further on) back to its running line. Ids of this view's switches; `from` / `to`: the section's stations.
+ */
+export interface Interchange { from: StationInfo; to: StationInfo; on: string; off: string; km: number }
+/** shortest section (km between the stations' limits) that gets an interchange */
+const INTERCHANGE_MIN_KM = 4;
+
 export const STOP_MARKER_COACHES = [8, 12, 16, 20, 24];
 export const LOCO_LENGTH_DEFAULT = 20.56;
 export const DEFAULT_LINE_SPACING_M = 5.3;
@@ -211,6 +220,8 @@ export class Route {
   readonly graph: TrackGraph;
   readonly lengthKm: number;
   readonly stations: StationInfo[] = [];
+  /** interchanges between the running line and the middle line along the open line (this direction's) */
+  readonly interchanges: Interchange[] = [];
   readonly signals: SignalDef[] = [];
   readonly boards: BoardDef[] = [];
   readonly rivers: RiverDef[] = [];
@@ -250,6 +261,7 @@ export class Route {
       return { type: f.type as 'depot' | 'port', km: f.km, fromKm, toKm, side: port ? (data.sea?.side ?? 1) : 1, widthM: port ? (data.sea?.shoreM ?? 150) : 120 };
     });
     for (const s of data.stations) this.compileStation(s);
+    this.compileInterchanges();
     (data.crossovers ?? []).forEach((c, i) => this.addCrossover(c, `XO${i}`, undefined, []));
     this.compileSignals();
     this.compileBoards();
@@ -266,6 +278,27 @@ export class Route {
   /** Full line speed here (the running line, or the middle line); elsewhere (loops, turnouts, wrong line) 30 km/h. */
   lineSpeedAt(offset: number) {
     return Math.abs(offset - this.running.offset) <= 0.3 || (this.middle && Math.abs(offset) <= 0.3);
+  }
+
+  /**
+   * An interchange halfway along every long enough section of the middle line (between two stations that
+   * have turnouts onto it), clear of any halt's platforms in between.
+   */
+  private compileInterchanges() {
+    if (!this.middle) return;
+    const run = this.running.offset, r = RAMP_M / 1000;
+    const ends = this.stations.filter(s => s.type !== 'halt').sort((a, b) => a.km - b.km);
+    for (let i = 0; i + 1 < ends.length; i++) {
+      const a = ends[i], b = ends[i + 1];
+      if (b.entryKm - a.exitKm < INTERCHANGE_MIN_KM) continue;
+      // (on 0.45 km before the middle, off 0.15 km after it: the other direction's, mirrored, never share a stretch)
+      const km = (a.exitKm + b.entryKm) / 2, lo = km - 0.45, hi = km + 0.15 + r;
+      if (this.stations.some(h => h.type === 'halt' && h.platformToKm > lo - 0.2 && h.platformFromKm < hi + 0.2)) continue;
+      const on = `IX-${a.code}-${b.code}-on`, off = `IX-${a.code}-${b.code}-off`;
+      this.graph.addSwitch({ id: on, kind: 'facing', from: run, to: 0, rampStart: +lo.toFixed(6), rampEnd: +(lo + r).toFixed(6) });
+      this.graph.addSwitch({ id: off, kind: 'trailing', from: 0, to: run, rampStart: +(km + 0.15).toFixed(6), rampEnd: +hi.toFixed(6) });
+      this.interchanges.push({ from: a, to: b, on, off, km });
+    }
   }
 
   /** The next station after `st` with turnouts onto the middle line: the far end of `st`'s middle section. */
@@ -358,7 +391,8 @@ export class Route {
     // entry ladder: the platform lines all start before the platform; the bay one more step out
     const chainIn = [...plat, ...(bayIn ? [bayIn] : [])];
     const dIn = chainIn.map((l, i) => step(i ? chainIn[i - 1].offset : run.offset, l.offset));
-    const toe = pf0 - 0.03 - dIn.slice(0, plat.length).reduce((a, b) => a + b, 0);
+    // (every step, the bay's too: its turnout is the last one, and must end before the platforms begin)
+    const toe = pf0 - 0.03 - dIn.reduce((a, b) => a + b, 0);
     let t = toe;
     chainIn.forEach((l, i) => {
       this.graph.addSwitch({ id: `${code}-${l.id}-E`, station: code, kind: 'facing', from: i ? chainIn[i - 1].offset : run.offset, to: l.offset, rampStart: +t.toFixed(6), rampEnd: +(t + dIn[i]).toFixed(6) });

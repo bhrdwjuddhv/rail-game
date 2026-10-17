@@ -270,11 +270,11 @@ export function stopWork(j: Journey, s: JourneyStop, goods: boolean): WorkKind[]
 /** The journey as a scenario (no scoring): the built route, start platform, the planned stops (and their work), the end. */
 export function journeyScenario(j: Journey, route: RouteData, coaches: Record<string, CoachData> = {}): ScenarioData {
   const st = journeyStations(route, j.from, j.to), first = st[0];
-  // every junction on the way is a stop, whatever the plan says (they can never be passed); the start is a
-  // stop too (its platform work: boarding or loading before leaving)
+  // the planned stops (a junction too can be passed); the start is a stop too (its platform work: boarding or
+  // loading before leaving)
   const goods = goodsTrain(j.consist, coaches);
   const timetable: TimetableEntry[] = st.map(x => ({ x, p: j.stops.find(s => s.code === x.code) }))
-    .filter(({ x, p }) => p?.stop || !!x.junction || x.code === j.from)
+    .filter(({ x, p }) => p?.stop || x.code === j.from)
     .map(({ x, p }) => ({ station: x.code, dwellS: p?.dwellS ?? 120, work: stopWork(j, p ?? { code: x.code, stop: true, dwellS: 120 }, goods) }));
   return {
     id: 'route-mode', name: `Journey: ${route.name}`, difficulty: 'Journey', description: 'Route Mode journey',

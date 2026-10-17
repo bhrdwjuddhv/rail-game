@@ -72,14 +72,15 @@ export class SignalView {
   }
 
   private addLamp(key: LampKey, x: number, y: number, z: number, r: number, c: 'Y' | 'G' | 'R' | 'W') {
-    const m = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    // (not tone mapped: a lit lamp shows its own colour at full strength; tone mapping turned every aspect a dull orange)
+    const m = new THREE.MeshBasicMaterial({ color: 0x111111, toneMapped: false });
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8, 0, Math.PI), m);
     mesh.rotation.y = Math.PI; // hemisphere faces -X... (sphere segment opening faces +Z by default)
     mesh.rotation.z = 0;
     mesh.position.set(x, y, z);
     mesh.rotation.set(0, -Math.PI / 2, 0);
     this.group.add(mesh);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.glow(), color: LAMP_COLORS[c], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex.glow(), color: LAMP_COLORS[c], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false, toneMapped: false }));
     glow.position.set(x - 0.15, y, z);
     glow.visible = false;
     this.group.add(glow);
@@ -89,8 +90,8 @@ export class SignalView {
   private set(key: LampKey, on: boolean) {
     const l = this.lamps.get(key);
     if (!l) return;
-    if (on) l.mat.color.copy(l.color).multiplyScalar(5);
-    else l.mat.color.setRGB(0.04, 0.04, 0.035);
+    if (on) l.mat.color.copy(l.color);
+    else l.mat.color.setRGB(0.025, 0.025, 0.022);
     l.glow.visible = on;
   }
 
@@ -106,11 +107,11 @@ export class SignalView {
     for (let i = 0; i < 5; i++) this.set(`RI${i}`, !!s.routeIndicator);
     const dist = camera.distanceTo(this.position);
     // apparent glow grows with distance (stays visible), more at night and in fog
-    const size = (0.35 + dist * 0.0028) * (0.6 + night * 0.9 + Math.min(1, fogDensity * 60) * 1.4);
+    const size = (0.55 + dist * 0.0032) * (0.8 + night * 0.9 + Math.min(1, fogDensity * 60) * 1.4);
     const fogVis = Math.exp(-Math.pow(fogDensity * dist * 0.42, 2));
     for (const l of this.lamps.values()) {
       l.glow.scale.setScalar(size);
-      (l.glow.material as THREE.SpriteMaterial).opacity = Math.min(1, (0.35 + night * 0.65) * fogVis * 1.4);
+      (l.glow.material as THREE.SpriteMaterial).opacity = Math.min(1, (0.75 + night * 0.25) * fogVis * 1.3);
     }
   }
 }

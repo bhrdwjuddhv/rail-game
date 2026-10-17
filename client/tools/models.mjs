@@ -29,7 +29,7 @@ import { ALL_EXTENSIONS, KHRTextureBasisu } from '@gltf-transform/extensions';
 import { convertPrimitiveToTriangles, dedup, getBounds, meshopt, prune, weld } from '@gltf-transform/functions';
 import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
 
-const PIPELINE_VERSION = 6;
+const PIPELINE_VERSION = 7;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const DATA = path.resolve(ROOT, '..', 'data', 'locomotives');
@@ -189,6 +189,21 @@ function thin(doc, budget, scale, maxErrM = 0.06, sloppyOk = false) {
 }
 
 /** Drop the parts the data leaves out: outside cfg.keep (one section of a twin loco), and pantograph arms the game replaces. */
+/**
+ * Parts the game turns about their own origin (wheels; a rigged cab's levers and needles): the mesh moves
+ * to a child node, the named node stays an empty pivot. Meshopt's quantisation folds its offset and scale
+ * into the transform of the node holding the mesh, which would move the pivot.
+ */
+function pivots(doc, cfg) {
+  const names = new Set([...(cfg.bogies ?? []).flatMap(b => b.wheels), ...(cfg.cab?.rig ?? []).map(p => p.node)]);
+  for (const n of doc.getRoot().listNodes()) {
+    const mesh = n.getMesh();
+    if (!mesh || !names.has(n.getName())) continue;
+    n.setMesh(null);
+    n.addChild(doc.createNode(`${n.getName()}-mesh`).setMesh(mesh));
+  }
+}
+
 function keepParts(doc, cfg) {
   const remove = new Set([...(cfg.proceduralPantographs?.remove ?? []), ...(cfg.remove ?? [])]);
   // glass: tagged before materials are merged (the merge may keep another material's name)
@@ -209,7 +224,7 @@ function keepParts(doc, cfg) {
 async function processLoco(id, cfg, cache) {
   const src = path.join(PUBLIC, cfg.file);
   if (!fs.existsSync(src)) return { id, status: 'missing', note: `${cfg.file} not found` };
-  const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify([cfg.texturePatches ?? null, cfg.keep ?? null, cfg.proceduralPantographs ?? null, cfg.hideInCab, cfg.remove ?? null, cfg.glassMaterials ?? null, cfg.maxTriangles ?? null])).update(fs.readFileSync(src)).digest('hex');
+  const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify([cfg.texturePatches ?? null, cfg.keep ?? null, cfg.proceduralPantographs ?? null, cfg.hideInCab, cfg.remove ?? null, cfg.glassMaterials ?? null, cfg.maxTriangles ?? null, (cfg.cab?.rig ?? []).map(p => p.node), cfg.cab?.screens ?? null])).update(fs.readFileSync(src)).digest('hex');
   const outputs = VARIANTS.map(v => path.join(OUT, `${id}.${v.name}.glb`));
   if (!flag('--force') && cache[id]?.key === key && outputs.every(f => fs.existsSync(f))) return { ...cache[id].result, cached: true };
 
@@ -224,7 +239,10 @@ async function processLoco(id, cfg, cache) {
       if (tex) await patchTexture(tex, [p]);
     }
     keepParts(doc, cfg);
-    await doc.transform(dedup(), prune({ keepLeaves: true }), weld());
+    pivots(doc, cfg);
+    // (screens drawn live need their uvs: without textures the prune would drop them)
+    const keepAttributes = !!cfg.cab?.screens;
+    await doc.transform(dedup(), prune({ keepLeaves: true, keepAttributes }), weld());
     // every variant ends as plain triangle lists: the source is triangle strips, which the
     // loader would otherwise convert on the main thread
     for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) if (p.getMode() === 5 || p.getMode() === 6) convertPrimitiveToTriangles(p);
@@ -239,7 +257,7 @@ async function processLoco(id, cfg, cache) {
     // a budget in the data (very dense source models): near copies to it, far ones to a fifth / a twenty-fifth
     if (cfg.maxTriangles) thin(doc, cfg.maxTriangles * (v.ratio < 1 ? (v.minPartM > 1 ? 0.04 : 0.2) : 1), cfg.scale, v.ratio < 1 ? (v.minPartM > 1 ? 0.4 : 0.12) : 0.06, v.minPartM > 1);
     const gpu = await compressTextures(doc, v.tex);
-    await doc.transform(prune({ keepLeaves: true }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+    await doc.transform(prune({ keepLeaves: true, keepAttributes }), meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
     const file = outputs[VARIANTS.indexOf(v)];
     await io.write(file, doc);
     result.variants[v.name] = { mb: +(fs.statSync(file).size / 1048576).toFixed(2), triangles: triangles(doc), textureGpuMB: +(gpu / 1048576).toFixed(1), materials: doc.getRoot().listMaterials().length };

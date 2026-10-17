@@ -19,7 +19,7 @@ import type { Occupant } from './Signal';
  * stations (key: sec:CODE|CODE). Value: the train holding it, in the view
  * (interlocking) that claimed it; `to`: a section's far station, in that view.
  */
-export type MiddleClaims = Map<string, { trainId: string; st: StationInfo; owner: Interlocking; to?: StationInfo }>;
+export type MiddleClaims = Map<string, { trainId: string; st: StationInfo; owner: Interlocking; to?: StationInfo; via?: Switch }>;
 
 /** where a route comes from / goes to on the middle line */
 export interface MiddleRoute {
@@ -217,6 +217,16 @@ export class Interlocking {
     return !next || !this.middle.has(sectionKey(st, next));
   }
 
+  /**
+   * A train joining the middle line out on the open line (at an interchange between `st` and `to`): the
+   * section is its own, from the moment its points (`via`) are set for it until it has left the middle line.
+   */
+  claimSection(trainId: string, st: StationInfo, to: StationInfo, via?: Switch) {
+    if (!this.sectionFree(st, to, trainId)) return false;
+    this.middle.set(sectionKey(st, to), { trainId, st, owner: this, to, via });
+    return true;
+  }
+
   /** Is this section of the middle line (from `st` to `to`) free to claim for `trainId`? */
   sectionFree(st: StationInfo, to: StationInfo, trainId: string) {
     const h = this.middle.get(sectionKey(st, to));
@@ -261,6 +271,8 @@ export class Interlocking {
       const occ = occupants.find(o => o.id === c.trainId);
       if (!occ) { this.middle.delete(code); continue; }
       if (this.routes.some(r => r.trainId === c.trainId && r.station === c.st)) continue;
+      // (joining at an interchange: held while its points are set for the train, before it is on the middle line)
+      if (c.via?.state === 'reverse') continue;
       const a = Math.max(occ.tailKm, c.to ? c.st.exitKm - 0.15 : c.st.entryKm - 0.2), b = Math.min(occ.headKm, c.to ? c.to.entryKm : c.st.exitKm + 0.2);
       let on = false;
       for (let km = a; km <= b + 1e-9; km += 0.02) if (Math.abs(occ.offsetAt(km)) < 1) { on = true; break; }

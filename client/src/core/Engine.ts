@@ -14,6 +14,12 @@ export class Engine {
   /** frame cap (ms between frames, 0 = every display frame): Record Mode's 30 / 60 FPS */
   minFrameMs = 0;
   private due = 0;
+  /**
+   * Record Mode's High-Quality Render: every frame advances the world by exactly this (s), however long it
+   * takes to draw and encode; `gate` holds the next frame while it returns false (the encoder catching up).
+   */
+  fixedFrameS: number | null = null;
+  gate: (() => boolean) | null = null;
   /** called once if the simulation or a frame throws; the loop then stops ticking */
   onError?: (e: unknown) => void;
   private failed = false;
@@ -40,14 +46,15 @@ export class Engine {
   }
 
   private tickInner(nowMs: number) {
-    if (this.minFrameMs > 0) {
+    if (this.gate && !this.gate()) return;
+    if (this.minFrameMs > 0 && this.fixedFrameS === null) {
       // skip display frames until the next one is due (even pacing on 120 / 144 Hz screens too)
       if (this.last >= 0 && nowMs < this.due - 1) return;
       this.due = Math.max(this.due + this.minFrameMs, nowMs);
     }
     if (this.last < 0) this.last = nowMs;
     this.rawMs = nowMs - this.last;
-    const dt = Math.min(0.1, this.rawMs / 1000);
+    const dt = this.fixedFrameS ?? Math.min(0.1, this.rawMs / 1000);
     this.last = nowMs;
     if (!this.paused) {
       prof.begin('sim');

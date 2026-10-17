@@ -1,8 +1,8 @@
 import type { AudioEngine } from './AudioEngine';
 import { fetchBuffer } from '../core/Net';
 
-/** recorded station announcements (client/public/assets/announcement) */
-const FILES = ['railannouncement1.mp3', 'announcement2.mp3', 'announcement3.mp3'];
+/** recorded station announcements (client/public/assets/announcement): a new recording is added to this list */
+const FILES = ['railannouncement1.mp3', 'announcement2.mp3', 'announcement3.mp3', 'announcement4.mp3'];
 /** silence between two announcements (s) */
 const GAP_S = [2.5, 6];
 
