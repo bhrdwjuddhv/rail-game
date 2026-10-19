@@ -1,5 +1,5 @@
 import type { RouteData, StationData } from '../track/Route';
-import { flipJunction, joinedRouteId, joinRoutes, JUNCTION_SECTION_KM, JunctionData, turnRoute } from '../track/Junctions';
+import { flipJunction, joinedRouteId, joinRoutes, JUNCTION_SECTION_KM, JunctionData, sliceRoute, turnRoute } from '../track/Junctions';
 import { Consist, type CoachData, type ConsistSpec, type LocoData } from '../train/Consist';
 import type { ScenarioData } from '../gameplay/Scenario';
 import type { TimetableEntry } from '../gameplay/Timetable';
@@ -125,6 +125,25 @@ export class RailNetwork {
     const uniq = out.filter(p => { const k = p.legs.map(l => l.route + (l.reversed ? '-' : '+')).join() + '|' + p.junctions.join(); if (seen.has(k)) return false; seen.add(k); return true; });
     uniq.sort((x, y) => x.distanceKm - y.distanceKm);
     return uniq.filter(p => p.distanceKm <= uniq[0].distanceKm * 3).slice(0, max);
+  }
+
+  /**
+   * A whole route with the junction at each of its ends (free roam): from the one at its start to the one at
+   * its end (a route end without a junction: its own end station). Null for an unknown route.
+   */
+  span(routeId: string): RouteData | null {
+    const r = this.routes[routeId];
+    if (!r?.stations.length) return null;
+    const at = (end: 'start' | 'end') => this.junctions.find(j => j.connects.some(c => c.route === routeId && c.end === end));
+    const from = at('start')?.code ?? r.stations[0].code, to = at('end')?.code ?? r.stations[r.stations.length - 1].code;
+    const p = this.paths(from, to, 8).find(x => x.legs.length === 1 && x.legs[0].route === routeId && !x.legs[0].reversed);
+    if (!p) return null;
+    // (a junction is built with the routes on both its sides: the part from the first junction's section to the
+    // last one's, without the neighbouring routes beyond)
+    const c = this.compose(p), s0 = c.stations.find(s => s.code === from), s1 = c.stations.find(s => s.code === to);
+    const half = JUNCTION_SECTION_KM / 2;
+    const part = s0 && s1 ? sliceRoute(c, this.junctionByCode(from) ? s0.km - half : 0, this.junctionByCode(to) ? s1.km + half : c.lengthKm) : c;
+    return { ...part, id: c.id, name: r.name };
   }
 
   /** The path's way, as the journey keeps it (the junctions passed through). */

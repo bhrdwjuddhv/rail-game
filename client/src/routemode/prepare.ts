@@ -1,6 +1,20 @@
 import { COACHES, JUNCTIONS, ROUTES, SCENARIOS } from '../data';
 import { type Journey, journeyScenario, RailNetwork } from '@rail/shared/routemode/Journey';
 
+/**
+ * Free roam on a route with the junction at each of its ends: built and registered with the routes; returns its
+ * id (the route itself when it cannot be built).
+ */
+export function prepareSpan(routeId: string): string {
+  const r = new RailNetwork(ROUTES, JUNCTIONS).span(routeId);
+  if (!r) return routeId;
+  ROUTES[r.id] = r;
+  return r.id;
+}
+
+/** the routes to choose from (not the junctions' joined routes, nor routes built for journeys or free roam) */
+export const playableRoutes = () => Object.values(ROUTES).filter(r => !r.id.includes('~') && !r.id.startsWith('rm:'));
+
 /** scenario id of a Route Mode journey (built from the journey each time a run starts) */
 export const ROUTE_MODE_ID = 'route-mode';
 

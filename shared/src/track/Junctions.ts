@@ -1,4 +1,5 @@
 import { mirrorRouteData } from './Railway';
+import { buildElevation } from './Gradient';
 import { DEFAULT_LINE_SPACING_M, PostcardData, RouteData, StationData } from './Route';
 
 /**
@@ -116,6 +117,50 @@ export function junctionStation(j: JunctionData, km: number): StationData {
     type: 'junction', platformLengthM: j.platformLengthM, buildingSide: j.buildingSide,
     lines, platforms, numbers, junction: { id: j.id, style: j.style },
   };
+}
+
+/**
+ * The part of a route from `fromKm` to `toKm`, as a route of its own starting at km 0. Cut at the track
+ * segments' ends just outside the range (no straight, curve or transition is cut through); the height
+ * there carried over; everything along the line clipped to the part and moved with it.
+ */
+export function sliceRoute(d: RouteData, fromKm: number, toKm: number): RouteData {
+  const ends = [0];
+  for (const s of d.segments) ends.push(ends[ends.length - 1] + s.lengthM / 1000);
+  let i0 = 0, i1 = d.segments.length;
+  for (let i = 0; i < ends.length; i++) if (ends[i] <= fromKm + 1e-6) i0 = i;
+  for (let i = ends.length - 1; i >= 0; i--) if (ends[i] >= toKm - 1e-6) i1 = i;
+  const a = ends[i0], b = ends[Math.max(i1, i0 + 1)];
+  if (a <= 0 && b >= d.lengthKm - 1e-6) return d;
+  const { elev } = buildElevation(d.profile, d.lengthKm * 1000, d.startElevationM);
+  const inside = (km: number) => km >= a - 1e-6 && km <= b + 1e-6;
+  const clip = <T extends { fromKm: number; toKm: number }>(list: T[]) => list.filter(r => r.toKm > a && r.fromKm < b).map(r => ({ ...r, fromKm: Math.max(r.fromKm, a), toKm: Math.min(r.toKm, b) }));
+  // the grade in force at the cut starts the part's profile
+  const pts = [...d.profile].sort((x, y) => x.km - y.km);
+  const before = pts.filter(p => p.km <= a).pop();
+  const profile = [...(before ? [{ ...before, km: a }] : []), ...pts.filter(p => p.km > a && p.km < b)];
+  const part: RouteData = {
+    ...d,
+    lengthKm: +(b - a).toFixed(6),
+    startElevationM: elev[Math.min(elev.length - 1, Math.round(a * 1000))],
+    segments: d.segments.slice(i0, Math.max(i1, i0 + 1)),
+    profile,
+    regions: clip(d.regions),
+    stations: d.stations.filter(s => inside(s.km)).map(s => ({ ...s, crossovers: s.crossovers?.filter(c => inside(c.km)) })),
+    signals: d.signals.filter(s => inside(s.km)),
+    speedLimits: clip(d.speedLimits),
+    oheSections: d.oheSections && clip(d.oheSections),
+    structures: clip(d.structures),
+    levelCrossings: d.levelCrossings.filter(l => inside(l.km)),
+    scenery: clip(d.scenery),
+    features: d.features.filter(f => inside(f.km)),
+    landforms: d.landforms?.filter(l => inside(l.km)).map(l => ({ ...l, toKm: l.toKm === undefined ? undefined : Math.min(l.toKm, b) })),
+    riversAlong: d.riversAlong && clip(d.riversAlong),
+    postcards: d.postcards?.filter(p => inside(p.km)),
+    crossovers: d.crossovers?.filter(c => inside(c.km)),
+    sea: d.sea && d.sea.fromKm < b && (d.sea.toKm === undefined || d.sea.toKm > a) ? { ...d.sea, fromKm: Math.max(d.sea.fromKm, a), toKm: d.sea.toKm === undefined ? undefined : Math.min(d.sea.toKm, b) } : undefined,
+  };
+  return shiftRoute(part, -a);
 }
 
 /** Every km field of route data moved by `dkm` (joining routes end to end). */

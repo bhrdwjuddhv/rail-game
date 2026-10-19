@@ -1,27 +1,47 @@
 {
   "id": "double-decker",
-  "name": "Double-decker chair car (3D model)",
+  "name": "Double-decker chair car",
   "massEmptyT": 52,
   "massLoadedT": 62,
   "lengthM": 24.55,
   "bogieCentresM": 15.44,
   "axleSpacingM": 2.56,
   "maxBrakeForceKN": 30,
-  "resistance": { "aN": 950, "bNperMs": 25, "cNperMs2": 1.1 },
-  "livery": { "body": "#f2f2ee", "band": "#2f6fb0", "roof": "#9aa0a6", "window": "#20303c" },
+  "resistance": {
+    "aN": 950,
+    "bNperMs": 25,
+    "cNperMs2": 1.1
+  },
+  "livery": {
+    "body": "#f2f2ee",
+    "band": "#2f6fb0",
+    "roof": "#9aa0a6",
+    "window": "#20303c"
+  },
   "windows": "sealed",
   "interiorLight": "#e9f2ff",
   "seats": 120,
   "model": {
     "file": "assets/models/coach/doubledecker.glb",
     "title": "Double-decker coach",
-    "author": "FILL IN: model author",
-    "licence": "FILL IN: licence",
-    "source": "FILL IN: where the model came from (URL)",
+    "author": "niladrisekhardam597 (CGTrader)",
+    "licence": "CGTrader Royalty Free License (no AI)",
+    "source": "https://www.cgtrader.com/free-3d-models/vehicle/train/indian-railways-lhb-double-deker-coach",
     "scale": 100,
-    "rotationDeg": [0, 90, 0],
-    "offset": [0.36, -0.007, -1.843],
-    "look": { "roughness": 0.5, "metalness": 0.1 },
+    "rotationDeg": [
+      0,
+      90,
+      0
+    ],
+    "offset": [
+      0.36,
+      -0.007,
+      -1.843
+    ],
+    "look": {
+      "roughness": 0.5,
+      "metalness": 0.1
+    },
     "maxTriangles": 90000
   }
 }

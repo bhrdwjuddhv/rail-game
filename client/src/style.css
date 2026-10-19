@@ -25,7 +25,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color:
 .ad-card-box .buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
 .ad-card-box button { min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08); color: inherit; font-size: 15px; cursor: pointer; }
 .ad-card-box button.primary { background: #2f7de1; border-color: #2f7de1; color: #fff; }
-#ui > .tutorial-card, #ui .pause-btn, #ui > .vig-pop, #ui > .stop-card, #ui > .journey-card, #ui > .shunt-ctl, #ui > .shunt-panel, #ui > .skip-signal { pointer-events: auto; }
+#ui > .tutorial-card, #ui .pause-btn, #ui > .vig-pop, #ui > .stop-card, #ui > .journey-card, #ui > .shunt-ctl, #ui > .shunt-panel, #ui > .skip-signal, #ui > .span-card { pointer-events: auto; }
+/* free roam: at the junction at the end of the route, carry on along another */
+.span-card { position: fixed; left: 50%; top: 18%; transform: translateX(-50%); z-index: 8; display: grid; gap: 8px; justify-items: center; padding: 14px 18px; border-radius: 12px; background: rgba(9, 11, 15, 0.92); border: 1px solid rgba(255, 255, 255, 0.18); color: #eef2f5; font: 14px system-ui, sans-serif; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); max-width: min(560px, 92vw); text-align: center; }
+.span-card[hidden] { display: none; }
+.span-card b { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; }
+.span-card b .ic { width: 20px; height: 20px; color: var(--c-saffron, #f0a030); }
+.span-card p { margin: 0; color: var(--dim); }
+.span-card .span-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.span-card button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
 /* Skip signal: shown while the train stands at a red signal with a train ahead on its line */
 .skip-signal { position: fixed; left: 50%; bottom: 236px; transform: translateX(-50%); z-index: 6; padding: 9px 16px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: #b3261e; color: #fff; font: 600 14px system-ui, sans-serif; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); }
 .skip-signal[hidden] { display: none; }
@@ -301,3 +309,26 @@ html.touch .stop-card button { min-height: 44px; }
 /* God Mode: billboard ads table */
 .god .bb-ads table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
 .god .bb-ads th, .god .bb-ads td { padding: 2px 6px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+
+/* main menu: Record Mode as a camera icon in the screen's top right corner, its name sliding out on hover */
+.menu-corners .rec-corner { position: fixed; top: 16px; right: 16px; z-index: 25; display: inline-flex; align-items: center; gap: 0; height: 44px; min-width: 44px; padding: 0 11px; border-radius: 22px; background: rgba(9, 11, 15, 0.78); border: 1px solid rgba(255, 255, 255, 0.18); color: #eef2f5; overflow: hidden; white-space: nowrap; transition: gap 0.2s, padding 0.2s; }
+.menu-corners .rec-corner .ic { width: 22px; height: 22px; flex: none; color: var(--c-saffron, #f0a030); }
+.menu-corners .rec-corner span { max-width: 0; opacity: 0; transition: max-width 0.25s ease, opacity 0.2s; font-weight: 600; }
+.menu-corners .rec-corner:hover, .menu-corners .rec-corner:focus-visible { gap: 8px; padding: 0 16px 0 12px; }
+.menu-corners .rec-corner:hover span, .menu-corners .rec-corner:focus-visible span { max-width: 140px; opacity: 1; }
+/* driving controls: beginner / advanced */
+.menu.main .drive-mode { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0 2px; font-size: 13px; color: var(--dim); }
+#menus.has-bg > .menu.main .drive-mode { justify-content: flex-start; }
+.menu.main .drive-mode button { padding: 4px 12px; font-size: 13px; border-radius: 14px; }
+.menu.main .drive-mode button.on { background: var(--c-saffron-soft, rgba(240, 160, 48, 0.25)); border-color: var(--c-saffron, #f0a030); color: #fff; }
+/* the tutorial's choice of loco: two buttons stacked under its own, indented, laid out like the rest of the menu */
+.menu.main .buttons.vertical > .tut-pick { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: -2px 0 2px 22px; padding-left: 12px; border-left: 2px solid var(--c-line-strong, rgba(255, 255, 255, 0.18)); }
+.menu.main .buttons.vertical > .tut-pick[hidden] { display: none; }
+.menu.main .tut-pick > span { font-size: 12.5px; color: var(--dim); text-align: left; }
+
+/* main menu: Instagram, bottom right */
+.menu-corners .social-ig { position: fixed; right: 16px; bottom: 16px; z-index: 25; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(9, 11, 15, 0.78); border: 1px solid rgba(255, 255, 255, 0.18); color: #eef2f5; transition: transform 0.15s, color 0.15s; }
+.menu-corners .social-ig .ic { width: 24px; height: 24px; }
+.menu-corners .social-ig:hover, .menu-corners .social-ig:focus-visible { color: #e1306c; transform: scale(1.08); }
+
+.menu-corners[hidden] { display: none; }

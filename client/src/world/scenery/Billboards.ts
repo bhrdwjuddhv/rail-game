@@ -32,7 +32,7 @@ const DIST_CLICK = 300;
 const LED_PERIOD = 8;
 
 interface Part { geo: THREE.BufferGeometry; key: string }
-interface Kind { parts: Part[]; lamps: THREE.BufferGeometry | null; panels: THREE.Matrix4[]; lit: boolean }
+interface Kind { parts: Part[]; panels: THREE.Matrix4[]; lit: boolean }
 interface Built { group: THREE.Group; panels: THREE.InstancedMesh[]; leds: { mesh: THREE.Mesh; ads: number[]; slot: BillboardSlot }[] }
 export interface ClickedAd { ad: Ad; image: string | null; slot: BillboardSlot }
 
@@ -142,7 +142,7 @@ export class Billboards {
     const built: Built = { group, panels: [], leds: [] };
     const M = materials() as unknown as Record<string, THREE.Material>;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
-    // structures: instanced per kind and part; lamps only where lit
+    // structures: instanced per kind and part
     const byKind = new Map<string, { s: BillboardSlot; m: THREE.Matrix4 }[]>();
     // panels: instanced per material (ad, format, lit/dark)
     const byMat = new Map<string, { m: THREE.Matrix4[]; who: { slot: BillboardSlot; ad: number }[] }>();
@@ -188,13 +188,6 @@ export class Billboards {
         im.computeBoundingSphere();
         group.add(im);
       }
-      const lit = items.filter(x => !x.s.dim);
-      if (kind.lamps && lit.length) {
-        const im = new THREE.InstancedMesh(kind.lamps, M.lamp, lit.length);
-        lit.forEach(({ m: mm }, i) => im.setMatrixAt(i, mm));
-        im.computeBoundingSphere();
-        group.add(im);
-      }
     }
     for (const [k, e] of byMat) {
       const im = new THREE.InstancedMesh(PANEL, this.material(k), e.m.length);
@@ -214,7 +207,7 @@ export class Billboards {
     if (k) return k;
     const type = (key.startsWith('vshape') ? 'vshape' : key) as BillboardType;
     const side = key === 'vshape-1' ? -1 : 1;
-    const sp = SPEC[type], b = new GeoBatch(), lamps = new GeoBatch();
+    const sp = SPEC[type], b = new GeoBatch();
     const panels: THREE.Matrix4[] = [];
     const W = sp.w, Hh = sp.h, B = sp.bottom, top = B + Hh;
     const panelAt = (x: number, y: number, z: number, ry = 0) => panels.push(mat(x, y + Hh / 2, z, ry).multiply(new THREE.Matrix4().makeScale(W, Hh, 1)));
@@ -226,56 +219,48 @@ export class Billboards {
         b.box(w, h, 0.16, o.clone().multiply(mat(fx, fy, 0.02)), colour, 'metal');
       panelAt(x, B, z + 0.06, ry);
     };
-    const lampsAbove = (xs: number[], x0 = 0, z0 = 0, ry = 0) => {
-      const o = mat(x0, 0, z0, ry);
-      for (const x of xs) {
-        b.box(0.06, 0.06, 1.1, o.clone().multiply(mat(x, top + 0.25, 0.5)), '#3c4044', 'metal');
-        lamps.box(0.45, 0.1, 0.2, o.clone().multiply(mat(x, top + 0.2, 1.05)), '#fff3c4', 'lamp');
-      }
-    };
     const leg = (x: number, z: number, h: number, w = 0.3) => b.box(w, h + LEG_DEPTH, w, mat(x, (h - LEG_DEPTH) / 2, z), '#5c6166', 'metal');
     let lit = true;
     switch (type) {
       case 'classic': case 'led': {
         for (const x of [-1.9, 1.9]) leg(x, -0.35, top);
         for (const y of [1.6, 3.4]) b.box(3.8, 0.12, 0.12, mat(0, y, -0.35, 0, 0, y < 2 ? 0.45 : -0.45), '#5c6166', 'metal');
-        b.box(W + 0.4, 0.08, 0.9, mat(0, B - 0.55, 0.45), '#4a4f53', 'metal');
-        b.box(W + 0.4, 0.05, 0.05, mat(0, B + 0.45, 0.88), '#c9cdd1', 'metal');
         if (type === 'led') {
           // a dark bezel round the screen, a cabinet behind
           b.box(W + 0.5, Hh + 0.5, 0.5, mat(0, B + Hh / 2, -0.28), '#151719', 'metal');
           panelAt(0, B, 0.02);
           lit = false;
-        } else { framed(0, 0); lampsAbove([-1.6, 1.6]); }
+        } else { framed(0, 0); }
         break;
       }
       case 'wide': {
         for (const x of [-4.2, 0, 4.2]) leg(x, -0.4, top);
         for (const x of [-2.1, 2.1]) b.box(4.2, 0.12, 0.12, mat(x, 2.6, -0.4, 0, 0, x < 0 ? 0.5 : -0.5), '#5c6166', 'metal');
-        b.box(W + 0.4, 0.08, 1.0, mat(0, B - 0.6, 0.5), '#4a4f53', 'metal'); // catwalk
-        b.box(W + 0.4, 0.05, 0.05, mat(0, B + 0.4, 0.98), '#c9cdd1', 'metal');
-        framed(0, 0); lampsAbove([-4.5, -1.5, 1.5, 4.5]);
+        framed(0, 0);
         break;
       }
       case 'vshape': {
-        // two panels meeting at a post (the apex), the second turned the other way (ry2: built per face)
+        // two panels meeting at a post (the apex, nearest the line), the second turned the other way (ry2: built
+        // per face); both faces on the outside of the V, so neither looks into (or sweeps across) the other. The
+        // arms go the way that keeps them outside (x: -side); each face stands a little off the post, so the two
+        // frames never cut into each other.
+        const g = 0.35, sx = -side;
         leg(0, 0, top, 0.35);
-        for (const x of [W - 0.4]) leg(x, -0.3, top);
-        framed(W / 2, 0); lampsAbove([W / 2 - 1.6, W / 2 + 1.6]);
+        leg(sx * (W - 0.4 + g), -0.3, top);
+        framed(sx * (W / 2 + g), 0);
         // the second face's frame is placed by its own instance yaw (ry2); its structure mirrored here
         const d = side * 2 * (SPEC.vshape.angle * Math.PI / 180);
         const o = mat(0, 0, 0, d);
-        b.box(0.3, top + LEG_DEPTH, 0.3, o.clone().multiply(mat(-(W - 0.4), (top - LEG_DEPTH) / 2, -0.3)), '#5c6166', 'metal');
-        b.box(W + 0.3, Hh + 0.3, 0.12, o.clone().multiply(mat(-W / 2, B + Hh / 2, -0.1)), '#3c4044', 'metal');
+        b.box(0.3, top + LEG_DEPTH, 0.3, o.clone().multiply(mat(-sx * (W - 0.4 + g), (top - LEG_DEPTH) / 2, -0.3)), '#5c6166', 'metal');
+        b.box(W + 0.3, Hh + 0.3, 0.12, o.clone().multiply(mat(-sx * (W / 2 + g), B + Hh / 2, -0.1)), '#3c4044', 'metal');
         // (its panel, turned with it)
-        panels.push(o.clone().multiply(mat(-W / 2, B + Hh / 2, 0.06)).multiply(new THREE.Matrix4().makeScale(W, Hh, 1)));
+        panels.push(o.clone().multiply(mat(-sx * (W / 2 + g), B + Hh / 2, 0.06)).multiply(new THREE.Matrix4().makeScale(W, Hh, 1)));
         break;
       }
       case 'unipole': {
         b.cyl(0.45, 0.6, B + LEG_DEPTH, 12, mat(0, (B - LEG_DEPTH) / 2, -0.6), '#6d7378', 'metal');
         b.box(W * 0.6, 0.4, 0.4, mat(0, B - 0.2, -0.6), '#5c6166', 'metal');
-        b.box(W + 0.4, 0.08, 1.0, mat(0, B - 0.55, 0.45), '#4a4f53', 'metal');
-        framed(0, 0); lampsAbove([-3.5, 0, 3.5]);
+        framed(0, 0);
         break;
       }
       case 'rooftop': {
@@ -283,7 +268,7 @@ export class Billboards {
         b.box(10, 9.5 + LEG_DEPTH, 6.5, mat(0, (9.5 - LEG_DEPTH) / 2, -1.5), '#d9cfbf', 'facade');
         b.box(10.4, 0.4, 6.9, mat(0, 9.7, -1.5), '#b9ad9b', 'concrete');
         for (const x of [-3, 3]) b.box(0.25, top - 9.9, 0.25, mat(x, (top + 9.9) / 2, -0.3), '#5c6166', 'metal');
-        framed(0, 0); lampsAbove([-2.5, 2.5]);
+        framed(0, 0);
         break;
       }
       case 'wall': {
@@ -316,7 +301,7 @@ export class Billboards {
     }
     const parts: Part[] = [];
     for (const key2 of ['metal', 'brick', 'concrete', 'facade']) { const g = b.geometry(key2); if (g) parts.push({ geo: g, key: key2 }); }
-    k = { parts, lamps: lamps.geometry('lamp'), panels, lit };
+    k = { parts, panels, lit };
     this.kinds.set(key, k);
     return k;
   }

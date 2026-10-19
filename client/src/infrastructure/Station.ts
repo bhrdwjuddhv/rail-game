@@ -8,6 +8,8 @@ import { Strip } from '../track/TrackMeshBuilder';
 import type { Route, StationInfo } from '@rail/shared/track/Route';
 import { Crowd } from '../world/people/Crowd';
 import { buildJunction, ClockSpot } from './JunctionArchitecture';
+import { FOB, fobKm, fobSpan } from './fobLayout';
+import { addWaterStalls, STALL_HALF } from './WaterStall';
 import type { LineDef, Switch } from '@rail/shared/track/TrackGraph';
 
 /** Platform surface above formation level (high-level platform, 760 mm above rail). */
@@ -121,14 +123,26 @@ export class StationView {
     // Dravidian: granite slab platforms
     if (jn === 'dravidian') tint(pm.geometry, new THREE.Color(0xc4beb4));
     const shelterHalf = jn ? 0.2 : big ? 0.13 : 0.05;
+    // the foot over bridge (every station with more than one platform) and its stairs: shelters, benches and
+    // people keep out of the platforms' stretch under them
+    const fob = fobKm(st), fobGap = fob === null ? null : fobSpan(fob);
+    const underFob = (km: number) => !!fobGap && km > fobGap[0] && km < fobGap[1];
+    // drinking water stalls: two on a long platform, one on a short, mid-platform along the line (between a
+    // junction's column bays; clear of the tea stall, the name boards and the FOB); benches and people keep off
+    const stallKms = (pfTo - pfFrom >= 0.5 ? [st.km - 0.104, st.km + 0.04] : [st.km - 0.02]).filter(k => !underFob(k));
+    const nearStall = (km: number, lat: number, mid: number) => Math.abs(lat - mid) < STALL_HALF.across + 1 && stallKms.some(k => Math.abs(km - k) * 1000 < STALL_HALF.along + 1.2);
+    const stalls: THREE.Matrix4[] = [];
 
     // ---- shelters, benches, lamps, crowd spots ----
     const spots: { x: number; y: number; z: number; heading: number }[] = [];
     const solar = big && r() < 0.5;
     for (const p of st.platforms) {
       const mid = (p.from + p.to) / 2, w = Math.abs(p.to - p.from);
-      if (canopies) this.canopy(route, st.km - shelterHalf - 0.003, st.km + shelterHalf + 0.003, mid, w * 0.9, ox, oz, solar);
+      const c0 = st.km - shelterHalf - 0.003, c1 = st.km + shelterHalf + 0.003;
+      if (canopies) for (const [a, z] of fobGap ? [[c0, Math.min(c1, fobGap[0])], [Math.max(c0, fobGap[1]), c1]] : [[c0, c1]]) if (z - a > 0.008) this.canopy(route, a, z, mid, w * 0.9, ox, oz, solar);
+      for (const k of stallKms) { const q = top(k, mid); stalls.push(mat(q.x, q.y, q.z, q.ry)); }
       for (let km = st.km - shelterHalf; km <= st.km + shelterHalf; km += 0.006) {
+        if (underFob(km) || underFob(km + 0.002)) continue;
         const o = top(km, mid);
         if (canopies) {
           // a gabled truss under each pair of posts, following the roof: tie beam at the eaves,
@@ -155,7 +169,9 @@ export class StationView {
         }
         if (r() < 0.5) {
           // bench: slatted seat and back on two cast-iron end frames
-          const q = top(km + 0.002, mid + (r() - 0.5) * w * 0.3), base = mat(q.x, q.y, q.z, q.ry);
+          const bl = mid + (r() - 0.5) * w * 0.3;
+          if (nearStall(km + 0.002, bl, mid)) continue;
+          const q = top(km + 0.002, bl), base = mat(q.x, q.y, q.z, q.ry);
           b.box(1.8, 0.06, 0.45, base.clone().multiply(mat(0, 0.45, 0)), '#5b4636');
           b.box(1.8, 0.4, 0.05, base.clone().multiply(mat(0, 0.75, -0.21, 0, -0.12)), '#5b4636');
           for (const e of [-0.78, 0.78]) {
@@ -175,6 +191,7 @@ export class StationView {
       for (let i = 0; i < n; i++) {
         const km = st.km + (r() - 0.5) * (pfTo - pfFrom) * 0.75;
         const lat = p.from + (p.to - p.from) * (0.3 + r() * 0.6);
+        if ((underFob(km) && Math.abs(lat - mid) < FOB.stairW / 2 + 0.6) || nearStall(km, lat, mid)) continue;
         const q = top(km, lat);
         spots.push({ x: q.x, y: q.y, z: q.z, heading: q.h });
       }
@@ -263,29 +280,101 @@ export class StationView {
         b.cyl(3.2, 3.2, 3.5, 16, mat(wt.x, gy + 11.7, wt.z), '#d8d2c4', 'concrete');
         b.add(new THREE.ConeGeometry(3.4, 1.2, 16), mat(wt.x, gy + 14.05, wt.z), '#bdb5a6', 'concrete');
       }
-      // foot over bridge across all tracks (Navyug has its air concourse; Sagarpur's is beyond the train shed)
-      if (st.platforms.length > 1 && jn !== 'modern' && jn !== 'dravidian') {
-        const lats = st.platforms.flatMap(p => [p.from, p.to]);
-        const lo = Math.min(...lats) + 1.6, hi = Math.max(...lats) - 1.6;
-        const km = st.km + (jn === 'colonial' ? 0.19 : 0.09);
-        const deckY = RAIL_TOP + 8.4;
-        const c = at(km, (lo + hi) / 2);
-        b.box(3, 0.4, hi - lo + 3, mat(c.x, c.y + deckY, c.z, c.ry), '#b3aca0', 'concrete');
-        b.box(3.2, 0.12, hi - lo + 3.4, mat(c.x, c.y + deckY + 2.5, c.z, c.ry), '#8f989c', 'sheet');
-        for (const l of [lo, hi]) {
-          const q = at(km, l);
-          b.box(3, deckY - PLATFORM_H + 2.4, 3, mat(q.x, q.y + PLATFORM_H + (deckY - PLATFORM_H + 2.4) / 2, q.z, q.ry), '#cfc6b6', 'concrete');
-        }
-        for (const s of [-1, 1]) {
-          const q = at(km + s * 0.0015, (lo + hi) / 2);
-          b.box(0.08, 1.1, hi - lo, mat(q.x, q.y + deckY + 0.75, q.z, q.ry), '#59636b', 'metal');
+    }
+    // foot over bridge across all tracks (Navyug has its air concourse; Sagarpur's is beyond the train shed)
+    if (fob !== null) this.footbridge(fob, at, b);
+
+    this.group.add(b.build(M as unknown as Record<string, THREE.Material>));
+    addWaterStalls(this.group, stalls, () => this.disposed);
+    this.crowd = new Crowd(spots, Math.floor(st.km * 100));
+    this.group.add(this.crowd.mesh);
+  }
+
+  /**
+   * Foot over bridge (layout: fobLayout): a steel bridge across all the tracks on braced trestles standing on
+   * the platforms; a concrete deck between plate girders, railings both sides and a gabled roof of blue and
+   * white striped sheet. From the deck's edge a covered flight of stairs comes down to the middle of every
+   * platform, along it: two flights with a landing between, steel stringers, handrails, concrete treads.
+   */
+  private footbridge(km: number, at: (km: number, lat: number) => { x: number; y: number; z: number; ry: number }, b: GeoBatch) {
+    const st = this.st;
+    const lats = st.platforms.flatMap(p => [p.from, p.to]);
+    const lo = Math.min(...lats) + 1.6, hi = Math.max(...lats) - 1.6, span = hi - lo + 3, cl = (lo + hi) / 2;
+    const z0 = cl - span / 2, z1 = cl + span / 2;
+    const deckY = RAIL_TOP + FOB.deck, deckTop = deckY + FOB.slab / 2, hw = FOB.half, W = FOB.stairW;
+    const STEEL = '#8d969b', DARK = '#5f686d', CONC = '#bdb6aa', BLUE = '#7aa6d6', WHITE = '#e8edf0';
+    /** a box in the bridge's frame: x along the line from the deck's centre, y above the rails' base level, at lateral offset lat */
+    const box = (w: number, h: number, d: number, x: number, y: number, lat: number, col: string, key = 'metal', rz = 0) => {
+      const q = at(km + x / 1000, lat);
+      b.box(w, h, d, mat(q.x, q.y + y, q.z, q.ry, 0, rz), col, key);
+    };
+    const mids = st.platforms.map(p => (p.from + p.to) / 2);
+
+    // deck and side girders
+    box(2 * hw, FOB.slab, span, 0, deckY, cl, CONC, 'concrete');
+    for (const e of [-1, 1]) box(0.22, 1.1, span, e * (hw - 0.11), deckY - 0.45, cl, STEEL);
+    // railings and roof posts both sides; on the stairs' side, open where each flight comes up
+    const openings = mids.map(m => [m - W / 2 - 0.05, m + W / 2 + 0.05]).sort((p, q) => p[0] - q[0]);
+    for (const e of [-1, 1]) {
+      const segs: [number, number][] = [];
+      let a = z0;
+      if (e > 0) for (const [o0, o1] of openings) { if (o0 > a) segs.push([a, o0]); a = Math.max(a, o1); }
+      segs.push([a, z1]);
+      for (const [s0, s1] of segs) {
+        const len = s1 - s0;
+        if (len < 0.1) continue;
+        for (const y of [0.55, 1.1]) box(0.06, 0.06, len, e * (hw - 0.1), deckTop + y, (s0 + s1) / 2, DARK);
+        const n = Math.max(1, Math.round(len / 1.5));
+        for (let k = 0; k <= n; k++) {
+          const z = s0 + (len * k) / n;
+          box(0.06, 1.1, 0.06, e * (hw - 0.1), deckTop + 0.55, z, DARK);
+          if (k % 2 === 0 || k === n) box(0.1, 2.6, 0.1, e * (hw - 0.1), deckTop + 1.3, z, STEEL);
         }
       }
     }
-
-    this.group.add(b.build(M as unknown as Record<string, THREE.Material>));
-    this.crowd = new Crowd(spots, Math.floor(st.km * 100));
-    this.group.add(this.crowd.mesh);
+    // gabled roof: stripes of blue and white sheet across the span
+    const Lh = hw + 0.4, al = 0.2, eave = deckTop + 2.6, L = Lh / Math.cos(al);
+    for (let z = z0 - 0.3, i = 0; z < z1 + 0.3 - 1e-6; z += 1.2, i++) {
+      const d = Math.min(1.2, z1 + 0.3 - z);
+      for (const e of [-1, 1]) box(L, 0.05, d, (e * Lh) / 2, eave + (Lh / 2) * Math.tan(al), z + d / 2, i % 2 ? WHITE : BLUE, 'sheet', -e * al);
+    }
+    // trestles on the platforms: a pair of columns under the girders, cross-braced, on base plates
+    const ch = deckY - 1 - PLATFORM_H, cx = hw - 0.25;
+    for (const m of mids) {
+      for (const e of [-1, 1]) {
+        box(0.3, ch, 0.3, e * cx, PLATFORM_H + ch / 2, m, STEEL);
+        box(0.6, 0.12, 0.6, e * cx, PLATFORM_H + 0.06, m, DARK);
+      }
+      for (const y of [PLATFORM_H + ch / 2, deckY - 1.05]) box(2 * cx, 0.15, 0.15, 0, y, m, STEEL);
+      const bl = Math.hypot(2 * cx, ch / 2), ba = Math.atan2(ch / 2, 2 * cx);
+      for (let k = 0; k < 2; k++) for (const sg of [-1, 1]) box(bl, 0.08, 0.08, 0, PLATFORM_H + ch / 4 + (k * ch) / 2, m, DARK, 'metal', sg * ba);
+    }
+    // the stairs: from the deck's edge down along each platform (two flights, a landing between them)
+    const n = FOB.steps, g = FOB.going, H = deckTop - PLATFORM_H, rise = H / (2 * n);
+    const run = (n - 1) * g, drop = (n - 1) * rise, fl = Math.hypot(run, drop), th = Math.atan2(drop, run);
+    const xl = hw + run, x2 = xl + FOB.landing;
+    for (const m of mids) {
+      for (const [xs, ys] of [[hw, H], [x2, H / 2]]) {
+        for (let i = 0; i < n - 1; i++) box(g + 0.02, 0.16, W, xs + (i + 0.5) * g, PLATFORM_H + ys - (i + 1) * rise - 0.08, m, i % 2 ? '#c9c2b5' : '#b7afa2', 'concrete');
+        const xm = xs + run / 2, ym = PLATFORM_H + ys - drop / 2;
+        for (const e of [-1, 1]) {
+          const zl = m + e * (W / 2 + 0.06);
+          box(fl, 0.4, 0.1, xm, ym - 0.3, zl, STEEL, 'metal', -th);
+          for (const y of [0.5, 1]) box(fl, 0.05, 0.05, xm, ym + y, zl, DARK, 'metal', -th);
+          for (let k = 0; k <= 4; k++) box(0.05, 1, 0.05, xs + (run * k) / 4, PLATFORM_H + ys - (drop * k) / 4 + 0.5, zl, DARK);
+          for (const k of [0, 1]) box(0.08, 2.6, 0.08, xs + run * k, PLATFORM_H + ys - drop * k + 1.3, m + e * (W / 2 + 0.2), STEEL);
+        }
+        box(fl, 0.05, W + 0.9, xm, ym + 2.6, m, BLUE, 'sheet', -th);
+      }
+      // the landing: slab on two columns, railings, its own roof
+      const xc = xl + FOB.landing / 2, yl = PLATFORM_H + H / 2;
+      box(FOB.landing, 0.2, W + 0.2, xc, yl - 0.1, m, CONC, 'concrete');
+      box(FOB.landing, 0.05, W + 0.9, xc, yl + 2.6, m, BLUE, 'sheet');
+      for (const e of [-1, 1]) {
+        box(0.2, H / 2 - 0.2, 0.2, x2 - 0.2, PLATFORM_H + (H / 2 - 0.2) / 2, m + e * (W / 2 - 0.1), STEEL);
+        for (const y of [0.5, 1]) box(FOB.landing, 0.05, 0.05, xc, yl + y, m + e * (W / 2 + 0.06), DARK);
+      }
+    }
   }
 
   /**
@@ -451,7 +540,9 @@ export class StationView {
     if (near && this.crowd.mesh.visible) this.crowd.update(t); // hidden once the 3D people are in
   }
 
+  private disposed = false;
   dispose() {
+    this.disposed = true;
     this.group.removeFromParent();
     this.group.traverse(o => {
       const m = o as THREE.Mesh;

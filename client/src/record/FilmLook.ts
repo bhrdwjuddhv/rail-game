@@ -107,6 +107,21 @@ export class FilmLook {
 
   get fov() { return this.s.fov > 0 ? this.s.fov : null; }
 
+  /** Zoom (arrow keys while recording): the field of view from where it is now, `rate` per second (+ wider, - narrower). */
+  zoom(rate: number, dt: number) {
+    const now = this.s.fov > 0 ? this.s.fov : this.st.h.cameras.camera.fov;
+    this.s.fov = Math.max(5, Math.min(100, now * Math.exp(rate * dt)));
+  }
+
+  /** The next wider (-1) or longer (+1) lens from the field of view now. */
+  stepLens(dir: 1 | -1) {
+    const now = this.s.fov > 0 ? this.s.fov : this.st.h.cameras.camera.fov;
+    const fovs = LENSES.map(lensFov); // wide to long: falling field of view
+    const next = dir > 0 ? fovs.find(f => f < now - 0.05) : [...fovs].reverse().find(f => f > now + 0.05);
+    if (next !== undefined) this.s.fov = next;
+    return LENSES[fovs.indexOf(this.s.fov)] ?? null;
+  }
+
   /** Build or drop passes to match the settings (only when something changed). */
   private sync() {
     if (!this.supported) return;

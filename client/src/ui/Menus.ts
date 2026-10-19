@@ -1,4 +1,5 @@
-import { loadSave } from '../core/Settings';
+import { loadSave, settings } from '../core/Settings';
+import { playableRoutes, prepareSpan } from '../routemode/prepare';
 import { COACHES, LOCOS, ROUTES, SCENARIOS } from '../data';
 import { WEATHER, WeatherId } from '../environment/Weather';
 import type { ScenarioOverrides } from '@rail/shared/gameplay/Scenario';
@@ -144,7 +145,25 @@ export class Menus {
 
   private back: (() => void) | null = null;
 
+  /**
+   * The main page's corners (outside the menu panel, on the page itself): Record Mode top right (a camera,
+   * its name sliding out on hover), Instagram bottom right. Shown with the main menu only.
+   */
+  private corners: HTMLElement | null = null;
+  private cornersFor(main: boolean) {
+    if (main && !this.corners) {
+      const c = this.corners = document.createElement('div');
+      c.className = 'menu-corners';
+      c.innerHTML = `${isTouch ? '' : `<button data-a="record" class="rec-corner" title="Record Mode: a studio for making videos">${icon('videoCamera')}<span>Record Mode</span></button>`}
+        <a class="social-ig" href="https://www.instagram.com/railbhaarat/" target="_blank" rel="noopener noreferrer" title="Rail Bharat on Instagram" aria-label="Rail Bharat on Instagram">${icon('instagram')}</a>`;
+      c.addEventListener('click', e => { if ((e.target as HTMLElement).closest('[data-a="record"]')) this.recordSetup(); });
+      this.root.appendChild(c);
+    }
+    if (this.corners) this.corners.hidden = !main;
+  }
+
   private show(el: HTMLElement | null, back: (() => void) | null = null) {
+    this.cornersFor(!!el?.classList.contains('main') && !this.inGame);
     this.current?.remove();
     this.current = el;
     this.back = back;
@@ -173,26 +192,44 @@ export class Menus {
   get open() { return !!this.current; }
 
   main() {
+    const driving = settings.get().driving;
     const el = html(`<div class="menu main">
       <div class="title"><h1>Rail Bharat</h1><p>Indian broad-gauge electric locomotive simulator</p></div>
+      <div class="drive-mode" role="group" aria-label="Driving controls"><span>Driving controls</span>
+        <button data-dm="beginner" class="${driving === 'beginner' ? 'on' : ''}" title="Every run starts ready to go: engine running or pantograph up, brakes released, reverser forward">Beginner</button>
+        <button data-dm="advanced" class="${driving === 'advanced' ? 'on' : ''}" title="The full start-up, as a real driver does it">Advanced</button></div>
       <div class="buttons vertical">
         <button data-a="scenarios">${icon('scenarios')}Scenarios</button>
         <button data-a="free">${icon('compass')}Free roam</button>
         <button data-a="route">${icon('route')}Route Mode <small>journeys across the network</small></button>
-        ${isTouch ? '' : `<button data-a="record">${icon('film')}Record Mode <small>studio for making videos</small></button>`}
-        <button data-a="tutorial">${icon('tutorial')}Tutorial: how to start the train</button>
-        <button data-a="tutorial-diesel">${icon('engineStart')}Tutorial: start a diesel loco</button>
+        <button data-a="tutorial" aria-expanded="false">${icon('tutorial')}Tutorial: start a loco</button>
+        <div class="tut-pick" hidden><span>Which loco?</span>
+          <button data-a="tutorial-electric">${icon('pantograph')}Electric <small>pantograph and breaker</small></button>
+          <button data-a="tutorial-diesel">${icon('engineStart')}Diesel <small>fuel pump and engine</small></button></div>
         <button data-a="online" class="soon" aria-disabled="true" title="Multiplayer is on its way">${icon('globe')}Play Online <small>Coming soon</small></button>
         <button data-a="settings">${icon('gear')}Settings</button><button data-a="help">${icon('help')}Controls &amp; help</button>
       </div>
       <p class="note">Fictional operator, stations and liveries. Everything is generated in the browser.</p></div>`);
     el.addEventListener('click', e => {
-      const a = (e.target as HTMLElement).closest('button')?.dataset.a;
+      const btn = (e.target as HTMLElement).closest('button');
+      if (btn?.dataset.dm) {
+        settings.set({ driving: btn.dataset.dm as 'beginner' | 'advanced' });
+        el.querySelectorAll<HTMLElement>('[data-dm]').forEach(b => b.classList.toggle('on', b.dataset.dm === btn.dataset.dm));
+        return;
+      }
+      const a = btn?.dataset.a;
+      if (a === 'tutorial') {
+        // the tutorial: which kind of loco to learn on
+        const pick = el.querySelector<HTMLElement>('.tut-pick')!;
+        pick.hidden = !pick.hidden;
+        btn!.setAttribute('aria-expanded', String(!pick.hidden));
+        return;
+      }
       if (a === 'scenarios') this.scenarios();
       if (a === 'free') this.freeRoam();
       if (a === 'route') this.routeMode.open();
       if (a === 'record') this.recordSetup();
-      if (a === 'tutorial') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear' }, { tutorial: true });
+      if (a === 'tutorial-electric') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear' }, { tutorial: true });
       if (a === 'settings') this.show(settingsPanel(() => this.main(), this.cb.captureKey), () => this.main());
       if (a === 'help') this.help(() => this.main());
       if (a === 'tutorial-diesel') this.cb.start('free-roam', { startStation: 'SNGH', time: '09:00', weather: 'clear', loco: 'wdm-3d' }, { tutorial: true });
@@ -243,7 +280,7 @@ export class Menus {
     const el = html(`<div class="menu free rec-setup"><h2>${icon('film')} Record Mode</h2>
       <p class="sub">Pick the place and the light. You start in a free camera above the station; spawn trains, set cameras and film looks inside.</p>
       <div class="cols"><section>
-        <label>Route <select data-f="route">${Object.values(ROUTES).map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
+        <label>Route <select data-f="route">${playableRoutes().map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
         <label>Station <select data-f="station">${route.stations.map(s => `<option value="${s.code}">${esc(s.name)} (${s.code}, km ${s.km})</option>`).join('')}</select></label>
         <label>Time <input type="time" value="${fr.time}" data-f="time"></label>
         <label>Weather <select data-f="weather">${(Object.keys(WEATHER) as WeatherId[]).map(w => `<option value="${w}">${WEATHER[w].name}</option>`).join('')}</select></label>
@@ -262,12 +299,15 @@ export class Menus {
 
   freeRoam(routeId = SCENARIOS['free-roam'].route) {
     const fr = SCENARIOS['free-roam'];
-    const route = ROUTES[routeId] ?? ROUTES[fr.route];
+    const base = ROUTES[routeId] && !routeId.includes('~') && !routeId.startsWith('rm:') ? ROUTES[routeId] : ROUTES[fr.route];
+    // the route as driven: with the junction at each end (stations and lines from it)
+    const route = ROUTES[prepareSpan(base.id)] ?? base;
     const counts: Record<string, number> = {};
     for (const c of Object.values(COACHES)) if (c.windows !== 'none') counts[c.id] = fr.consist.coaches.find(x => x.type === c.id)?.count ?? 0;
     const el = html(`<div class="menu free"><h2>${icon('compass')} Free roam</h2>
       <div class="cols"><section><h3>Start</h3>
-        <label>Route <select data-f="route">${Object.values(ROUTES).map(r => `<option value="${r.id}" ${r.id === route.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
+        <label>Route <select data-f="route">${playableRoutes().map(r => `<option value="${r.id}" ${r.id === base.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select></label>
+        <p class="note">The junction at each end is part of the run: stop there to carry on along another route.</p>
         <label>Station <select data-f="station">${route.stations.map(s => `<option value="${s.code}">${esc(s.name)} (${s.code}, km ${s.km})</option>`).join('')}</select></label>
         ${route.lines && route.lines.length > 1 ? `<label>Line <select data-f="track"><option value="DOWN">Down line (towards ${esc(route.stations[route.stations.length - 1].name)})</option><option value="UP">Up line (towards ${esc(route.stations[0].name)})</option></select></label>` : ''}
         <label>Time <input type="time" value="${fr.time}" data-f="time"></label>
@@ -310,7 +350,7 @@ export class Menus {
         if (n > 24) return;
         const v = (k: string) => (el.querySelector(`[data-f="${k}"]`) as HTMLInputElement).value;
         const track = (el.querySelector('[data-f="track"]') as HTMLSelectElement | null)?.value;
-        this.cb.start('free-roam', { route: route.id, startStation: v('station'), track, time: v('time'), weather: v('weather') as WeatherId, consist: { loco: v('loco'), coaches, loaded } });
+        this.cb.start('free-roam', { span: base.id, startStation: v('station'), track, time: v('time'), weather: v('weather') as WeatherId, consist: { loco: v('loco'), coaches, loaded } });
       }
     });
     this.show(el);

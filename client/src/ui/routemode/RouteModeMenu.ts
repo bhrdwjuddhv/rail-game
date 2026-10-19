@@ -1,7 +1,7 @@
 import { COACHES, JUNCTIONS, LOCOS, ROUTES } from '../../data';
 import { WEATHER, type WeatherId } from '../../environment/Weather';
 import type { RouteData } from '@rail/shared/track/Route';
-import type { ConsistSpec } from '@rail/shared/train/Consist';
+import { currentCoach, type ConsistSpec } from '@rail/shared/train/Consist';
 import { checkJourney, defaultStops, goodsTrain, stopWork, estimateMinutes, type Journey, type JourneyPath, type JourneyStop, type JourneyWarning, journeyStations, RailNetwork, trainSize } from '@rail/shared/routemode/Journey';
 import { icon, type IconName } from '../theme/icons';
 import { bindGallery, chip, esc, fillSliders, gallery, imageCard, stepper, toast, toggle } from '../theme/components';
@@ -20,8 +20,8 @@ const WX_ICON: Record<WeatherId, IconName> = { clear: 'sun', hazy: 'hazy', fog: 
 const DWELLS = [30, 60, 120, 180, 300];
 const ROUTE_COLOURS = ['#5fb4ff', '#4cd28a', '#ffa64d', '#c38bff', '#ff6f91', '#7de0e6'];
 const PRESETS: Record<string, { loco?: string; coaches: ConsistSpec['coaches']; loaded?: boolean }> = {
-  'Express 22': { coaches: [{ type: 'general', count: 2 }, { type: 'ac3', count: 6 }, { type: 'sleeper', count: 12 }, { type: 'general', count: 2 }] },
-  'Local 12': { coaches: [{ type: 'general', count: 12 }] },
+  'Express 22': { coaches: [{ type: 'icf', count: 2 }, { type: 'lhb', count: 18 }, { type: 'icf', count: 2 }] },
+  'Local 12': { coaches: [{ type: 'icf', count: 12 }] },
   'Freight 40': { loco: 'wag-9', coaches: [{ type: 'boxcar', count: 40 }, { type: 'brakevan', count: 1 }], loaded: true },
   'Double-stack 60': { loco: 'wag-12b', coaches: [{ type: 'container-ds', count: 60 }, { type: 'brakevan', count: 1 }], loaded: true },
 };
@@ -31,7 +31,17 @@ const MAX_VEHICLES = 90;
 const KEY = 'railbharat.routemode.v1';
 interface Store { saved: Journey[]; recent: Journey[] }
 function loadStore(): Store {
-  try { const s = JSON.parse(localStorage.getItem(KEY) ?? 'null'); if (s && Array.isArray(s.saved) && Array.isArray(s.recent)) return s; } catch { /* private window, blocked storage */ }
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY) ?? 'null');
+    if (s && Array.isArray(s.saved) && Array.isArray(s.recent)) {
+      // (coach types no longer made: their replacements)
+      for (const j of [...s.saved, ...s.recent] as Journey[]) {
+        for (const c of j.consist?.coaches ?? []) c.type = currentCoach(c.type);
+        for (const st of j.stops ?? []) for (const c of st.couple ?? []) c.type = currentCoach(c.type);
+      }
+      return s;
+    }
+  } catch { /* private window, blocked storage */ }
   return { saved: [], recent: [] };
 }
 function saveStore(s: Store) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* keep going without */ } }
@@ -155,7 +165,24 @@ export class RouteModeMenu {
   }
 
   // ---------------------------------------------------------------- the wizard
+  /**
+   * Each planned "leave the last N" fitted to the train as it is at that stop (after the coaches left and picked
+   * up before it): the train made shorter after planning leaves at most what it then has, less one. (The list
+   * offers only what fits, so a number left over from before showed as "Keep all" and could not be undone.)
+   */
+  private fitPlan() {
+    let left = this.vehicles().length;
+    for (const s of this.stations()) {
+      const p = this.j.stops.find(x => x.code === s.code);
+      if (!p?.stop) continue;
+      if (p.decouple && p.decouple > left - 1) p.decouple = left > 1 ? left - 1 : undefined;
+      if (p.decouple) left -= p.decouple;
+      for (const c of p.couple ?? []) left += c.count;
+    }
+  }
+
   private render() {
+    this.fitPlan();
     const old = this.el, scroll = old?.scrollTop ?? 0;
     const tracks = old ? [...old.querySelectorAll<HTMLElement>('.hg-track')].map(t => t.scrollLeft) : [];
     const body = [() => this.stepJourney(), () => this.stepTrain(), () => this.stepPlan(), () => this.stepReview()][this.step]();

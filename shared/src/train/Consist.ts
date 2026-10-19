@@ -148,6 +148,14 @@ export interface LocoModelFile {
   source?: string;
 }
 
+/**
+ * Coach types no longer made, and what replaced them (the 3D-model coaches): a saved journey, scene or
+ * scenario naming one still runs, with its replacement.
+ */
+export const RETIRED_COACHES: Record<string, string> = { general: 'icf', sleeper: 'lhb', ac3: 'lhb' };
+/** a coach type's id as it is now (a retired one: its replacement) */
+export const currentCoach = (id: string) => RETIRED_COACHES[id] ?? id;
+
 /** Number of permanently coupled sections of a loco (1 for most). */
 export const sectionsOf = (l: LocoData) => l.trainset?.cars.length ?? Math.max(1, Math.round(l.sections ?? 1));
 
@@ -246,7 +254,7 @@ export class Consist {
       off += secL + (s < n - 1 ? 0 : COUPLER_GAP);
     }
     for (const g of spec.coaches) {
-      const c = coachTypes[g.type];
+      const c = coachTypes[g.type] ?? coachTypes[currentCoach(g.type)];
       if (!c) throw new Error(`Unknown coach type ${g.type}`);
       for (let i = 0; i < g.count; i++) {
         this.vehicles.push({

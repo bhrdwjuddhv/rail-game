@@ -26,6 +26,8 @@ export interface ScenarioOverrides {
   route?: string; startKm?: number; startStation?: string; track?: string; consist?: ConsistSpec; loco?: string; time?: string; weather?: WeatherId; timeScale?: number;
   /** Route Mode: the journey (its route and scenario are built from it before the run starts) */
   journey?: Journey;
+  /** Free roam: this route with the junction at each end (built before the run starts; `route` is set from it) */
+  span?: string;
 }
 
 export function applyOverrides(s: ScenarioData, o: ScenarioOverrides, route: Route): ScenarioData {

@@ -18,8 +18,8 @@ import { icon } from '../ui/theme/icons';
 
 /** Ready-made trains of the spawn picker (Custom opens the consist builder). */
 export const READY: { id: string; name: string; sub: string; spec: ConsistSpec }[] = [
-  { id: 'express', name: 'Express', sub: '22 coaches', spec: { loco: 'wap7', coaches: [{ type: 'general', count: 4 }, { type: 'sleeper', count: 12 }, { type: 'ac3', count: 6 }] } },
-  { id: 'local', name: 'Local', sub: '12 coaches', spec: { loco: 'wap7', coaches: [{ type: 'general', count: 12 }] } },
+  { id: 'express', name: 'Express', sub: '22 coaches', spec: { loco: 'wap7', coaches: [{ type: 'icf', count: 4 }, { type: 'lhb', count: 18 }] } },
+  { id: 'local', name: 'Local', sub: '12 coaches', spec: { loco: 'wap7', coaches: [{ type: 'icf', count: 12 }] } },
   { id: 'double-stack', name: 'Double-stack', sub: '60 wagons', spec: { loco: 'wag-12b', coaches: [{ type: 'container-ds', count: 36 }, { type: 'container-ds20', count: 12 }, { type: 'container-single', count: 7 }, { type: 'container-empty', count: 4 }, { type: 'brakevan', count: 1 }] } },
   { id: 'boxcar', name: 'Boxcar goods', sub: '40 wagons', spec: { loco: 'ep-7', coaches: [{ type: 'boxcar', count: 39 }, { type: 'brakevan', count: 1 }] } },
   { id: 'light', name: 'Light engine', sub: 'loco only', spec: { loco: 'wap7', coaches: [] } },
@@ -70,7 +70,7 @@ export class RecordTrains implements RecordRunner {
   private map: RouteMap;
   private place = { track: '', line: '', km: 1, station: '', startAs: 'auto' as DriveMode, kmph: 80 };
   private picked: { kind: 'ready' | 'loco' | 'custom'; id: string } = { kind: 'ready', id: 'express' };
-  private custom: ConsistSpec = { loco: 'wap7', coaches: [{ type: 'general', count: 8 }], loaded: true };
+  private custom: ConsistSpec = { loco: 'wap7', coaches: [{ type: 'icf', count: 8 }], loaded: true };
   private pathDraft: ScenePath | null = null;
   private mapAcc = 0;
   private listAcc = 0;

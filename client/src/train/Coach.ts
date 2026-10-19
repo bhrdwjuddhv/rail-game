@@ -53,7 +53,7 @@ function coachTextures(c: CoachData) {
     }
     if (!lit) {
       g.fillStyle = c.livery.band; g.font = 'bold 22px Arial'; g.textAlign = 'center';
-      g.fillText(`BHARAT RAIL NETWORK   ${c.id === 'ac3' ? '3A' : c.id === 'sleeper' ? 'SL' : 'GS'}  ${c.id.toUpperCase()} 21${c.id.length}43`, w / 2, h * 0.8);
+      g.fillText(`BHARAT RAIL NETWORK   ${c.id.toUpperCase()} 21${c.id.length}43`, w / 2, h * 0.8);
     }
   };
   const map = canvasTexture(`coach-${c.id}`, 1024, 128, draw(false), { repeat: false });

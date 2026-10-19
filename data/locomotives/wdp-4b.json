@@ -78,9 +78,9 @@
   "model": {
     "file": "assets/models/locos/wdm4b.glb",
     "title": "WDP-4B",
-    "author": "FILL IN: model author",
-    "licence": "FILL IN: licence",
-    "source": "FILL IN: where the model came from",
+    "author": "krishna_prasanth (\"WDG-4 Indian Locomotive\")",
+    "licence": "CC BY (Creative Commons Attribution)",
+    "source": "https://grabcad.com/library/wdg4-2",
     "scale": 1,
     "rotationDeg": [
       0,

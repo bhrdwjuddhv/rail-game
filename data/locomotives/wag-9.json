@@ -59,9 +59,9 @@
   "model": {
     "file": "assets/models/locos/wag9.glb",
     "title": "WAG-9",
-    "author": "FILL IN: model author",
-    "licence": "FILL IN: licence (e.g. CC BY 4.0)",
-    "source": "FILL IN: where the model came from (URL)",
+    "author": "niladrisekhardam597 (CGTrader)",
+    "licence": "CGTrader Royalty Free License (no AI)",
+    "source": "https://www.cgtrader.com/free-3d-models/vehicle/train/indian-railways-wag-9-electric-locomotive-1d1e45e5-2a68-4888-bf7a-55381fb71293",
     "scale": 120.67,
     "rotationDeg": [0, 90, 0],
     "offset": [-0.034, -0.008, -0.004],

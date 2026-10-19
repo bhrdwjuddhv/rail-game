@@ -23,6 +23,8 @@ const HELP = `<h3>Record Mode keys</h3><table>
 <tr><td>F9</td><td>Start / stop recording (Capture tab: Live or High-Quality)</td></tr>
 <tr><td>F10, Ctrl + Shift + S</td><td>Screenshot (only the picture, at the Capture tab's size)</td></tr>
 <tr><td>L</td><td>Follow: lock the shot to the train / let go</td></tr>
+<tr><td>&uarr; / &darr; (recording)</td><td>Zoom in / out (hold), the field of view</td></tr>
+<tr><td>&larr; / &rarr; (recording)</td><td>The next wider / longer lens (14 &ndash; 135 mm)</td></tr>
 <tr><td>1 &ndash; 9</td><td>Jump to a camera bookmark</td></tr>
 <tr><td>Shift + 1 &ndash; 9</td><td>Glide to a bookmark</td></tr>
 <tr><td>Ctrl / Alt + 1 &ndash; 9</td><td>Save the camera as a bookmark (Alt if the browser keeps Ctrl + number for tabs)</td></tr>
@@ -64,6 +66,8 @@ export class RecordMode implements RecordRunner, Studio {
   private down: { x: number; y: number } | null = null;
   private raycaster = new THREE.Raycaster();
   private hintTimer = 0;
+  /** while recording, the arrow keys are the lens: up / down held zoom (-1 in, +1 out) */
+  private zoomDir = 0;
 
   constructor(readonly h: RecordHost, private menus: Menus, kept: RecordRunner | null) {
     if (kept instanceof RecordTrains) { kept.attach(this); this.trains = kept; } else this.trains = new RecordTrains(this);
@@ -124,6 +128,7 @@ export class RecordMode implements RecordRunner, Studio {
     this.settings.apply();
     this.world.apply();
     addEventListener('keydown', this.onKey, true);
+    addEventListener('keyup', this.onKeyUp, true);
     addEventListener('beforeunload', this.onUnload);
     h.canvas.addEventListener('pointerdown', this.onDown);
     addEventListener('pointerup', this.onUp);
@@ -314,6 +319,14 @@ export class RecordMode implements RecordRunner, Studio {
       case 'F1': own(); this.help.hidden = !this.help.hidden; return;
       case 'KeyZ': if (e.ctrlKey || e.metaKey) { own(); this.undo(); } return;
     }
+    // recording: the arrows are the lens (zoom held up / down, the next lens left / right), not a train's speed
+    if (this.capture.recording && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+      own();
+      if (e.code === 'ArrowUp') this.zoomDir = -1;
+      else if (e.code === 'ArrowDown') this.zoomDir = 1;
+      else if (!e.repeat) { const mm = this.film.stepLens(e.code === 'ArrowRight' ? 1 : -1); this.film.render(); if (mm) this.toast(`${mm} mm`); }
+      return;
+    }
     const d = this.trains.driven;
     if (d && ['ArrowUp', 'ArrowDown', 'ArrowLeft'].includes(e.code)) {
       own();
@@ -325,6 +338,13 @@ export class RecordMode implements RecordRunner, Studio {
     }
     // Ctrl + a drone key: the browser's shortcuts (save, bookmark...) are not wanted while flying
     if ((e.ctrlKey || e.metaKey) && ['KeyS', 'KeyD', 'KeyA', 'KeyQ', 'KeyE'].includes(e.code)) e.preventDefault();
+  };
+
+  private onKeyUp = (e: KeyboardEvent) => {
+    if ((e.code === 'ArrowUp' && this.zoomDir < 0) || (e.code === 'ArrowDown' && this.zoomDir > 0)) {
+      this.zoomDir = 0;
+      this.film.render(); // the Film panel's slider shows where the zoom ended
+    }
   };
 
   private onUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
@@ -420,6 +440,9 @@ export class RecordMode implements RecordRunner, Studio {
   frame(dt: number, wdt: number) {
     this.trains.frame(dt, wdt);
     this.cams.frame(dt);
+    // a smooth zoom while an arrow is held (about 60 % a second), only while recording
+    if (this.zoomDir && this.capture.recording) this.film.zoom(this.zoomDir * 0.5, dt);
+    else this.zoomDir = 0;
     this.capture.frame(dt);
     const low = this.settings.frame(dt);
     const badge = this.panel.querySelector<HTMLElement>('.rec-fps')!;
@@ -464,6 +487,7 @@ export class RecordMode implements RecordRunner, Studio {
     const h = this.h;
     if (this.isFrozen) this.freeze(false);
     removeEventListener('keydown', this.onKey, true);
+    removeEventListener('keyup', this.onKeyUp, true);
     removeEventListener('beforeunload', this.onUnload);
     h.canvas.removeEventListener('pointerdown', this.onDown);
     removeEventListener('pointerup', this.onUp);

@@ -17,7 +17,7 @@ import { canvasTexture } from '../core/Textures';
  *              (40 ft + 40 ft high-cube, or 2 x 20 ft + 40 ft), single 40 ft, or empty.
  *              Container colours vary per wagon (instance tint); the three
  *              fictional shipping lines are drawn on the sides
- *   brakevan   guard's van with end verandahs; its tail lamp is TrainView's
+ *   brakevan   the BVZI brake van's 3D model (only its underframe here, while the model loads); its tail lamp is TrainView's
  */
 
 export interface WagonTemplate { body: THREE.BufferGeometry; under: THREE.BufferGeometry; mat: THREE.MeshStandardMaterial }
@@ -121,19 +121,6 @@ function containerTexture(c: CoachData, line: number) {
   }, { repeat: false });
 }
 
-function brakevanTexture(c: CoachData) {
-  return canvasTexture(`wagon-${c.id}`, 1024, 512, (g) => {
-    ribs(g, 0, 0, 1024, 256, c.livery.body, 34);
-    g.fillStyle = c.livery.band; g.fillRect(0, 150, 1024, 14);
-    for (const x of [300, 640]) { g.fillStyle = '#1b2228'; g.fillRect(x, 50, 90, 70); g.strokeStyle = '#d8d0bd'; g.lineWidth = 4; g.strokeRect(x, 50, 90, 70); }
-    g.fillStyle = 'rgba(0,0,0,0.3)'; g.fillRect(470, 30, 90, 210);
-    weather(g, 0, 0, 1024, 256, 31, 0.9);
-    g.fillStyle = '#efe8dc'; g.font = 'bold 26px Arial'; g.textAlign = 'center'; g.fillText('BRN   BVZI   21 57 004', 512, 220);
-    ribs(g, 0, 256, 300, 256, c.livery.body, 30);
-    g.fillStyle = c.livery.roof; g.fillRect(320, 256, 704, 256);
-  }, { repeat: false });
-}
-
 const SIDE40: [number, number, number, number] = [0, 1, 0.5, 1];
 const SIDE20: [number, number, number, number] = [0, 600 / 1024, 0, 0.5];
 const ENDC: [number, number, number, number] = [610 / 1024, 860 / 1024, 0, 0.5];
@@ -171,20 +158,9 @@ export function wagonTemplate(c: CoachData): WagonTemplate {
     // corner castings / twist locks at the container corners
     if (c.containers && c.containers !== 'empty') for (const x of [-6.0, 6.0]) for (const z of [-1.17, 1.17]) b.box(0.18, 0.16, 0.16, mat(x, floor + 0.08, z), '#3b3f42', 'metal');
   } else if (c.kind === 'brakevan') {
-    map = brakevanTexture(c);
+    // the brake van is its 3D model (data/coaches/brakevan.json); until it has loaded, only the underframe
+    map = boxcarTexture(c);
     underframe(b, L, 1.1, 2.7);
-    const bodyL = L - 3.2;
-    parts.push(boxUV(new THREE.BoxGeometry(bodyL, 2.5, 2.9), [0, 1, 0.5, 1], [0, 300 / 1024, 0, 0.5], [0.6, 0.25]).translate(0, 1.27 + 1.25, 0));
-    parts.push(boxUV(new THREE.BoxGeometry(L - 0.2, 0.12, 3.1), [0, 1, 0.5, 1], [0, 300 / 1024, 0, 0.5], [0.6, 0.25]).translate(0, 3.85, 0)); // roof overhang
-    for (const e of [-1, 1]) {
-      b.box(1.5, 0.08, 2.8, mat(e * (L / 2 - 0.85), 1.32, 0), '#3a3530', 'metal');                          // verandah floor
-      for (const z of [-1.35, 1.35]) b.cyl(0.025, 0.025, 1.1, 6, mat(e * (L / 2 - 0.2), 1.9, z), '#d9d4c8', 'metal'); // handrail posts
-      b.box(0.04, 0.04, 2.7, mat(e * (L / 2 - 0.2), 2.4, 0), '#d9d4c8', 'metal');
-      b.box(1.5, 0.04, 0.04, mat(e * (L / 2 - 0.85), 2.4, 1.35), '#d9d4c8', 'metal');
-      b.box(1.5, 0.04, 0.04, mat(e * (L / 2 - 0.85), 2.4, -1.35), '#d9d4c8', 'metal');
-      for (const z of [-1.0, 1.0]) b.box(0.3, 0.28, 0.25, mat(e * (L / 2 - 0.2), 0.5, z), '#2a2a2a', 'metal');   // steps
-    }
-    b.cyl(0.1, 0.12, 0.5, 8, mat(0, 4.1, 0.9), '#2c2c2c', 'metal');   // stove pipe
   } else {
     // boxcar
     map = boxcarTexture(c);

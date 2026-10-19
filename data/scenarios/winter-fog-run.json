@@ -13,15 +13,11 @@
     "loco": "ep-7",
     "coaches": [
       {
-        "type": "ac3",
-        "count": 6
+        "type": "lhb",
+        "count": 16
       },
       {
-        "type": "sleeper",
-        "count": 10
-      },
-      {
-        "type": "general",
+        "type": "icf",
         "count": 2
       }
     ],

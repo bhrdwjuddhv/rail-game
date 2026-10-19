@@ -24,6 +24,7 @@ import { NO_OVERRIDES, type RecordHost, type RecordRunner } from './record/host'
 import { qualityOverride } from './core/Settings';
 import type { RecordMode } from './record/RecordMode';
 import { formatClock, KMPH, parseClock } from '@rail/shared/util';
+import { icon } from './ui/theme/icons';
 import { COACHES, JUNCTIONS, LOCOS, locoOrDefault, REGIONS, ROUTES } from './data';
 import { JunctionTraffic } from '@rail/shared/traffic/JunctionTraffic';
 import { JourneyRun, type JourneyHost } from './routemode/JourneyRun';
@@ -360,6 +361,7 @@ export class Game {
     this.dyn.brakes.bp.fill(3.5);
     this.dyn.brakes.bc.fill(3.8);
     this.sys = new LocoSystems(loco, this.dyn.brakes);
+    if (settings.get().driving === 'beginner') this.readyToGo();
     const startSt = s.start.atPlatform ? this.line.station(s.start.atPlatform) : undefined;
     // a start beside a platform: at a big junction the running line is a through line with none, so a platform line
     let startLine = s.start.line;
@@ -594,7 +596,7 @@ export class Game {
     const def = t.def, goods = (def.kind ?? 'goods') === 'goods';
     const loco = def.loco && LOCOS[def.loco] ? LOCOS[def.loco] : goods ? locoOrDefault('ep-7') : (LOCOS.wap7 ?? locoOrDefault('ep-7'));
     const carM = def.carLengthM ?? AI_WAGON_LEN;
-    const pax = ['general', 'sleeper', 'ac3'].filter(id => COACHES[id]);
+    const pax = ['icf', 'lhb', 'double-decker'].filter(id => COACHES[id]);
     // a trainset (the bullet train): its own cars, nothing coupled
     const vehicles: Vehicle[] = loco.trainset ? new Consist(loco, COACHES, { loco: loco.id, coaches: [] }).vehicles
       : [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
@@ -695,6 +697,21 @@ export class Game {
       m.view.update(this.route, m.head, () => m.offset, m.head * 1000, night);
       m.view.loco.setLights(night > 0.3 ? 2 : 1, true, false, this.t, 1);
     }
+  }
+
+  /**
+   * Beginner driving controls: the loco ready to go (the tutorial still starts it from cold): a diesel's fuel
+   * pump on and engine running, an electric's pantograph up on the wire and breaker closed; brakes released
+   * and charged; reverser forward; headlight on.
+   */
+  private readyToGo() {
+    const s = this.sys, b = this.dyn.brakes;
+    b.handle = BRAKE_POSITIONS.indexOf('Running');
+    b.er = 5; b.bp.fill(5); b.bc.fill(0); b.independent = 0;
+    if (s.isDiesel) { s.fuelPump = true; s.engine = 'running'; s.engineRpm = s.loco.diesel?.idleRpm ?? 400; }
+    else { s.pantoUp = true; s.pantoPos = 1; s.vcb = true; }
+    s.setReverser(1);
+    s.headlight = 1;
   }
 
   /** Shunt myself: the player's own loco systems while their controls drive the shunter's, and the shunter's brakes */
@@ -1357,7 +1374,9 @@ export class Game {
   // ------------------------------------------------------------------ tutorial
   /** Start (or restart) the "how to start the train" tutorial (the diesel one on a diesel) in the cab at a station. */
   async startTutorial() {
-    const data = TUTORIALS[this.sys.isDiesel ? 'start-diesel' : 'start-train'];
+    // beginner controls: how to drive (the loco ready to go); advanced: the whole start-up from cold (diesel or electric)
+    const beginner = settings.get().driving === 'beginner';
+    const data = TUTORIALS[beginner ? 'drive-beginner' : this.sys.isDiesel ? 'start-diesel' : 'start-train'];
     if (!data) return;
     this.stopTutorial(false);
     const head = this.dyn.headKm;
@@ -1367,17 +1386,20 @@ export class Game {
       await this.teleportTo({ station: nearest.code });
     }
     if (this.engine.paused) this.resume();
-    // cold loco: pantograph down, breaker open, lights off, reverser neutral, brakes on
     const s = this.sys, b = this.dyn.brakes;
     s.setThrottle(0); s.regen = 0;
-    if (s.pantoUp) s.togglePanto();
-    // a diesel starts dead: engine stopped, fuel pump off
-    if (s.isDiesel && s.engine !== 'stopped') s.toggleEngine();
-    if (s.isDiesel && s.fuelPump) s.toggleFuelPump();
-    s.headlight = 0;
-    s.setReverser(0);
-    s.setTrainBrake(BRAKE_POSITIONS.indexOf('Full Service'));
-    b.independent = 1;
+    if (beginner) this.readyToGo();
+    else {
+      // cold loco: pantograph down, breaker open, lights off, reverser neutral, brakes on
+      if (s.pantoUp) s.togglePanto();
+      // a diesel starts dead: engine stopped, fuel pump off
+      if (s.isDiesel && s.engine !== 'stopped') s.toggleEngine();
+      if (s.isDiesel && s.fuelPump) s.toggleFuelPump();
+      s.headlight = 0;
+      s.setReverser(0);
+      s.setTrainBrake(BRAKE_POSITIONS.indexOf('Full Service'));
+      b.independent = 1;
+    }
     this.cameras.select(0, this.cameraContext(0.016));
     this.cabCam.again();
     this.tutorialPractice = true;
@@ -1564,19 +1586,56 @@ export class Game {
     bus.emit('message', { text: `${a.train.def.name} taken off the line: your line is clear`, kind: 'info', ms: 5000 });
   }
 
+  /**
+   * Free roam across the network: standing at the junction at the far end of the route (the last station of
+   * the line driven), a card asks whether to carry on along one of the junction's other routes; the run
+   * starts again there on that route (same train, time and weather). "Stay here" leaves it until the train
+   * has moved away.
+   */
+  private spanCard: HTMLDivElement | null = null;
+  private spanDismissed = '';
+  private updateSpanEnd() {
+    const sp = this.overrides.span, L = this.line, last = L.stations[L.stations.length - 1];
+    const jd = sp && last?.junction && !this.record && !this.journey ? JUNCTIONS[last.junction.id] : undefined;
+    const head = this.dyn.headKm, here = !!jd && head >= last.platformFromKm - 0.05 && head <= last.platformToKm + 0.3;
+    if (!here) this.spanDismissed = '';
+    const show = here && Math.abs(this.dyn.speed) < 0.3 && this.spanDismissed !== last.code;
+    if (show && !this.spanCard) {
+      const c = this.spanCard = document.createElement('div');
+      c.className = 'span-card';
+      const next = jd!.connects.filter(x => x.route !== sp && ROUTES[x.route]);
+      c.innerHTML = `<b>${icon('junction')} ${last.name}</b><p>Carry on along another route from here?</p>
+        <div class="span-btns">${next.map(x => `<button data-route="${x.route}" data-end="${x.end}">${icon('route')} ${ROUTES[x.route].name}</button>`).join('')}<button data-stay="1">Stay here</button></div>`;
+      c.addEventListener('click', e => {
+        const b = (e.target as HTMLElement).closest<HTMLElement>('button');
+        if (!b) return;
+        if (b.dataset.stay) { this.spanDismissed = last.code; return; }
+        // the run starts again at this junction on the chosen route, heading along it (away from the junction)
+        const o = { ...this.overrides, span: b.dataset.route, route: undefined, startKm: undefined, startStation: jd!.code, track: b.dataset.end === 'start' ? 'DOWN' : 'UP',
+          time: formatClock(this.time.seconds % 86400).slice(0, 5), consist: this.spec };
+        this.menus.loading(`Carrying on along the ${ROUTES[b.dataset.route!].name}`, 0.5);
+        try { sessionStorage.setItem('railbharat.autostart', JSON.stringify({ id: this.scenarioId, overrides: o })); } catch { /* ignore */ }
+        location.reload();
+      });
+      this.ui.appendChild(c);
+    }
+    if (this.spanCard) this.spanCard.hidden = !show;
+  }
+
   /** The Skip signal button: shown while the player stands at a red signal with a train ahead on their line. */
   private skipSignalBtn: HTMLButtonElement | null = null;
   private skipSignalT = 0;
   private updateSkipSignal(dt: number) {
     if ((this.skipSignalT -= dt) > 0) return;
     this.skipSignalT = 0.5;
+    this.updateSpanEnd();
     for (const [t, until] of this.madeWay) {
       if (this.time.run < until && !t.gone) continue;
       for (const l of this.ctl.lines) l.dispatcher.manual.delete(t.id);
       this.madeWay.delete(t);
     }
     const ns = this.nextSignal();
-    const show = this.started && !this.journey?.driving && Math.abs(this.dyn.speed) < 0.1 && !!ns && ns.aspect === 'R' && ns.km - this.dyn.headKm < 0.6 && !!this.signalBlocker();
+    const show = this.started && !this.record && !this.playerHidden && !this.journey?.driving && Math.abs(this.dyn.speed) < 0.1 && !!ns && ns.aspect === 'R' && ns.km - this.dyn.headKm < 0.6 && !!this.signalBlocker();
     if (show && !this.skipSignalBtn) {
       const b = this.skipSignalBtn = document.createElement('button');
       b.className = 'skip-signal';
@@ -1856,7 +1915,7 @@ export class Game {
     const e = this.god.eff;
     d.massScale = e.massMultiplier; d.powerScale = e.powerMultiplier; d.ignoreMaxSpeed = e.unlimitedSpeed; d.noSlip = e.noWheelSlip;
     d.brakes.instant = e.instantBrakes; d.brakes.infiniteAir = e.infiniteAir;
-    s.vigilanceEnabled = e.vigilance && !this.record; s.ignoreMaxSpeed = e.unlimitedSpeed;
+    s.vigilanceEnabled = e.vigilance && !this.record && (settings.get().driving !== 'beginner' || this.tutorialPractice || !!this.tutorial); s.ignoreMaxSpeed = e.unlimitedSpeed;
     for (const l of this.ctl.lines) l.block.forceGreen = this.rec.forceGreen || (l === this.lc && e.forceGreen);
     // (God Mode time speed fast-forwards the whole world, the train covering ground with it: see engine.speed)
     this.time.scale = this.rec.timeScale ?? (this.god.active && e.freezeTime ? 0 : this.baseTimeScale);

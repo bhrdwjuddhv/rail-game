@@ -13,15 +13,11 @@
     "loco": "wap7",
     "coaches": [
       {
-        "type": "ac3",
-        "count": 4
+        "type": "lhb",
+        "count": 8
       },
       {
-        "type": "sleeper",
-        "count": 4
-      },
-      {
-        "type": "general",
+        "type": "icf",
         "count": 2
       }
     ],

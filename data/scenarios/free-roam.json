@@ -4,8 +4,25 @@
   "difficulty": "Sandbox",
   "description": "No timetable, no penalties. Pick a station, loco, train, time and weather, and drive anywhere.",
   "route": "ghat-express",
-  "start": { "km": 1.0, "track": "DOWN", "atPlatform": "SNGH" },
-  "consist": { "loco": "ep-7", "coaches": [ { "type": "general", "count": 6 }, { "type": "sleeper", "count": 6 } ], "loaded": true },
+  "start": {
+    "km": 1.0,
+    "track": "DOWN",
+    "atPlatform": "SNGH"
+  },
+  "consist": {
+    "loco": "ep-7",
+    "coaches": [
+      {
+        "type": "icf",
+        "count": 6
+      },
+      {
+        "type": "lhb",
+        "count": 6
+      }
+    ],
+    "loaded": true
+  },
   "time": "16:30",
   "timeScale": 10,
   "weather": "clear",

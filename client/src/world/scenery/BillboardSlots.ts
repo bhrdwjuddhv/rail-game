@@ -3,6 +3,7 @@ import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import type { Railway } from '@rail/shared/track/Railway';
 import { biomeOf, type StationInfo } from '@rail/shared/track/Route';
 import { hash2 } from '@rail/shared/util';
+import { FOB, fobKm } from '../../infrastructure/fobLayout';
 import type { GroundSample, TerrainField } from '../TerrainField';
 
 /** platform top above the line (as Station.ts builds it) */
@@ -62,6 +63,13 @@ export const SPEC: Record<BillboardType, { w: number; h: number; bottom: number;
   fob: { w: 7, h: 1.4, bottom: 0.3, setback: 0, angle: 90, foot: 0 },
 };
 
+/**
+ * Lineside wires (TracksideProps builds them), metres out from the outer running line: the telegraph line on
+ * the right (+) side, and the fences along towns and colonies on both sides. Billboards stand clear of them.
+ */
+export const TELEGRAPH_LAT = 11.5, FENCE_LAT = 16.5;
+export const FENCED_ZONES = new Set(['town', 'south-town', 'colony']);
+
 const EYE_H = 3.8;
 const EYE_D = [100, 175, 250, 325, 400];
 const WILD = new Set(['ghats', 'snow', 'river']);
@@ -106,14 +114,19 @@ export function planBillboards(railway: Railway, field: TerrainField, settings: 
   // ---- placing one board ----
   const place = (type: BillboardType, s: number, side: 1 | -1): BillboardSlot | null => {
     const sp = SPEC[type];
-    const lat = side * (H + 1.6 + sp.setback);
+    const a = (sp.angle * Math.PI) / 180;
+    // the board's reach across the line (a V's arms reach a whole panel from its apex), then out past any wire it would straddle
+    const reach = (type === 'vshape' ? sp.w : sp.w / 2 + 0.3) * Math.sin(a) + (sp.foot / 2) * Math.cos(a) + 1;
+    const wires = [...(side > 0 ? [TELEGRAPH_LAT] : []), ...(FENCED_ZONES.has(route.zoneAt(s / 1000).zone) ? [FENCE_LAT] : [])];
+    let out = 1.6 + sp.setback;
+    for (const w of wires) if (Math.abs(out - w) < reach) out = w + reach;
+    const lat = side * (H + out);
     if (Math.abs(lat) < route.formationHalfWidth(s / 1000) + 2) return null;
     // a parallel road on this side: keep clear of it
     for (const z of route.data.scenery) if (z.roadOffset && Math.sign(z.roadOffset) === side && s / 1000 >= z.fromKm - 0.1 && s / 1000 <= z.toKm + 0.1 && Math.abs(Math.abs(lat) - Math.abs(z.roadOffset)) < sp.w / 2 + 8) return null;
     route.alignment.sampleOffset(s, lat, f);
     const t = { x: Math.cos(f.heading), z: Math.sin(f.heading) }, n = { x: -Math.sin(f.heading), z: Math.cos(f.heading) };
     // face: toward the line (-side) and toward the trains it faces (Down trains come from lower km on the left, Up trains from higher km on the right)
-    const a = (sp.angle * Math.PI) / 180;
     const nx = -side * n.x * Math.cos(a) + side * t.x * Math.sin(a), nz = -side * n.z * Math.cos(a) + side * t.z * Math.sin(a);
     const ry = Math.atan2(nx, nz);
     // ground under the footprint: no water, not too steep; the structure stands on the highest point
@@ -246,15 +259,25 @@ export function planBillboards(railway: Railway, field: TerrainField, settings: 
         slots.push({ id: nextId++, type: 'platform', format: 'standard', s: km * 1000, side: out > 0 ? 1 : -1, lat: back, x: f.x, y, z: f.z, ry, footY: y, region: route.regionIdAt(km), style: 'clean', status: 'ok', dim: false, zone: [] });
       }
     }
-    if (!big(st) || freight || st.platforms.length < 2) continue;
-    // the FOB (Station.ts: across all platforms at km + 0.09, deck at rail + 8.4 m): a banner on each side
+    const km = fobKm(st);
+    if (!big(st) || freight || km === null) continue;
+    // the FOB (fobLayout): a banner on each side of the deck; on the side its stairs come up, clear of them
     const lats = st.platforms.flatMap(p => [p.from, p.to]);
-    const lo = Math.min(...lats) + 1.6, hi2 = Math.max(...lats) - 1.6, km = st.km + 0.09;
+    const lo = Math.min(...lats) + 1.6, hi2 = Math.max(...lats) - 1.6, half = SPEC.fob.w / 2;
+    const mids = st.platforms.map(p => (p.from + p.to) / 2);
     for (const face of [-1, 1] as const) {
-      route.alignment.sampleOffset(km * 1000 + face * 1.75, (lo + hi2) / 2, f);
-      const y = route.alignment.elevationAt(km) + RAIL_TOP + 8.4;
+      let lat: number | undefined = (lo + hi2) / 2;
+      if (face > 0) {
+        // the free spot on the deck nearest its middle
+        const free = (l: number) => mids.every(m => Math.abs(l - m) > half + FOB.stairW / 2 + 0.5);
+        lat = undefined;
+        for (let d = 0; d < hi2 - lo && lat === undefined; d += 0.5) for (const l of [(lo + hi2) / 2 + d, (lo + hi2) / 2 - d]) if (l - half > lo - FOB.half && l + half < hi2 + FOB.half && free(l)) { lat = l; break; }
+        if (lat === undefined) continue;
+      }
+      route.alignment.sampleOffset(km * 1000 + face * 1.75, lat, f);
+      const y = route.alignment.elevationAt(km) + RAIL_TOP + FOB.deck;
       const ry = Math.atan2(face * Math.cos(f.heading), face * Math.sin(f.heading));
-      slots.push({ id: nextId++, type: 'fob', format: 'wide', s: km * 1000 + face, side: face, lat: (lo + hi2) / 2, x: f.x, y, z: f.z, ry, footY: y, region: route.regionIdAt(km), style: 'clean', status: 'ok', dim: false, zone: [] });
+      slots.push({ id: nextId++, type: 'fob', format: 'wide', s: km * 1000 + face, side: face, lat, x: f.x, y, z: f.z, ry, footY: y, region: route.regionIdAt(km), style: 'clean', status: 'ok', dim: false, zone: [] });
     }
   }
 

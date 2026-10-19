@@ -7,6 +7,7 @@ import { Strip } from '../track/TrackMeshBuilder';
 import type { BoardDef, Route } from '@rail/shared/track/Route';
 import type { Railway } from '@rail/shared/track/Railway';
 import type { TerrainField } from '../world/TerrainField';
+import { FENCED_ZONES, FENCE_LAT, TELEGRAPH_LAT } from '../world/scenery/BillboardSlots';
 import { buildOHE, wireMaterial } from './OHE';
 import { PLATFORM_H } from './Station';
 
@@ -104,7 +105,7 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
   let prevTop: number[] | null = null;
   for (let s = Math.ceil(s0 / 50) * 50; s < s1; s += 50) {
     if (!clearOf(s, 0.3)) { prevTop = null; continue; }
-    const p = at(s, out(11.5));
+    const p = at(s, out(TELEGRAPH_LAT));
     const y = field.height(p.x, p.z);
     poles.push(mat(p.x - ox, y, p.z - oz, -p.heading));
     const top = [p.x - ox, y + 7.2, p.z - oz];
@@ -190,8 +191,8 @@ export function buildLinesideChunk(railway: Railway, field: TerrainField, s0: nu
     let prev: number[][] | null = null;
     for (let s = Math.ceil(s0 / 4) * 4; s < s1; s += 4) {
       const zone = route.zoneAt(s / 1000).zone;
-      if ((zone !== 'town' && zone !== 'south-town' && zone !== 'colony') || !clearOf(s, 0.35)) { prev = null; continue; }
-      const p = at(s, out(side * 16.5));
+      if (!FENCED_ZONES.has(zone) || !clearOf(s, 0.35)) { prev = null; continue; }
+      const p = at(s, out(side * FENCE_LAT));
       const y = field.height(p.x, p.z);
       posts.push(mat(p.x - ox, y + 0.7, p.z - oz, -p.heading));
       const cur = [[p.x - ox, y + 0.6, p.z - oz], [p.x - ox, y + 1.2, p.z - oz]];

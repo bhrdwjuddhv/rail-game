@@ -13,11 +13,11 @@
     "loco": "ep-7",
     "coaches": [
       {
-        "type": "general",
+        "type": "icf",
         "count": 4
       },
       {
-        "type": "sleeper",
+        "type": "lhb",
         "count": 4
       }
     ],

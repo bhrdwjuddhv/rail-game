@@ -13,5 +13,17 @@
     "contactUrl": "mailto:ads@example.com",
     "fillerEnabled": true
   },
-  "ads": []
+  "ads": [
+    {
+      "id": "woodpecker-cafe",
+      "frequency": 0.5,
+      "active": true,
+      "routes": ["all"],
+      "regions": ["all"],
+      "billboardTypes": ["classic", "vshape", "platform"],
+      "images": { "standard": "woodpeckercafe.png" },
+      "url": "https://www.woodpeckercafe.in/",
+      "fallback": { "bg": "#1f3a2b", "fg": "#f6ead8", "title": "WOODPECKER CAFE", "sub": "M-13, Kalkaji, New Delhi" }
+    }
+  ]
 }

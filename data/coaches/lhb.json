@@ -1,27 +1,47 @@
 {
   "id": "lhb",
-  "name": "LHB coach (3D model)",
+  "name": "LHB coach",
   "massEmptyT": 40,
   "massLoadedT": 48,
   "lengthM": 16.23,
   "bogieCentresM": 10.32,
   "axleSpacingM": 1.14,
   "maxBrakeForceKN": 30,
-  "resistance": { "aN": 850, "bNperMs": 22, "cNperMs2": 1 },
-  "livery": { "body": "#7a2230", "band": "#c9ccd1", "roof": "#8a8f94", "window": "#20303c" },
+  "resistance": {
+    "aN": 850,
+    "bNperMs": 22,
+    "cNperMs2": 1
+  },
+  "livery": {
+    "body": "#7a2230",
+    "band": "#c9ccd1",
+    "roof": "#8a8f94",
+    "window": "#20303c"
+  },
   "windows": "sealed",
   "interiorLight": "#e9f2ff",
   "seats": 64,
   "model": {
     "file": "assets/models/coach/lhbfinal.glb",
     "title": "LHB coach",
-    "author": "FILL IN: model author",
-    "licence": "FILL IN: licence",
-    "source": "FILL IN: where the model came from (URL)",
+    "author": "shubham jha 3d (shubhamjha201030)",
+    "licence": "Sketchfab Free Standard",
+    "source": "https://sketchfab.com/3d-models/indian-railway-lhb-coach-c6c3d4313425487d91f6174a64dd96d9",
     "scale": 1.24,
-    "rotationDeg": [0, 0, 0],
-    "offset": [-0.093, -0.068, -0.005],
-    "look": { "roughness": 0.5, "metalness": 0.15 },
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "offset": [
+      -0.093,
+      -0.068,
+      -0.005
+    ],
+    "look": {
+      "roughness": 0.5,
+      "metalness": 0.15
+    },
     "maxTriangles": 90000
   }
 }

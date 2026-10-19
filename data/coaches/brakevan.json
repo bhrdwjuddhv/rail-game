@@ -1,12 +1,12 @@
 {
   "id": "brakevan",
-  "name": "Brake Van",
+  "name": "Brake Van (BVZI)",
   "kind": "brakevan",
   "massEmptyT": 22,
   "massLoadedT": 22,
-  "lengthM": 9.6,
-  "bogieCentresM": 5.6,
-  "axleSpacingM": 1.8,
+  "lengthM": 10.34,
+  "bogieCentresM": 5.8,
+  "axleSpacingM": 2.0,
   "maxBrakeForceKN": 40,
   "resistance": {
     "aN": 450,
@@ -20,5 +20,23 @@
     "window": "#1b2228"
   },
   "windows": "none",
-  "interiorLight": "#000000"
+  "interiorLight": "#000000",
+  "model": {
+    "file": "assets/models/coach/BVZI_Brake_Van.glb",
+    "title": "BVZI_ Brake_ Van_indian_train",
+    "author": "GameChangz",
+    "licence": "CC BY 4.0",
+    "source": "https://skfb.ly/pOQsN",
+    "scale": 1,
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "offset": [
+      0,
+      0.028,
+      0
+    ]
+  }
 }

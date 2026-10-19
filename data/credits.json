@@ -1,6 +1,10 @@
 {
   "help": "Third-party assets other than loco models (those carry their credit in their own data file). Shown in the game under Controls & help -> Credits.",
   "assets": [
+    { "title": "BVZI_ Brake_ Van_indian_train", "file": "client/public/assets/models/coach/BVZI_Brake_Van.glb", "author": "GameChangz", "licence": "CC BY 4.0", "source": "https://skfb.ly/pOQsN" },
+    { "title": "Indian Railway LHB Coach", "file": "client/public/assets/models/coach/lhbfinal.glb", "author": "shubham jha 3d (shubhamjha201030)", "licence": "Sketchfab Free Standard", "source": "https://sketchfab.com/3d-models/indian-railway-lhb-coach-c6c3d4313425487d91f6174a64dd96d9" },
+    { "title": "Indian Railways LHB Double Deker Coach", "file": "client/public/assets/models/coach/doubledecker.glb", "author": "niladrisekhardam597 (CGTrader)", "licence": "CGTrader Royalty Free License (no AI)", "source": "https://www.cgtrader.com/free-3d-models/vehicle/train/indian-railways-lhb-double-deker-coach" },
+    { "title": "Railway Startion Water Stall", "file": "client/public/assets/station/drinkingwater.glb", "author": "the_cgi_guy (shivamyadavrk)", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/railway-startion-water-stall-fece995f24214e058c4ef6fec879274c" },
     { "title": "Indian Woman in Saree", "file": "client/public/assets/models/people/woman1.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "Sketchfab Free Standard", "source": "https://sketchfab.com/3d-models/indian-woman-in-saree-b5965a93b03440dea65160f7cbac1fc7" },
     { "title": "Indian Man", "file": "client/public/assets/models/people/man2.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/indian-man-aa1cb70d9c4f4573a3ff7ae0a5bf82dd" },
     { "title": "Indian Office Woman", "file": "client/public/assets/models/people/woman2.glb", "author": "Nodeaxis Interactive (ar.jethin)", "licence": "CC BY 4.0", "source": "https://sketchfab.com/3d-models/indian-office-woman-e6c60cafd33c4d54b0b840c4146ed244" },

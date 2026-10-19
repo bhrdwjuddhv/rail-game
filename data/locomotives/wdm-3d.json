@@ -78,9 +78,9 @@
   "model": {
     "file": "assets/models/locos/wdm3d.glb",
     "title": "WDM-3D",
-    "author": "FILL IN: model author",
-    "licence": "FILL IN: licence",
-    "source": "FILL IN: where the model came from",
+    "author": "Adhyan Saxena (GrabCAD)",
+    "licence": "GrabCAD Community Library (GrabCAD Terms of Use)",
+    "source": "https://grabcad.com/library/wdm-3d-locomotive-1",
     "scale": 49.7,
     "rotationDeg": [
       0,

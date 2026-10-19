@@ -17,7 +17,7 @@ import type { ScenarioOverrides } from '@rail/shared/gameplay/Scenario';
 import type { BenchConfig, BenchView } from './core/Benchmark';
 import type { Quality } from './core/Settings';
 import { Menus } from './ui/Menus';
-import { prepareJourney } from './routemode/prepare';
+import { prepareJourney, prepareSpan } from './routemode/prepare';
 import { initPacks } from './core/Packs';
 import { setVegetationRenderer } from './world/scenery/Vegetation';
 import { initModelLoader } from './train/LocoModelLoader';
@@ -114,6 +114,8 @@ async function boot() {
       running = false;
       return;
     }
+    // free roam: the route with the junction at each end (also after a reload)
+    if (overrides.span) overrides = { ...overrides, route: prepareSpan(overrides.span) };
     const data = SCENARIOS[id];
     let audio: AudioEngine | null = null;
     try { audio = new AudioEngine(); } catch { /* no Web Audio: play silent */ }
@@ -139,7 +141,7 @@ async function boot() {
   try { auto = JSON.parse(sessionStorage.getItem('railbharat.autostart') ?? 'null'); } catch { /* ignore */ }
   const q = params.get('scenario');
   if (q && SCENARIOS[q]) auto = { id: q, overrides: params.get('loco') ? { loco: params.get('loco')! } : {} };
-  if (benchCfg) auto = { id: benchAt.scenario, overrides: { time: '12:00', weather: 'clear', timeScale: 1, consist: { loco: 'ep-7', coaches: [{ type: 'general', count: 6 }, { type: 'sleeper', count: 6 }], loaded: true }, ...benchAt.overrides } };
+  if (benchCfg) auto = { id: benchAt.scenario, overrides: { time: '12:00', weather: 'clear', timeScale: 1, consist: { loco: 'ep-7', coaches: [{ type: 'icf', count: 6 }, { type: 'lhb', count: 6 }], loaded: true }, ...benchAt.overrides } };
   if (auto?.overrides?.journey) prepareJourney(auto.overrides.journey);
   if (auto && SCENARIOS[auto.id]) start(auto.id, auto.overrides, true, { record: !!auto.record });
   else menus.main();

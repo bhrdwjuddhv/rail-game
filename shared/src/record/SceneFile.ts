@@ -1,3 +1,4 @@
+import { currentCoach } from '../train/Consist';
 import type { DriveMode, DriveStyle } from './RecordTrain';
 
 /** What a path does when its train reaches the end: stand, run back and repeat, start again, or leave. */
@@ -95,7 +96,8 @@ export function readScene(raw: unknown, known: Known): { scene: SceneFile; notes
     if (!known.locos.has(loco)) { notes.push(`Train ${i + 1}: unknown locomotive "${loco}", skipped`); continue; }
     const track = str(t.track, known.tracks[0]);
     if (!known.tracks.includes(track)) { notes.push(`Train ${i + 1}: no ${track} line on this route, skipped`); continue; }
-    const coaches = (Array.isArray(t.coaches) ? t.coaches : []).filter(isObj).map(c => ({ type: str(c.type, ''), count: Math.round(num(c.count, 0, 80, 0)) }));
+    // (a coach type no longer made: its replacement)
+    const coaches = (Array.isArray(t.coaches) ? t.coaches : []).filter(isObj).map(c => ({ type: currentCoach(str(c.type, '')), count: Math.round(num(c.count, 0, 80, 0)) }));
     const bad = coaches.filter(c => !known.coaches.has(c.type));
     if (bad.length) notes.push(`Train ${i + 1}: unknown wagon types ${bad.map(c => `"${c.type}"`).join(', ')} left out`);
     trains.push({
