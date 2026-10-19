@@ -9,6 +9,17 @@ const _s = new THREE.Vector3();
 const _p = new THREE.Vector3();
 
 /** Compose a matrix from position, Euler rotation (YXZ) and scale. */
+/**
+ * A hipped roof: a four-sided pyramid with its base w (x) by d (z), h high, centred on the origin (base at -h/2).
+ * Turned before it is scaled, so its edges stay square to the building whatever its proportions (a pyramid
+ * scaled and then turned 45 degrees comes out as a skewed diamond).
+ */
+export function hipRoof(w: number, h: number, d: number) {
+  const g = new THREE.CylinderGeometry(0, Math.SQRT1_2, 1, 4, 1);
+  g.rotateY(Math.PI / 4);
+  return g.scale(w, h, d);
+}
+
 export function mat(x = 0, y = 0, z = 0, ry = 0, rx = 0, rz = 0, sx = 1, sy = 1, sz = 1) {
   _e.set(rx, ry, rz, 'YXZ');
   return new THREE.Matrix4().compose(_p.set(x, y, z), _q.setFromEuler(_e), _s.set(sx, sy, sz));

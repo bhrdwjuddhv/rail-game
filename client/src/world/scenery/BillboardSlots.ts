@@ -5,6 +5,7 @@ import { biomeOf, type StationInfo } from '@rail/shared/track/Route';
 import { hash2 } from '@rail/shared/util';
 import { FOB, fobKm } from '../../infrastructure/fobLayout';
 import type { GroundSample, TerrainField } from '../TerrainField';
+import { formationHalf, parallelRoads } from '../roads/Highways';
 
 /** platform top above the line (as Station.ts builds it) */
 const PLATFORM_H = RAIL_TOP + 0.76;
@@ -123,7 +124,7 @@ export function planBillboards(railway: Railway, field: TerrainField, settings: 
     const lat = side * (H + out);
     if (Math.abs(lat) < route.formationHalfWidth(s / 1000) + 2) return null;
     // a parallel road on this side: keep clear of it
-    for (const z of route.data.scenery) if (z.roadOffset && Math.sign(z.roadOffset) === side && s / 1000 >= z.fromKm - 0.1 && s / 1000 <= z.toKm + 0.1 && Math.abs(Math.abs(lat) - Math.abs(z.roadOffset)) < sp.w / 2 + 8) return null;
+    for (const p of parallelRoads(route)) if (s / 1000 >= p.fromKm - 0.1 && s / 1000 <= p.toKm + 0.1 && Math.abs(lat - p.offsetAt(Math.min(p.toKm, Math.max(p.fromKm, s / 1000)))) < sp.w / 2 + formationHalf(p.kind) + 4) return null;
     route.alignment.sampleOffset(s, lat, f);
     const t = { x: Math.cos(f.heading), z: Math.sin(f.heading) }, n = { x: -Math.sin(f.heading), z: Math.cos(f.heading) };
     // face: toward the line (-side) and toward the trains it faces (Down trains come from lower km on the left, Up trains from higher km on the right)

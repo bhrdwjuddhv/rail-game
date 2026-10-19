@@ -1,5 +1,6 @@
 {
   "id": "container-single",
+  "carries": ["cartons", "fish", "tea"],
   "name": "Container Wagon (single stack)",
   "kind": "container",
   "containers": "single",

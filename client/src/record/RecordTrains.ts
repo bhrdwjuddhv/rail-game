@@ -361,7 +361,7 @@ export class RecordTrains implements RecordRunner {
         const leading = k === lead;
         lm.setLights(leading ? s.headlight : 0, s.markers && (leading || k === s.view.locos.length - 1 - lead), false, 0, 1);
         // the beam in the air as on your own train: at night or in fog only
-        lm.setBeam(leading && s.headlight ? Math.min(0.12, night * 0.06 + h.weather.p.fog * 3) * (s.headlight === 2 ? 1 : 0.5) * h.rec.beam : 0);
+        lm.setBeam(leading && s.headlight ? Math.min(0.09, night * 0.045 + h.weather.p.fog * 3) * (s.headlight === 2 ? 1 : 0.5) * h.rec.beam : 0);
       });
       if (s.glow) s.glow.visible = s.cabLight;
       this.updateSmoke(s, wdt);

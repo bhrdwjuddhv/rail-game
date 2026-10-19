@@ -1,0 +1,89 @@
+{
+  "help": "Station classes and looks for this route (StationProfile). class: halt | rural | town | city (town: a loop and two more platform faces on the building side; city: loops and platforms both sides, full-length roofs, two foot over bridges, a big building). scheme: cream-maroon | yellow-red | white-blue | stone. canopy: shelter | long | cast-iron | steel | tiled. landmark: banyan | watertank | signalcabin | clock | garden | steamloco | viewdeck | well. stalls: tea, snacks, books, fruit. boards: extra boards by the name board. goods: true (or { side: 1 | -1, cargo: [...], sends: [...], receives: [...] }: what it loads into wagons and what wagons bring it, GoodsPlanner) for a goods line, loading platform and shed (side: +1 the Up side, -1 the Down side; Down trains run toward increasing km and use the -1 side). Anything left out is chosen from the station code (the same every run).",
+  "route": "ghat-express",
+  "stations": {
+    "SNGH": {
+      "class": "town",
+      "scheme": "cream-maroon",
+      "canopy": "long",
+      "landmark": "banyan",
+      "stalls": [
+        "tea",
+        "snacks"
+      ],
+      "goods": {
+        "side": -1,
+        "cargo": [
+          "grain",
+          "sugar",
+          "fertiliser",
+          "cement"
+        ],
+        "sends": [
+          "grain",
+          "sugar"
+        ],
+        "receives": [
+          "fertiliser",
+          "cement"
+        ]
+      }
+    },
+    "KSRP": {
+      "class": "halt",
+      "landmark": "well"
+    },
+    "NDKN": {
+      "class": "town",
+      "scheme": "yellow-red",
+      "landmark": "watertank",
+      "goods": {
+        "side": 1,
+        "cargo": [
+          "grain",
+          "fertiliser",
+          "cartons"
+        ],
+        "sends": [
+          "grain"
+        ],
+        "receives": [
+          "fertiliser",
+          "cartons"
+        ]
+      }
+    },
+    "GHTM": {
+      "class": "town",
+      "scheme": "stone",
+      "canopy": "tiled",
+      "landmark": "viewdeck",
+      "boards": [
+        "Ghat top - view point 200 m"
+      ]
+    },
+    "MGVN": {
+      "class": "city",
+      "scheme": "white-blue",
+      "canopy": "steel",
+      "landmark": "clock",
+      "goods": {
+        "side": 1,
+        "cargo": [
+          "cement",
+          "stone",
+          "grain",
+          "cartons"
+        ],
+        "sends": [
+          "cement",
+          "stone"
+        ],
+        "receives": [
+          "grain",
+          "cartons"
+        ]
+      }
+    }
+  }
+}

@@ -12,6 +12,8 @@ export interface StopJob {
   off: number; on: number;
   /** cargo on the train (t) at the start and at the end of the job (load / unload) */
   cargoFrom: number; cargoTo: number;
+  /** load / unload: the wagons worked (indices among the train's wagons, front first) */
+  wagons: number[];
 }
 
 export interface StopOptions {
@@ -71,15 +73,22 @@ export class StationWork {
   ready(code: string) { return this.station !== code || this.finished.has(code) || (!this.queue.length && !this.job && !this.doorsOpen); }
 
   /** Stopped at a stop: what is to be done there (an empty list: nothing, the train may leave). */
-  arrive(code: string, work: WorkKind[], opts: StopOptions) {
+  /**
+   * `subsets`: at a goods yard, the wagons to unload and to load there (the rest stay as they are; GoodsPlanner's
+   * rules); without, every wagon. A kind of work with no wagon to do is left out.
+   */
+  arrive(code: string, work: WorkKind[], opts: StopOptions, subsets?: Partial<Record<'load' | 'unload', number[]>>) {
     if (this.station === code) return;
     this.station = code;
+    this.subsets = subsets;
+    work = work.filter(k => k === 'board' || !subsets || (subsets[k]?.length ?? 0) > 0);
     this.queue = [...work];
     this.opts = opts;
     this.job = null;
     if (!work.length) this.finished.add(code);
   }
   private opts: StopOptions = { busy: 0.5 };
+  private subsets?: Partial<Record<'load' | 'unload', number[]>>;
 
   /** The train left (or was moved): forget the stop. */
   leave() {
@@ -98,11 +107,14 @@ export class StationWork {
       const want = this.seats * (0.08 + o.busy * 0.3 + r() * 0.08) * (o.festival ? 2.6 : 1) * (o.origin ? 1.6 : 1);
       const on = Math.max(0, Math.min(room, Math.round(want)));
       const durationS = clamp(10 + (off + on) / 12, 15, o.festival ? 45 : 30);
-      this.job = { kind, durationS, progress: 0, off, on, cargoFrom: this.cargo, cargoTo: this.cargo };
+      this.job = { kind, durationS, progress: 0, off, on, cargoFrom: this.cargo, cargoTo: this.cargo, wagons: [] };
     } else {
-      const to = kind === 'load' ? this.payloadT : 0;
-      const durationS = clamp(15 + this.wagons * 0.35, 20, 40);
-      this.job = { kind, durationS, progress: 0, off: 0, on: 0, cargoFrom: this.cargo, cargoTo: to };
+      const wagons = this.subsets?.[kind] ?? Array.from({ length: this.wagons }, (_, i) => i);
+      // (each wagon's share of the payload: the cargo goes up or down by the wagons worked)
+      const share = (wagons.length / Math.max(1, this.wagons)) * this.payloadT;
+      const to = clamp(this.cargo + (kind === 'load' ? share : -share), 0, this.payloadT);
+      const durationS = clamp(15 + wagons.length * 0.35, 20, 40);
+      this.job = { kind, durationS, progress: 0, off: 0, on: 0, cargoFrom: this.cargo, cargoTo: to, wagons };
     }
   }
 
@@ -113,10 +125,10 @@ export class StationWork {
     j.progress = Math.min(1, j.progress + (dt * (this.fast ? 4 : 1)) / j.durationS);
     if (j.kind !== 'board') {
       // wagons change state one after another (from the front)
-      const n = this.wagons;
-      for (let i = 0; i < n; i++) {
-        const at = (i + 0.5) / n;
-        if (before < at && j.progress >= at) this.onWagon?.(i, j.kind === 'load');
+      const n = j.wagons.length;
+      for (let k = 0; k < n; k++) {
+        const at = (k + 0.5) / n;
+        if (before < at && j.progress >= at) this.onWagon?.(j.wagons[k], j.kind === 'load');
       }
       this.cargo = j.cargoFrom + (j.cargoTo - j.cargoFrom) * j.progress;
     }

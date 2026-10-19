@@ -1,3 +1,6 @@
+import { goodsStations, planGoods, planWagonsOfConsist, yardNote } from '@rail/shared/gameplay/GoodsPlanner';
+import { planScenes } from './world/scenery/Scenes';
+import { Kites } from './world/Kites';
 import * as THREE from 'three/webgpu';
 import { AudioEngine } from './audio/AudioEngine';
 import { Ambience } from './audio/Ambience';
@@ -65,7 +68,9 @@ import { applyOverrides, ScenarioData, ScenarioOverrides, startHeadKm, startTrac
 import { Scoring } from '@rail/shared/gameplay/Scoring';
 import { planFromTimetable, StopPlan, WorkedTrain } from '@rail/shared/gameplay/Timetable';
 import { buildBridge } from './infrastructure/Bridge';
-import { buildLcRoad, buildParallelRoad, LevelCrossingView } from './infrastructure/LevelCrossing';
+import { buildLcRoad, LevelCrossingView } from './infrastructure/LevelCrossing';
+import { parallelRoads, roadAt } from './world/roads/Highways';
+import { buildRoadPiece } from './world/roads/RoadView';
 import { StationView } from './infrastructure/Station';
 import { buildLinesideChunk } from './infrastructure/TracksideProps';
 import { buildTunnel } from './infrastructure/Tunnel';
@@ -89,7 +94,7 @@ import { TrackGraph, TrackPath, Ramp } from '@rail/shared/track/TrackGraph';
 import { CabControls, CONTROL_NAMES } from './train/cab/CabControls';
 import { CabModel, cabLayout } from './train/cab/CabModel';
 import { TrainView } from './train/Coach';
-import { Consist, Vehicle } from '@rail/shared/train/Consist';
+import { Consist, isFreightStock, Vehicle } from '@rail/shared/train/Consist';
 import { LocoSystems } from '@rail/shared/train/LocoSystems';
 import { BRAKE_POSITIONS, BrakeSystem } from '@rail/shared/physics/BrakeSystem';
 import { TrainDynamics } from '@rail/shared/physics/TrainDynamics';
@@ -220,6 +225,8 @@ export class Game {
   private switchViews: SwitchView[] = [];
   private lcs: LevelCrossingView[] = [];
   private traffic: Traffic;
+  /** festival mode by day: kites over the towns */
+  private kites: Kites;
   private waterfalls: Waterfalls;
 
   // ui & io
@@ -327,7 +334,7 @@ export class Game {
     this.world.add(this.billboards.group);
     this.offs.push(() => { this.billboards.dispose(); this.adCard.el.remove(); });
     this.world.add(buildRivers(this.route));
-    for (const r of this.route.roads) this.world.add(r.kind === 'lc' ? buildLcRoad(this.field, r) : buildParallelRoad(this.route, r));
+    for (const r of this.route.roads) if (r.kind === 'lc') this.world.add(buildLcRoad(this.route, this.field, r));
     this.route.roads.forEach(r => {
       if (r.kind !== 'lc') return;
       const lc = this.route.data.levelCrossings.find(l => Math.abs(l.km - r.km) < 1e-6)!;
@@ -336,6 +343,8 @@ export class Game {
       this.world.add(v.group);
     });
     this.traffic = new Traffic(this.route, this.field, this.lcs);
+    this.kites = new Kites(this.route, this.field);
+    this.world.add(this.kites.group);
     this.world.add(this.traffic.group);
     this.waterfalls = new Waterfalls(this.route, this.field);
     this.world.add(this.waterfalls.group);
@@ -374,7 +383,14 @@ export class Game {
     this.plan = planFromTimetable(s.timetable);
     const dyn = this.dyn, plan = this.plan;
     // precedence (loop working): a high-speed trainset first, then passenger trains, goods last
-    const goods = this.consist.vehicles.some(v => v.kind === 'coach') && this.consist.vehicles.every(v => v.kind !== 'coach' || (COACHES[v.typeId]?.kind ?? 'coach') !== 'coach');
+    const goods = this.consist.vehicles.some(v => v.kind === 'coach') && this.consist.vehicles.every(v => v.kind !== 'coach' || isFreightStock(COACHES[v.typeId]));
+    // Free Roam with a goods train: the goods dispatcher books the yards ahead where it has work (GoodsPlanner), each
+    // routed into its goods siding; the HUD tells what is to be done there
+    if (goods && this.scenarioId === 'free-roam' && !s.timetable.some(e => e.station !== startSt?.code && e.work?.some(w => w === 'load' || w === 'unload'))) {
+      const { stops, skipped } = planGoods(goodsStations(this.line, head), planWagonsOfConsist(this.consist, COACHES), this.consist.length);
+      for (const g of stops) if (!plan.has(g.station)) plan.set(g.station, { station: g.station, line: g.line, stop: true, dwellS: 180, work: g.work });
+      for (const k of skipped) bus.emit('message', { text: k.reason, kind: 'info', ms: 6000 });
+    }
     const lineMax = Math.max(...routeData.speedLimits.map(l => l.kmph));
     this.player = {
       id: 'player', plan, name: 'your train', player: true,
@@ -636,7 +652,7 @@ export class Game {
     this.trafficSetting = settings.get().traffic;
     const level = this.trafficLevelNow();
     if (!level) return; // Record Mode: traffic off
-    const tm = new TrafficManager(other, { ...cfg, seed, headwayS: cfg.headwayS * level.oncoming });
+    const tm = new TrafficManager(other, { ...cfg, seed, headwayS: cfg.headwayS * level.oncoming, coaches: COACHES });
     tm.onSpawn = t => this.addAI(t, other.route);
     tm.onDespawn = t => this.removeAI(t);
     this.oncoming = tm;
@@ -882,7 +898,7 @@ export class Game {
     let seed = 11;
     for (const ch of this.scenarioId + this.lc.route.running.id + 'same') seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     const base = this.route.data.freight ? FREIGHT_TRAFFIC : DEFAULT_TRAFFIC;
-    const tm = new TrafficManager(this.lc, { ...base, seed, headwayS: base.headwayS * level.sameLine, aheadKm: 8, sameLine: { playerKmph: this.player.cruiseKmph ?? 100 } });
+    const tm = new TrafficManager(this.lc, { ...base, seed, headwayS: base.headwayS * level.sameLine, aheadKm: 8, sameLine: { playerKmph: this.player.cruiseKmph ?? 100 }, coaches: COACHES });
     tm.onSpawn = t => this.addAI(t, this.lc.route);
     tm.onDespawn = t => this.removeAI(t);
     this.sameLine = tm;
@@ -919,6 +935,11 @@ export class Game {
     for (const t of this.route.tunnels) add(t.fromKm, t.toKm, () => buildTunnel(this.route, t), undefined, ['tunnel']);
     // freight corridor: road over-bridges, container depot / port, hill forts
     for (const r of this.route.data.structures) if (r.type === 'rob') add(r.fromKm, r.toKm + 0.4, () => buildRob(this.route, this.field, r));
+    // the roads alongside the line (highways, town streets): a km at a time
+    for (const road of parallelRoads(this.route)) for (let k = road.fromKm; k < road.toKm - 1e-6; k += 1) {
+      const a = k, b = Math.min(road.toKm, k + 1);
+      add(a, b, () => buildRoadPiece(this.route, this.field, road, a, b));
+    }
     for (const y of this.route.yards) add(y.fromKm, y.toKm, () => buildYard(this.route, y), undefined, ['wall']);
     // billboards: one group per km of line
     for (const b of this.billboards.buckets) add(b, b + 1, () => this.billboards.build(b), () => this.billboards.release(b));
@@ -943,7 +964,9 @@ export class Game {
     const t0 = performance.now();
     while (!this.chunks.workersReady) {
       await sleep(50);
-      if (performance.now() - t0 > 20000) throw new Error('Terrain workers did not start');
+      // (a long journey's terrain takes the workers a while to set up on a slow machine: waited for, unless one failed)
+      if (this.chunks.initError) throw new Error(`Terrain workers failed: ${this.chunks.initError}`);
+      if (performance.now() - t0 > 120000) throw new Error('Terrain workers did not start');
     }
     this.updateStreaming(true);
     const total = Math.max(1, this.chunks.pendingNear(cam.position.x, cam.position.z, 1500));
@@ -2174,10 +2197,13 @@ export class Game {
     // bloom only where it shows (lamps at night, glow in fog, tunnel mouths): in daylight it costs a full-screen
     // blur chain for almost nothing
     const glow = night > 0.12 || this.weather.p.fog > 0.004 || this.lighting.tunnel > 0.05;
-    this.rs.setBloom(settings.get().bloom && glow, (0.25 + night * 0.35 + Math.min(0.4, this.weather.p.fog * 20)) * this.rec.glow);
+    this.rs.setBloom(settings.get().bloom && glow, (0.2 + night * 0.12 + Math.min(0.35, this.weather.p.fog * 20)) * this.rec.glow);
     this.rs.renderer.toneMappingExposure = 1.0 + night * 0.35;
     const headlightOn = s.headlight > 0;
-    lm.setBeam(headlightOn ? Math.min(0.12, (night * 0.06 + this.weather.p.fog * 3)) * (s.headlight === 2 ? 1 : 0.5) * this.rec.beam : 0);
+    // the beam in the air is for watching the train from outside: from the cab or its nose the camera is inside
+    // the cone and would see only a pale wall over the line
+    const inBeam = !!this.cameras.mode.inCab || this.cameras.mode.name === 'Front view';
+    lm.setBeam(headlightOn && !inBeam ? Math.min(0.09, (night * 0.045 + this.weather.p.fog * 3)) * (s.headlight === 2 ? 1 : 0.5) * this.rec.beam : 0);
 
     // cab
     const shRig = away && this.cameras.mode.inCab ? this.journey!.shunterRig() : null;
@@ -2227,8 +2253,12 @@ export class Game {
     }
     for (const sv of this.switchViews) sv.update();
     for (const st of this.stations.values()) st.update(this.time.seconds, this.t, st.centre.distanceTo(cam.position) < 600);
+    // a goods yard's stacks: smaller while the wagons are loaded there, bigger while they are unloaded
+    const job = this.stop.work.job, code = this.stop.stationCode;
+    if (code && job && (job.kind === 'load' || job.kind === 'unload')) this.stations.get(code)?.goods?.setFill(job.kind === 'load' ? 1 - job.progress * 0.9 : 0.1 + job.progress * 0.9);
     if (this.t - this.boardsAt > 4) { this.boardsAt = this.t; this.updateDepartureBoards(); }
-    this.traffic.update(wdt, cam.position);
+    this.traffic.update(wdt, cam.position, (this.time.seconds / 3600) % 24, this.lighting.nightLight);
+    this.kites.update(this.t, cam.position, settings.get().festival && this.time.day > 0.35);
     this.billboards.update(wdt, this.lighting.nightLight);
     this.stop.update(wdt);
     if (this.people) { const pc = this.peopleContext(); this.people.update(wdt, cam.position, pc.near, pc.player); }
@@ -2591,12 +2621,30 @@ export class Game {
       const dd = sv.centre.distanceTo(cam.position);
       if (!station || dd < station.d) station = { x: sv.centre.x, y: sv.centre.y, z: sv.centre.z, d: dd };
     }
+    // the life nearby (the scenes between the stations) and the nearest road alongside
+    const life = planScenes(this.route).filter(sc => Math.abs(sc.x - cam.position.x) < 400 && Math.abs(sc.z - cam.position.z) < 400)
+      .map(sc => ({ kind: sc.kind, x: sc.x, y: this.field.height(sc.x, sc.z), z: sc.z, d: Math.hypot(sc.x - cam.position.x, sc.z - cam.position.z) })).filter(sc => sc.d < 400);
+    let road: { x: number; y: number; z: number; d: number } | null = null;
+    const nt = this.field.nearest(cam.position.x, cam.position.z, 250);
+    const zr = nt ? roadAt(this.route, nt.km, nt.d) : null;
+    if (nt && zr) { const f = newFrame(); this.route.alignment.sampleOffset(nt.km * 1000, zr.offsetAt(nt.km), f); road = { x: f.x, y: this.field.height(f.x, f.z), z: f.z, d: Math.hypot(f.x - cam.position.x, f.z - cam.position.z) }; }
     this.ambience!.update(dt, {
       rain: this.sheltered ? this.weather.p.rain * 0.25 : this.weather.p.rain, wind: this.weather.p.wind, day: this.time.day, speed: d.speed, inCab: !!this.cameras.mode.inCab,
-      river, fall, station, cam: cam.position,
+      river, fall, station, cam: cam.position, life, road,
       bells: this.lcs.filter(l => l.manned).map((l, i) => ({ id: i, x: l.position.x, y: l.position.y, z: l.position.z, ringing: l.closing && l.position.distanceTo(cam.position) < 900 })),
     });
   }
+
+  /** the goods work planned at the next goods stop ahead, as the wagons stand now (GoodsPlanner) */
+  private goodsNote(head: number) {
+    const st = this.line.stations.find(x => x.platformToKm > head + 0.01 && x.profile?.goods && this.plan.get(x.code)?.stop && this.plan.get(x.code)!.work?.some(w => w === 'load' || w === 'unload'));
+    if (!st) return null;
+    const key = `${st.code}|${this.consist.mass}`;
+    if (this.goodsNoteKey !== key) { this.goodsNoteKey = key; this.goodsNoteText = yardNote(st, planWagonsOfConsist(this.consist, COACHES)); }
+    return this.goodsNoteText;
+  }
+  private goodsNoteKey = '';
+  private goodsNoteText: string | null = null;
 
   private updateHud() {
     const d = this.dyn, s = this.sys;
@@ -2653,7 +2701,7 @@ export class Game {
       notch: s.notch > 0 ? `P${s.notch}` : s.regen > 0 ? `B${s.regen}` : '0', reverser: s.reverser > 0 ? 'F' : s.reverser < 0 ? 'R' : 'N',
       bp: d.brakes.locoBP, bc: d.brakes.lastBC, mr: d.brakes.mr,
       signal: ns ? { id: ns.id, aspect: ns.aspect, dist: (ns.km - head) * 1000 } : null,
-      station: st ? { name: `${st.name}${this.stop.summary ? ' · ' + this.stop.summary : ''}`, dist: stDist, stop: stopping } : null,
+      station: st ? { name: `${st.name}${this.stop.summary ? ' · ' + this.stop.summary : ''}`, dist: stDist, stop: stopping, note: this.goodsNote(head) } : null,
       restriction, clock: formatClock(this.time.seconds, true), eta, due,
       gradient: formatGradient(L.alignment.gradientAt(head)), km: L.canonicalKm(head),
       score: this.scenario.rules ? this.scoring.total : null,

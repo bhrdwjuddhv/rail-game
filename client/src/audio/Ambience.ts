@@ -20,6 +20,9 @@ export class Ambience {
   private crowdPan: PannerNode;
   private nextBird = 2;
   private nextCricket = 1;
+  private nextLife = 3;
+  private nextHorn = 4;
+  private nextVendor = 6;
   private bellTimers = new Map<number, number>();
   readonly bellPans = new Map<number, PannerNode>();
 
@@ -70,6 +73,10 @@ export class Ambience {
     station: { x: number; y: number; z: number; d: number } | null;
     bells: { id: number; x: number; y: number; z: number; ringing: boolean }[];
     cam: { x: number; y: number; z: number };
+    /** the life nearby (scenes between the stations, Scenes.ts): what it is and where */
+    life?: { kind: string; x: number; y: number; z: number; d: number }[];
+    /** the nearest highway or town road alongside, if within hearing */
+    road?: { x: number; y: number; z: number; d: number } | null;
   }) {
     const t = this.a.now;
     this.rain.gain.setTargetAtTime(s.rain * 0.35, t, 0.5);
@@ -85,9 +92,33 @@ export class Ambience {
 
     // birds by day, crickets at night (one-shots scattered around the listener)
     this.nextBird -= dt; this.nextCricket -= dt;
+    // (inside the cab the world is heard faintly: no clutter over the loco)
+    const cab = s.inCab ? 0.4 : 1;
     if (this.nextBird <= 0) {
       this.nextBird = 1.5 + Math.random() * 5;
-      if (s.day > 0.4 && s.rain < 0.4) this.scattered(s.cam, p => this.shots.chirp(p, 0.1));
+      // small birds mostly; koels, crows and parrots too
+      const b = Math.random();
+      if (s.day > 0.4 && s.rain < 0.4) this.scattered(s.cam, p => (b < 0.5 ? this.shots.chirp(p, 0.1 * cab) : b < 0.65 ? this.shots.koel(p, 0.09 * cab) : b < 0.85 ? this.shots.crow(p, 0.1 * cab) : this.shots.parrot(p, 0.07 * cab)));
+    }
+    // the life about the line: cattle bells by villages and herds, children at play
+    this.nextLife -= dt; this.nextHorn -= dt; this.nextVendor -= dt;
+    if (this.nextLife <= 0 && s.life?.length) {
+      this.nextLife = 1.2 + Math.random() * 3;
+      const src = s.life[Math.floor(Math.random() * s.life.length)];
+      const play = src.kind === 'cricket' || src.kind === 'school' ? (p: AudioNode) => s.day > 0.4 && this.shots.kids(p, 0.08 * cab)
+        : src.kind === 'village' && Math.random() < 0.15 ? (p: AudioNode) => s.day > 0.4 && this.shots.kids(p, 0.06 * cab)
+        : ['village', 'farmhouse', 'goats', 'dunes', 'terraces'].includes(src.kind) ? (p: AudioNode) => this.shots.cattleBell(p, 0.09 * cab) : null;
+      if (play) this.at(src, play);
+    }
+    // distant horns along a highway or town road
+    if (this.nextHorn <= 0) {
+      this.nextHorn = 2.5 + Math.random() * 6;
+      if (s.road && s.road.d < 450) this.at({ x: s.road.x + (Math.random() - 0.5) * 200, y: s.road.y, z: s.road.z + (Math.random() - 0.5) * 200 }, p => this.shots.honk(p, 0.12 * cab));
+    }
+    // a vendor's call on the platform
+    if (this.nextVendor <= 0) {
+      this.nextVendor = 5 + Math.random() * 9;
+      if (s.station && s.station.d < 250 && s.day > 0.25) this.at({ x: s.station.x + (Math.random() - 0.5) * 120, y: s.station.y + 1.5, z: s.station.z + (Math.random() - 0.5) * 40 }, p => this.shots.vendorCall(p, 0.08 * cab));
     }
     if (this.nextCricket <= 0) {
       this.nextCricket = 0.4 + Math.random() * 0.9;
@@ -103,6 +134,14 @@ export class Ambience {
       if (due <= 0) { this.shots.bell(pan, this.a.now, 0.3); this.bellTimers.set(b.id, 0.5); }
       else this.bellTimers.set(b.id, due);
     }
+  }
+
+  /** a one-shot at a place (a panner made for it, let go after) */
+  private at(p: { x: number; y: number; z: number }, play: (dest: AudioNode) => void) {
+    const pan = this.a.panner('env', 30, 1);
+    this.a.setPannerPos(pan, p.x, p.y + 1.5, p.z);
+    play(pan);
+    setTimeout(() => pan.disconnect(), 4000);
   }
 
   private scattered(cam: { x: number; y: number; z: number }, play: (dest: AudioNode) => void) {

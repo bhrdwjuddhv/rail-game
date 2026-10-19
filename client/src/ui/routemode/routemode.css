@@ -158,3 +158,7 @@ html.touch .shunt-ctl button { min-height: 44px; }
 .journey-report .jr-stats .ic { color: var(--c-saffron); width: 22px; height: 22px; }
 .journey-report .jr-stats b { font-size: var(--fs-xl); }
 .journey-report .jr-stats small { color: var(--c-text-dim); }
+/* step 3: the goods dispatcher's suggested stops (a goods train) */
+.rm-suggest { display: grid; gap: 6px; margin: var(--sp-3) 0; padding: var(--sp-3); border-radius: var(--r-md); border: 1px solid var(--c-line); background: var(--c-base-1); font-size: var(--fs-sm); }
+.rm-suggest > b { display: inline-flex; align-items: center; gap: 6px; }
+.rm-suggest .note { margin: 0; color: var(--c-text-dim); }

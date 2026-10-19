@@ -5,8 +5,9 @@ import { ktx2Loader } from './Ktx2';
 import { ensurePack } from './Packs';
 
 type Q = 'high' | 'medium' | 'low';
-type Kind = 'color' | 'normal' | 'roughness';
-interface SizeSet { size: [number, number]; color: string; colorKtx2?: string; normal?: string; normalKtx2?: string; roughness?: string; roughnessKtx2?: string }
+/** emissive: what glows after dark (a facade atlas's lit windows), its strength set by setGlow */
+type Kind = 'color' | 'normal' | 'roughness' | 'emissive';
+interface SizeSet { size: [number, number]; color: string; colorKtx2?: string; normal?: string; normalKtx2?: string; roughness?: string; roughnessKtx2?: string; emissive?: string; emissiveKtx2?: string }
 export interface TexEntry {
   file: string; type: 'tile' | 'tile-x' | 'tile-y' | 'atlas' | 'sprite' | 'overlay' | 'decal';
   sizeM: [number, number]; alpha: boolean; colorSpace: 'srgb' | 'linear'; maxSize: Record<Q, number>;
@@ -27,6 +28,8 @@ interface Binding {
   /** roughness before wetness (1 once a roughness map multiplies it) */
   baseRoughness: number;
   procedural: THREE.Texture; slots: Partial<Record<Kind, Slot>>; onFileLoaded?: () => void;
+  /** glows after dark (setGlow) at this strength: its emissive map, or its own picture (`glow` bindings: lit shopfronts) */
+  glow?: number; glowSelf?: boolean;
 }
 
 const RESIDENT_GRACE_MS = 15000;
@@ -37,11 +40,11 @@ const RESIDENT_GRACE_MS = 15000;
  * next draw: about a second on ANGLE / Direct3D, mid-drive); with a placeholder
  * from the start the shader never changes, the real map just takes its place.
  */
-let flatMaps: { normal: THREE.DataTexture; rough: THREE.DataTexture } | null = null;
+let flatMaps: { normal: THREE.DataTexture; rough: THREE.DataTexture; dark: THREE.DataTexture } | null = null;
 function placeholders() {
   if (!flatMaps) {
     const one = (r: number, g: number, b: number) => { const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1); t.needsUpdate = true; return t; };
-    flatMaps = { normal: one(128, 128, 255), rough: one(255, 255, 255) };
+    flatMaps = { normal: one(128, 128, 255), rough: one(255, 255, 255), dark: one(0, 0, 0) };
   }
   return flatMaps;
 }
@@ -103,7 +106,7 @@ export class TextureLibrary {
    */
   private configure(t: THREE.Texture, e: TexEntry, uvMeters: [number, number], kind: Kind) {
     applyWrap(t, e, uvMeters);
-    t.colorSpace = kind === 'color' && e.colorSpace === 'srgb' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.colorSpace = (kind === 'color' && e.colorSpace === 'srgb') || kind === 'emissive' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
     t.magFilter = THREE.LinearFilter;
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.anisotropy = this.anisotropy();
@@ -115,7 +118,7 @@ export class TextureLibrary {
    * used all along the line (track, terrain, common buildings) - acquired now
    * and never released; otherwise call acquire/release as areas stream.
    */
-  bind(mat: THREE.MeshStandardMaterial, material: string, factory: () => THREE.Texture, uvMeters: number | [number, number] = 1, opts: { resident?: boolean; onFileLoaded?: () => void } = {}) {
+  bind(mat: THREE.MeshStandardMaterial, material: string, factory: () => THREE.Texture, uvMeters: number | [number, number] = 1, opts: { resident?: boolean; onFileLoaded?: () => void; glow?: number } = {}) {
     const found = this.entryFor(material);
     const uv: [number, number] = typeof uvMeters === 'number' ? [uvMeters, uvMeters] : uvMeters;
     const proc = factory().clone();
@@ -126,15 +129,21 @@ export class TextureLibrary {
       if (e.alphaTest) { mat.alphaTest = e.alphaTest; mat.transparent = false; mat.depthWrite = true; mat.alphaToCoverage = !!effective().antialias; }
     }
     mat.map = proc;
+    if (opts.glow) { mat.emissive.set(0xffffff); mat.emissiveMap = proc; mat.emissiveIntensity = 0; }
     if (!found) return;
     const [id, entry] = found;
     // the shader this material will end up with: normal and roughness maps where they will load
-    if (!FILES_OFF && this.quality !== 'low' && entry.processed) {
-      const sets = Object.values(entry.processed.sizes) as SizeSet[];
+    const sets = entry.processed ? Object.values(entry.processed.sizes) as SizeSet[] : [];
+    if (!FILES_OFF && this.quality !== 'low') {
       if (sets.some(s => s.normal)) { mat.normalMap = placeholders().normal; mat.normalScale.set(0.9, 0.9); }
       if (sets.some(s => s.roughness)) mat.roughnessMap = placeholders().rough;
     }
-    const b: Binding = { mat, id, entry, uvMeters: uv, baseRoughness: mat.roughness, procedural: proc, slots: {}, onFileLoaded: opts.onFileLoaded };
+    // lit windows (every preset): dark until they load
+    const lit = !FILES_OFF && !opts.glow && sets.some(s => s.emissive);
+    if (lit) { mat.emissive.set(0xffffff); mat.emissiveMap = placeholders().dark; mat.emissiveIntensity = 0; }
+    const b: Binding = { mat, id, entry, uvMeters: uv, baseRoughness: mat.roughness, procedural: proc, slots: {}, onFileLoaded: opts.onFileLoaded,
+      glow: opts.glow ?? (lit ? 1 : undefined), glowSelf: !!opts.glow };
+    if (b.glow) mat.emissiveIntensity = Math.max(0, this.glowLevel) * b.glow;
     const list = this.bindings.get(material) ?? [];
     list.push(b);
     this.bindings.set(material, list);
@@ -182,7 +191,7 @@ export class TextureLibrary {
       return;
     }
     const set = e.processed ? this.pickSize(e) : null;
-    const kinds: Kind[] = ['color', ...(this.quality === 'low' || !set ? [] : (['normal', 'roughness'] as Kind[]))];
+    const kinds: Kind[] = ['color', ...(this.quality === 'low' || !set ? [] : (['normal', 'roughness'] as Kind[])), ...(set?.emissive && !b.glowSelf ? (['emissive'] as Kind[]) : [])];
     for (const kind of kinds) {
       if (b.slots[kind] || (set && !set[kind])) continue;
       const slot = this.slot(set, kind, e);
@@ -197,7 +206,8 @@ export class TextureLibrary {
       const slot = b.slots[kind]!;
       delete b.slots[kind];
       slot.users--;
-      if (kind === 'color') b.mat.map = b.procedural;
+      if (kind === 'color') { b.mat.map = b.procedural; if (b.glowSelf) b.mat.emissiveMap = b.procedural; }
+      if (kind === 'emissive') b.mat.emissiveMap = placeholders().dark;
       if (kind === 'normal') b.mat.normalMap = placeholders().normal;
       if (kind === 'roughness') { b.mat.roughnessMap = placeholders().rough; b.baseRoughness = 0.9; b.mat.roughness = 0.9 * (1 - 0.35 * this.wet); }
       b.mat.needsUpdate = true;
@@ -265,7 +275,8 @@ export class TextureLibrary {
     this.configure(t, b.entry, b.uvMeters, kind);
     t.needsUpdate = false;
     const m = b.mat;
-    if (kind === 'color') { m.map = t; b.onFileLoaded?.(); }
+    if (kind === 'color') { m.map = t; if (b.glowSelf) m.emissiveMap = t; b.onFileLoaded?.(); }
+    if (kind === 'emissive') m.emissiveMap = t;
     if (kind === 'normal') { m.normalMap = t; m.normalScale.set(0.9, 0.9); }
     if (kind === 'roughness') { m.roughnessMap = t; b.baseRoughness = 1; m.roughness = 1 - 0.35 * this.wet; }
     m.needsUpdate = true;
@@ -324,6 +335,15 @@ export class TextureLibrary {
       if (!WETTABLE.has(material) && !material.startsWith('terrain:')) continue;
       for (const b of list) b.mat.roughness = b.baseRoughness * (1 - 0.35 * w);
     }
+  }
+
+  private glowLevel = -1;
+  /** After dark (0 day .. 1 night): lit windows and shopfronts glow, each at its binding's strength. */
+  setGlow(v: number) {
+    const g = Math.round(v * 40) / 40;
+    if (g === this.glowLevel) return;
+    this.glowLevel = g;
+    for (const list of this.bindings.values()) for (const b of list) if (b.glow) b.mat.emissiveIntensity = g * b.glow;
   }
 
   stats() {

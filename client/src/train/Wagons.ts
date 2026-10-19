@@ -157,6 +157,22 @@ export function wagonTemplate(c: CoachData): WagonTemplate {
     else if (c.containers === 'single') box40(floor, 2.9);
     // corner castings / twist locks at the container corners
     if (c.containers && c.containers !== 'empty') for (const x of [-6.0, 6.0]) for (const z of [-1.17, 1.17]) b.box(0.18, 0.16, 0.16, mat(x, floor + 0.08, z), '#3b3f42', 'metal');
+  } else if (c.kind === 'open') {
+    // open wagon (BOXN): a low steel box with stanchions along its sides; its load (CoachData.load) in it
+    map = boxcarTexture(c);
+    underframe(b, L, 1.08, 2.8);
+    const base = 1.22, H = 1.9, W2 = 3.15;
+    for (const z of [-W2 / 2, W2 / 2]) parts.push(boxUV(new THREE.BoxGeometry(L - 0.4, H, 0.08), [0, 1, 0.5, 1], [0, 300 / 1024, 0, 0.5], [0.6, 0.25]).translate(0, base + H / 2, z));
+    for (const e of [-1, 1]) parts.push(boxUV(new THREE.BoxGeometry(0.08, H, W2), [0, 1, 0.5, 1], [0, 300 / 1024, 0, 0.5], [0.6, 0.25]).translate(e * (L / 2 - 0.24), base + H / 2, 0));
+    for (let x = -L / 2 + 1.2; x < L / 2 - 1; x += 1.6) for (const z of [-W2 / 2 - 0.06, W2 / 2 + 0.06]) b.box(0.1, H, 0.06, mat(x, base + H / 2, z), '#3b2a20', 'metal');
+    b.box(L - 0.6, 0.1, W2 - 0.1, mat(0, base + 0.05, 0), '#2b2b2b', 'metal');
+    const top = base + H, l = L - 1.2;
+    switch (c.load) {
+      case 'stone': b.box(l, 0.9, W2 - 0.3, mat(0, top - 0.2, 0), '#8f8a84', 'metal'); for (let x = -l / 2 + 1; x < l / 2; x += 2) b.add(new THREE.ConeGeometry(1.1, 0.7, 6), mat(x, top + 0.55, 0), '#8f8a84', 'metal'); break;
+      case 'marble': for (const x of [-l / 3, 0, l / 3]) b.box(l / 3 - 0.3, 1.2, W2 - 0.5, mat(x, top - 0.2, 0), '#efede6', 'metal'); break;
+      case 'timber': for (let i = 0; i < 6; i++) b.cyl(0.3, 0.3, l, 8, mat(0, top - 0.6 + Math.floor(i / 3) * 0.5, -0.8 + (i % 3) * 0.8, 0, 0, Math.PI / 2), '#8a6a4a', 'metal'); break;
+      case 'steel': for (const x of [-l / 3, 0, l / 3]) b.cyl(0.85, 0.85, 1.3, 16, mat(x, top - 0.6, 0, 0, Math.PI / 2), '#7b8288', 'metal'); break;
+    }
   } else if (c.kind === 'brakevan') {
     // the brake van is its 3D model (data/coaches/brakevan.json); until it has loaded, only the underframe
     map = boxcarTexture(c);

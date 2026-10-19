@@ -8,6 +8,7 @@ import type { TerrainField } from '../world/TerrainField';
 import { looseContainer } from '../train/Wagons';
 import { COACHES } from '../data';
 import { CONTACT_H } from './OHE';
+import { formationHalf, roadAt } from '../world/roads/Highways';
 
 /**
  * Freight corridor structures (original designs):
@@ -37,7 +38,7 @@ export function buildRob(route: Route, field: TerrainField, s: StructureData): T
   const ry = -Math.atan2(dz, dx);
   const top = f.y + RAIL_TOP + CONTACT_H + 2.6;
   const SPAN = 17, GRADE = 1 / 25, W = 11, STEP = 8;
-  const highway = route.zoneAt(km).roadOffset;
+  const hwy = roadAt(route, km), highway = hwy?.offsetAt(km), clear = hwy ? formationHalf(hwy.kind) + 1.5 : 12;
   const b = new GeoBatch();
   const ground = (t: number) => field.height(ox + dx * t, oz + dz * t);
   /** frame at t along the road, height y, tilted by rz along the road */
@@ -74,14 +75,14 @@ export function buildRob(route: Route, field: TerrainField, s: StructureData): T
       if (y - g < 0.3) break;
       const rz = -e * Math.atan(GRADE);
       deckParts(at(tm, y, rz), STEP + 0.1);
-      const overRoad = highway !== undefined && Math.abs(tm - highway) < 12;
+      const overRoad = highway !== undefined && Math.abs(tm - highway) < clear;
       if (overRoad) {
         b.box(STEP + 0.1, 1.2, W - 1.2, off(at(tm, y, rz), -1.0, 0), '#b8b1a5', 'concrete');
       } else {
         const h = y - 0.35 - g + 1.5;
         b.box(STEP + 0.05, h, W, at(tm, g - 1.5 + h / 2), '#b9ad98', 'concrete');
       }
-      if (overRoad && Math.abs(tm - highway!) > 8) for (const z of [-3, 3]) b.cyl(0.55, 0.55, y - 1.6 - g + 1, 10, off(at(tm, (y - 1.6 + g - 1) / 2), 0, z), '#aaa397', 'concrete');
+      if (overRoad && Math.abs(tm - highway!) > clear - 4) for (const z of [-3, 3]) b.cyl(0.55, 0.55, y - 1.6 - g + 1, 10, off(at(tm, (y - 1.6 + g - 1) / 2), 0, z), '#aaa397', 'concrete');
     }
   }
   const out = b.build(M());

@@ -1,0 +1,66 @@
+{
+  "help": "Station classes and looks for this route (StationProfile). class: halt | rural | town | city (town: a loop and two more platform faces on the building side; city: loops and platforms both sides, full-length roofs, two foot over bridges, a big building). scheme: cream-maroon | yellow-red | white-blue | stone. canopy: shelter | long | cast-iron | steel | tiled. landmark: banyan | watertank | signalcabin | clock | garden | steamloco | viewdeck | well. stalls: tea, snacks, books, fruit. boards: extra boards by the name board. goods: true (or { side: 1 | -1, cargo: [...], sends: [...], receives: [...] }: what it loads into wagons and what wagons bring it, GoodsPlanner) for a goods line, loading platform and shed (side: +1 the Up side, -1 the Down side; Down trains run toward increasing km and use the -1 side). Anything left out is chosen from the station code (the same every run).",
+  "route": "himalayan-line",
+  "stations": {
+    "DVGT": {
+      "class": "town",
+      "scheme": "yellow-red",
+      "canopy": "cast-iron",
+      "landmark": "steamloco",
+      "goods": {
+        "side": -1,
+        "cargo": [
+          "timber",
+          "cartons",
+          "cement",
+          "tea"
+        ],
+        "sends": [
+          "timber"
+        ],
+        "receives": [
+          "cartons",
+          "cement"
+        ]
+      }
+    },
+    "CNRB": {
+      "class": "halt",
+      "landmark": "garden"
+    },
+    "DDGT": {
+      "class": "town",
+      "scheme": "stone",
+      "canopy": "tiled",
+      "landmark": "signalcabin",
+      "boards": [
+        "Deodar forest walk 1 km"
+      ],
+      "goods": {
+        "side": 1,
+        "cargo": [
+          "tea",
+          "cartons",
+          "grain",
+          "timber"
+        ],
+        "sends": [
+          "tea"
+        ],
+        "receives": [
+          "cartons",
+          "grain"
+        ]
+      }
+    },
+    "HMSK": {
+      "class": "city",
+      "scheme": "stone",
+      "canopy": "cast-iron",
+      "landmark": "garden",
+      "boards": [
+        "Hill station 2 km"
+      ]
+    }
+  }
+}

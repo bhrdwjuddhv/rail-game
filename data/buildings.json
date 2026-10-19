@@ -1,0 +1,55 @@
+{
+  "help": "Town and village buildings drawn from the facade atlases (data/textures.json, buildings/facades-*): each atlas cell is one building's front, cut out; the game builds a block behind it (its walls in the cell's colour, its roof by style) and adds roof clutter. Per style, per cell in reading order (row by row): h, the cell's whole height in metres (ground to the top of whatever is drawn: parapet, roof, water tank); kind: house | shop | construction | wall (a compound wall with a gate: a thin screen, no block) | tower (city blocks). depthM: the block's depth range. roof: flat (parapet, water tanks, solar panels, dish aerials, stair rooms, washing lines) | hipped (clay tiles behind a tiled-roof front) | gable (tin or slate, the colour drawn above the walls). regions: the style each landscape region builds in; cityKm: the city style within this distance of a city station (and of a junction).",
+  "styles": {
+    "plains": {
+      "roof": "flat", "depthM": [8, 12],
+      "tiles": [
+        { "h": 7.8, "kind": "house" }, { "h": 9.0, "kind": "house" }, { "h": 7.5, "kind": "shop" }, { "h": 8.5, "kind": "construction" },
+        { "h": 10.5, "kind": "house" }, { "h": 7.5, "kind": "house" }, { "h": 5.5, "kind": "shop" }, { "h": 7.5, "kind": "house" },
+        { "h": 5.0, "kind": "house" }, { "h": 6.0, "kind": "house" }, { "h": 7.5, "kind": "shop" }, { "h": 8.5, "kind": "house" },
+        { "h": 11.0, "kind": "construction" }, { "h": 4.8, "kind": "house" }, { "h": 9.0, "kind": "house" }, { "h": 13.5, "kind": "house" }
+      ]
+    },
+    "ghats": {
+      "roof": "hipped", "depthM": [7, 10],
+      "tiles": [
+        { "h": 9.0, "kind": "house" }, { "h": 5.8, "kind": "house" }, { "h": 9.0, "kind": "house" }, { "h": 6.0, "kind": "shop" },
+        { "h": 5.8, "kind": "house" }, { "h": 9.0, "kind": "house" }, { "h": 5.8, "kind": "house" }, { "h": 9.0, "kind": "house" },
+        { "h": 9.0, "kind": "house" }, { "h": 6.0, "kind": "shop" }, { "h": 5.8, "kind": "house" }, { "h": 8.5, "kind": "house" },
+        { "h": 6.2, "kind": "house" }, { "h": 5.8, "kind": "house" }, { "h": 3.2, "kind": "wall" }, { "h": 9.0, "kind": "house" }
+      ]
+    },
+    "desert": {
+      "roof": "flat", "depthM": [8, 12],
+      "tiles": [
+        { "h": 9.0, "kind": "house" }, { "h": 5.2, "kind": "house" }, { "h": 9.0, "kind": "house" }, { "h": 6.0, "kind": "shop" },
+        { "h": 5.5, "kind": "house" }, { "h": 6.0, "kind": "house" }, { "h": 5.2, "kind": "house" }, { "h": 9.5, "kind": "house" },
+        { "h": 5.5, "kind": "house" }, { "h": 5.5, "kind": "house" }, { "h": 6.5, "kind": "house" }, { "h": 7.8, "kind": "house" },
+        { "h": 6.0, "kind": "house" }, { "h": 8.0, "kind": "house" }, { "h": 8.5, "kind": "house" }, { "h": 7.5, "kind": "house" }
+      ]
+    },
+    "himalayan": {
+      "roof": "gable", "depthM": [7, 10],
+      "tiles": [
+        { "h": 10.0, "kind": "house" }, { "h": 9.0, "kind": "house" }, { "h": 11.5, "kind": "house" }, { "h": 8.0, "kind": "house" },
+        { "h": 11.0, "kind": "house" }, { "h": 10.0, "kind": "house" }, { "h": 6.5, "kind": "shop" }, { "h": 9.0, "kind": "house" },
+        { "h": 9.5, "kind": "house" }, { "h": 9.5, "kind": "house" }, { "h": 11.5, "kind": "house" }, { "h": 9.5, "kind": "house" },
+        { "h": 9.5, "kind": "house" }, { "h": 8.0, "kind": "house" }, { "h": 11.5, "kind": "house" }, { "h": 9.0, "kind": "house" }
+      ]
+    },
+    "city": {
+      "roof": "flat", "depthM": [14, 22],
+      "tiles": [
+        { "h": 26, "kind": "tower" }, { "h": 24, "kind": "tower" }, { "h": 26, "kind": "tower" }, { "h": 23, "kind": "tower" },
+        { "h": 18, "kind": "tower" }, { "h": 25, "kind": "tower" }, { "h": 20, "kind": "tower" }, { "h": 23, "kind": "tower" },
+        { "h": 19, "kind": "tower" }, { "h": 26, "kind": "tower" }, { "h": 22, "kind": "tower" }, { "h": 23, "kind": "tower" },
+        { "h": 22, "kind": "tower" }, { "h": 22, "kind": "tower" }, { "h": 19, "kind": "tower" }, { "h": 23, "kind": "tower" }
+      ]
+    }
+  },
+  "regions": {
+    "north-plains": "plains", "western-ghats": "ghats", "thar-desert": "desert", "aravalli-hills": "desert",
+    "kutch-coast": "ghats", "alpine-meadow": "himalayan", "himalaya": "himalayan"
+  },
+  "cityKm": 1.2
+}

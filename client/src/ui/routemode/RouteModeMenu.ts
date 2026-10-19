@@ -1,8 +1,10 @@
-import { COACHES, JUNCTIONS, LOCOS, ROUTES } from '../../data';
+import { COACHES, JUNCTIONS, LOCOS, REGIONS, ROUTES } from '../../data';
 import { WEATHER, type WeatherId } from '../../environment/Weather';
 import type { RouteData } from '@rail/shared/track/Route';
 import { currentCoach, type ConsistSpec } from '@rail/shared/train/Consist';
-import { checkJourney, defaultStops, goodsTrain, stopWork, estimateMinutes, type Journey, type JourneyPath, type JourneyStop, type JourneyWarning, journeyStations, RailNetwork, trainSize } from '@rail/shared/routemode/Journey';
+import { goodsStations, planGoods, planWagonsOfSpec } from '@rail/shared/gameplay/GoodsPlanner';
+import { Railway } from '@rail/shared/track/Railway';
+import { canWorkGoods, checkJourney, defaultStops, goodsTrain, stopWork, estimateMinutes, type Journey, type JourneyPath, type JourneyStop, type JourneyWarning, journeyStations, RailNetwork, trainSize } from '@rail/shared/routemode/Journey';
 import { icon, type IconName } from '../theme/icons';
 import { bindGallery, chip, esc, fillSliders, gallery, imageCard, stepper, toast, toggle } from '../theme/components';
 import { coachSvg, locoSvg, svgUrl } from './pictures';
@@ -335,7 +337,33 @@ export class RouteModeMenu {
   private stepPlan() {
     return `<p class="sub">Every station on the way. Stop or pass; at a stop, how long, and the shunting work there.</p>
       ${toggle('Auto shunt', { checked: this.j.autoShunt, data: { f: 'auto' }, hint: 'The game makes the coupling moves for you' })}
-      ${this.timeline()}${this.warningList()}`;
+      ${this.goodsSuggestions()}${this.timeline()}${this.warningList()}`;
+  }
+
+  /**
+   * A goods train: the goods dispatcher's suggested stops (GoodsPlanner: unload what a yard receives, load what it
+   * sends), put in the plan unless turned off; yards it has to pass by, and why.
+   */
+  private dismissed = new Set<string>();
+  private goodsSuggestions() {
+    const r = this.route();
+    if (!r || !goodsTrain(this.j.consist, COACHES)) return '';
+    const view = new Railway(r, REGIONS).view('DOWN');
+    const codes = new Set(this.stations().map(s => s.code));
+    // (what is aboard as it leaves: loaded at the start when it starts empty and loads there)
+    const startStop = this.j.stops.find(x => x.code === this.j.from) ?? { code: this.j.from, stop: true, dwellS: 120 };
+    const loadsAtStart = stopWork(this.j, startStop, true).includes('load');
+    const wagons = planWagonsOfSpec(loadsAtStart ? { ...this.j.consist, loaded: true } : this.j.consist, COACHES);
+    const { stops, skipped } = planGoods(goodsStations(view).filter(s => codes.has(s.code) && s.code !== this.j.from && s.code !== this.j.to), wagons, trainSize(this.j.consist, LOCOS, COACHES).lengthM);
+    if (!stops.length && !skipped.length) return '';
+    const same = (a?: string[], b?: string[]) => !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
+    for (const g of stops) {
+      const p = this.j.stops.find(x => x.code === g.station);
+      if (p && p.work === undefined && !this.dismissed.has(g.station)) { p.stop = true; p.work = [...g.work]; }
+    }
+    return `<div class="rm-suggest"><b>${icon('freightLoad')} Goods work</b>
+      ${stops.map(g => { const p = this.j.stops.find(x => x.code === g.station), on = !!p?.stop && same(p.work, g.work); return `<label class="tog"><input type="checkbox" data-sugg="${g.station}" ${on ? 'checked' : ''}><span>Suggested: ${esc(g.note)}</span></label>`; }).join('')}
+      ${skipped.map(k => `<p class="note">${esc(k.reason)}</p>`).join('')}</div>`;
   }
 
   /** the vertical timeline (only = the stations to show, e.g. those still ahead) */
@@ -354,7 +382,10 @@ export class RouteModeMenu {
       // the station's choices open from its name: the platform work (any stop, the start too), the shunting (not at the start)
       const canAct = p.stop && s.code !== this.j.to, isOpen = canAct && this.expanded.has(s.code);
       const goods = goodsTrain(this.j.consist, COACHES), work = stopWork(this.j, p, goods)[0] ?? '';
-      const workSel = goods
+      // (a goods train loads and unloads at its start, at terminals and at goods yards on its side of the line)
+      const workSel = goods && !canWorkGoods(this.j, s)
+        ? `<p class="note">${icon('freightLoad')} No goods yard on this side here: the train only stops.</p>`
+        : goods
         ? `<label>${icon('freightLoad')}<select data-work="${s.code}"><option value="load"${work === 'load' ? ' selected' : ''}>Load the wagons</option><option value="unload"${work === 'unload' ? ' selected' : ''}>Unload the wagons</option><option value=""${!work ? ' selected' : ''}>No loading</option></select></label>`
         : `<label>${icon('users')}<select data-work="${s.code}"><option value="board"${work === 'board' ? ' selected' : ''}>Passengers board and alight</option><option value=""${!work ? ' selected' : ''}>No passenger work</option></select></label>`;
       // what is planned here, shown on the closed row
@@ -475,6 +506,13 @@ export class RouteModeMenu {
       if (f === 'loaded') { this.j.consist.loaded = t.checked; return this.render(); }
       if (f === 'realistic') { this.j.realistic = t.checked; return this.render(); }
       if (f === 'auto') { this.j.autoShunt = t.checked; return; }
+      if (t.dataset.sugg) {
+        // a suggested goods stop taken out (the stop too, unless shunting is planned there) or put back
+        const p = this.j.stops.find(x => x.code === t.dataset.sugg);
+        if (p && !t.checked) { this.dismissed.add(p.code); p.work = []; if (!p.decouple && !p.couple?.length && !p.changeLoco) p.stop = false; }
+        if (p && t.checked) { this.dismissed.delete(p.code); p.work = undefined; }
+        return this.render();
+      }
       if (t.dataset.dwell || t.dataset.work !== undefined || t.dataset.dec || t.dataset.ctype !== undefined || t.dataset.ccount || t.dataset.cloco !== undefined) { this.planInput(t); this.render(); }
     });
     this.bindStripDrag(el);

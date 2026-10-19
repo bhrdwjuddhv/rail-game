@@ -1,3 +1,4 @@
+import { isFreightStock } from '../train/Consist';
 import type { RouteData, StationData } from '../track/Route';
 import { flipJunction, joinedRouteId, joinRoutes, JUNCTION_SECTION_KM, JunctionData, sliceRoute, turnRoute } from '../track/Junctions';
 import { Consist, type CoachData, type ConsistSpec, type LocoData } from '../train/Consist';
@@ -275,9 +276,22 @@ export function checkJourney(j: Journey, net: RailNetwork, route: RouteData, loc
 
 /** Is it a goods train (wagons, no passenger coaches)? */
 export function goodsTrain(spec: ConsistSpec, coaches: Record<string, CoachData>) {
-  const kinds = spec.coaches.filter(c => c.count > 0).map(c => coaches[c.type]?.kind ?? 'coach');
-  return kinds.length > 0 && kinds.every(k => k !== 'coach');
+  // (freight stock: wagons of any kind, a covered wagon without windows too)
+  const groups = spec.coaches.filter(c => c.count > 0);
+  return groups.length > 0 && groups.every(c => isFreightStock(coaches[c.type]));
 }
+
+/**
+ * The goods line a journey's train can be routed into at a station (StationProfile): one on the side of the
+ * journey's running line (journeys run Down, toward increasing km of their built route; a leg taken the other
+ * way is mirrored, so a yard is on this side or the other by the way the train goes). Undefined: none usable.
+ */
+export function goodsLineFor(s: { lines: { id: string; offset: number; role?: string }[] }) {
+  return s.lines.find(l => l.role === 'goods' && l.offset < 0)?.id;
+}
+/** Where a goods train can load or unload in a journey: at its start, at a terminal's yards, and at a goods yard on its side. */
+export const canWorkGoods = (j: Journey, s: { code: string; type: string; lines: { id: string; offset: number; role?: string }[] }) =>
+  s.code === j.from || s.type === 'terminal' || !!goodsLineFor(s);
 
 /** The work at a stop when the plan does not say: passengers board everywhere; goods load at the start (if empty), no work on the way. */
 export function stopWork(j: Journey, s: JourneyStop, goods: boolean): WorkKind[] {
@@ -294,7 +308,12 @@ export function journeyScenario(j: Journey, route: RouteData, coaches: Record<st
   const goods = goodsTrain(j.consist, coaches);
   const timetable: TimetableEntry[] = st.map(x => ({ x, p: j.stops.find(s => s.code === x.code) }))
     .filter(({ x, p }) => p?.stop || x.code === j.from)
-    .map(({ x, p }) => ({ station: x.code, dwellS: p?.dwellS ?? 120, work: stopWork(j, p ?? { code: x.code, stop: true, dwellS: 120 }, goods) }));
+    .map(({ x, p }) => {
+      const work = stopWork(j, p ?? { code: x.code, stop: true, dwellS: 120 }, goods);
+      // loading or unloading on the way, at a goods yard: routed into its goods line (the start: at its platform)
+      const yard = goods && x.code !== j.from && work.some(w => w === 'load' || w === 'unload') ? goodsLineFor(x) : undefined;
+      return { station: x.code, dwellS: p?.dwellS ?? 120, work, ...(yard ? { line: yard } : {}) };
+    });
   return {
     id: 'route-mode', name: `Journey: ${route.name}`, difficulty: 'Journey', description: 'Route Mode journey',
     route: route.id, start: { km: first.km, atPlatform: first.code, track: 'DOWN' },

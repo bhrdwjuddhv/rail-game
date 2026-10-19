@@ -2,6 +2,7 @@ import { clamp, fbm, hash2, lerp, ridged, smoothstep } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
 import { biomeOf, RegionData, RiverDef, RoadDef, Route } from '@rail/shared/track/Route';
 import { landformHeight } from '@rail/shared/track/Landforms';
+import { flareAt, formationHalf, parallelRoads, roadDistance, roadTop, ROUNDABOUT, tollFlareAt } from './roads/Highways';
 
 /**
  * The ground height function, shared by the terrain worker and the main
@@ -62,7 +63,7 @@ export class TerrainField {
       if (z.zone !== 'colony') continue;
       const km = (z.fromKm + z.toKm) / 2;
       a.sample(km * 1000, f);
-      const off = -(Math.sign(z.roadOffset ?? 1) || 1) * 150;
+      const off = -(Math.sign(z.roadOffset ?? 1) || 1) * 150; // (a colony's ground: across the line from its road)
       this.grounds.push({ x: f.x - Math.sin(f.heading) * off, z: f.z + Math.cos(f.heading) * off, r: 55, heading: f.heading });
     }
     this.buildBase();
@@ -118,9 +119,11 @@ export class TerrainField {
     return o;
   }
 
-  private nearestAny(x: number, z: number) {
+  /** the nearest sample to any point: among every 4th sample (or just `cand`, a list of them), then refined */
+  private nearestAny(x: number, z: number, cand?: number[]) {
     let best = 0, bd = Infinity;
-    for (let k = 0; k < this.n; k += 4) {
+    for (let c = 0, end = cand ? cand.length : this.n; c < end; c += cand ? 1 : 4) {
+      const k = cand ? cand[c] : c;
       const dx = this.sx[k] - x, dz = this.sz[k] - z;
       const d2 = dx * dx + dz * dz;
       if (d2 < bd) { bd = d2; best = k; }
@@ -151,9 +154,21 @@ export class TerrainField {
     this.baseKm = new Float32Array(N);
     const a = this.route.alignment;
     const tunnels = this.route.tunnels;
+    // the samples that can be nearest to anything in each block of 8 x 8 cells: within the nearest one's distance
+    // from the block's centre plus the block's diagonal (exact: the same answer as searching them all, far quicker
+    // over a long journey's wide box)
+    const B = 8, R = Math.SQRT2 * (B - 1) * BASE_CELL / 2, cnx = Math.ceil(this.bnx / B), cand: number[][] = [];
+    for (let cj = 0; cj < Math.ceil(this.bnz / B); cj++) for (let ci = 0; ci < cnx; ci++) {
+      const cx = this.bx0 + (ci * B + (B - 1) / 2) * BASE_CELL, cz = this.bz0 + (cj * B + (B - 1) / 2) * BASE_CELL;
+      let dmin = Infinity;
+      for (let k = 0; k < this.n; k += 4) dmin = Math.min(dmin, Math.hypot(this.sx[k] - cx, this.sz[k] - cz));
+      const list: number[] = [];
+      for (let k = 0; k < this.n; k += 4) if (Math.hypot(this.sx[k] - cx, this.sz[k] - cz) <= dmin + 2 * R + 1) list.push(k);
+      cand.push(list);
+    }
     for (let j = 0; j < this.bnz; j++) for (let i = 0; i < this.bnx; i++) {
       const x = this.bx0 + i * BASE_CELL, z = this.bz0 + j * BASE_CELL;
-      const { k, d } = this.nearestAny(x, z);
+      const { k, d } = this.nearestAny(x, z, cand[Math.floor(j / B) * cnx + Math.floor(i / B)]);
       const km = (k * SAMPLE_M) / 1000;
       const s = Math.min(a.elev.length - 1, k * SAMPLE_M);
       let h = a.elev[s];
@@ -274,12 +289,19 @@ export class TerrainField {
 
   private roadInfo = { elev: 0, lat: 0 };
 
-  /** LC road profile: rail level at the crossing, easing into natural ground. */
+  /** LC road profile: rail level at the crossing, easing into natural ground - and up to a highway's level where it meets one. */
   lcRoadElevation(r: RoadDef, t: number) {
     const cx = r.ax + r.dx * t, cz = r.az + r.dz * t;
     const nat = this.natural(cx, cz, this.nearest(cx, cz));
     // smooth ramp from the crossing (rail level) to natural ground ~160 m away
-    return lerp(r.railY - 0.06, nat, smoothstep(14, 170, Math.abs(t)));
+    let e = lerp(r.railY - 0.06, nat, smoothstep(14, 170, Math.abs(t)));
+    // (the road runs square to the line: t is its offset from it)
+    for (const p of parallelRoads(this.route)) {
+      if (r.km < p.fromKm || r.km > p.toKm) continue;
+      const hw = formationHalf(p.kind);
+      e = lerp(roadTop(this.route, r.km), e, smoothstep(hw, hw + 40, Math.abs(t - p.offsetAt(r.km))));
+    }
+    return e;
   }
 
   /** Fill a ground sample at (x,z). */
@@ -367,15 +389,27 @@ export class TerrainField {
         out.road = Math.min(out.road, lat);
         const e = this.lcRoadElevation(r, t) - 0.08;
         h = lerp(e, h, smoothstep(4.5, 16, lat));
-      } else if (nt && r.fromKm !== undefined) {
-        if (nt.km < r.fromKm! - 0.05 || nt.km > r.toKm! + 0.05) continue;
-        const lat = Math.abs(nt.d - r.offset!);
-        if (lat > 14) continue;
-        const fade = smoothstep(r.fromKm! - 0.05, r.fromKm!, nt.km) * (1 - smoothstep(r.toKm!, r.toKm! + 0.05, nt.km));
-        out.road = Math.min(out.road, lat + (1 - fade) * 100);
-        const e = this.route.alignment.elevationAt(nt.km) - 0.12;
-        h = lerp(h, lerp(e, h, smoothstep(4, 14, lat)), fade);
       }
+    }
+    // the roads alongside (highways and town streets, see Highways): the ground levelled under the road's whole
+    // formation, a little below its surface, then down (an embankment) or up (a cutting) to the natural ground;
+    // a river keeps its channel (the road bridges it)
+    if (nt) for (const p of parallelRoads(this.route)) {
+      // a roundabout: levelled round its centre
+      for (const km of p.roundabouts) {
+        const dr = Math.hypot((nt.km - km) * 1000, nt.d - p.offsetAt(km));
+        if (dr < ROUNDABOUT.outer + 14) { out.road = Math.min(out.road, Math.max(0, dr - ROUNDABOUT.outer + 3.5)); h = lerp(roadTop(this.route, km) - 0.3, h, smoothstep(ROUNDABOUT.outer + 1, ROUNDABOUT.outer + 14, dr)); }
+      }
+      if (nt.km < p.fromKm - 0.05 || nt.km > p.toKm + 0.05) continue;
+      const lat = Math.abs(nt.d - p.offsetAt(Math.min(p.toKm, Math.max(p.fromKm, nt.km))));
+      const hw = formationHalf(p.kind) + flareAt(p, nt.km), street = p.kind === 'street';
+      if (lat > hw + 12) continue;
+      const fade = smoothstep(p.fromKm - 0.05, p.fromKm, nt.km) * (1 - smoothstep(p.toKm, p.toKm + 0.05, nt.km));
+      // (a toll plaza is road; a forecourt is the places' own ground: they stand on it)
+      out.road = Math.min(out.road, roadDistance(p.kind, lat - tollFlareAt(p, nt.km)) + (1 - fade) * 100);
+      if (out.river < 8) continue;
+      const e = roadTop(this.route, nt.km) - (street ? 0.15 : 0.3);
+      h = lerp(h, lerp(e, h, smoothstep(street ? 4 : hw - 0.2, street ? 14 : hw + 12, lat)), fade);
     }
     this.roadInfo.lat = out.road;
     return h;

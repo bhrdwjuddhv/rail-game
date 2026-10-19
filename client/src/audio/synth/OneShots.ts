@@ -154,5 +154,72 @@ export class OneShots {
   /** door gear: a short pneumatic hiss and thud */
   doors(dest: AudioNode, vol = 0.15) { const t = this.a.now; this.tone(dest, t, 180, 0.08, vol, 'triangle'); this.tone(dest, t + 0.05, 95, 0.18, vol * 0.8, 'sine'); }
 
+  /** a koel's rising "ku-oo", two or three times, each a little higher */
+  koel(dest: AudioNode, vol = 0.1) {
+    const c = this.a.ctx, t0 = this.a.now, n = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * 0.85, k = 1 + i * 0.08;
+      for (const [s, f0, f1, d] of [[0, 820, 950, 0.22], [0.3, 950, 1350, 0.35]] as const) {
+        const o = c.createOscillator();
+        o.frequency.setValueAtTime(f0 * k, t + s); o.frequency.exponentialRampToValueAtTime(f1 * k, t + s + d);
+        o.connect(this.env(dest, t + s, vol, 0.03, d)); o.start(t + s); o.stop(t + s + d + 0.1);
+      }
+    }
+  }
+
+  /** a crow: two hoarse caws */
+  crow(dest: AudioNode, vol = 0.12) {
+    const c = this.a.ctx, t0 = this.a.now;
+    for (const s of [0, 0.38]) {
+      const o = c.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(520, t0 + s); o.frequency.linearRampToValueAtTime(430, t0 + s + 0.22);
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1300; f.Q.value = 1.2;
+      o.connect(f).connect(this.env(dest, t0 + s, vol, 0.01, 0.24)); o.start(t0 + s); o.stop(t0 + s + 0.3);
+      this.noiseBurst(dest, t0 + s, 0.2, 'bandpass', 1600, 1.5, vol * 0.4);
+    }
+  }
+
+  /** parrots going over: quick harsh screeches */
+  parrot(dest: AudioNode, vol = 0.08) {
+    const c = this.a.ctx, t0 = this.a.now;
+    for (let i = 0; i < 3; i++) {
+      const t = t0 + i * 0.16 + Math.random() * 0.05, o = c.createOscillator(); o.type = 'square';
+      o.frequency.setValueAtTime(2900, t); o.frequency.exponentialRampToValueAtTime(1900, t + 0.1);
+      o.connect(this.env(dest, t, vol, 0.004, 0.1)); o.start(t); o.stop(t + 0.15);
+    }
+  }
+
+  /** a cattle (or goat) bell: a dull clank of a few partials */
+  cattleBell(dest: AudioNode, vol = 0.1) {
+    const t = this.a.now, k = 0.85 + Math.random() * 0.3;
+    this.tone(dest, t, 640 * k, 0.35, vol); this.tone(dest, t, 1730 * k, 0.22, vol * 0.5); this.tone(dest, t, 2930 * k, 0.12, vol * 0.25);
+  }
+
+  /** children at play: a few shouts (voiced bursts through mouth-like filters) */
+  kids(dest: AudioNode, vol = 0.07) {
+    const c = this.a.ctx, t0 = this.a.now, n = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * (0.25 + Math.random() * 0.3), o = c.createOscillator(); o.type = 'sawtooth';
+      const f0 = 330 + Math.random() * 160;
+      o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * (0.8 + Math.random() * 0.5), t + 0.25);
+      const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900 + Math.random() * 800; f.Q.value = 3;
+      o.connect(f).connect(this.env(dest, t, vol, 0.02, 0.25)); o.start(t); o.stop(t + 0.32);
+    }
+  }
+
+  /** a platform vendor's sung call: two long vowels, the second falling */
+  vendorCall(dest: AudioNode, vol = 0.07) {
+    const c = this.a.ctx, t0 = this.a.now;
+    for (const [s, f0, f1, d] of [[0, 300, 300, 0.45], [0.55, 300, 240, 0.8]] as const) {
+      const o = c.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f0, t0 + s); o.frequency.linearRampToValueAtTime(f1, t0 + s + d);
+      for (const [ff, q, g] of [[800, 6, 1], [1250, 8, 0.6]] as const) {
+        const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = ff; f.Q.value = q;
+        o.connect(f).connect(this.env(dest, t0 + s, vol * g, 0.05, d));
+      }
+      o.start(t0 + s); o.stop(t0 + s + d + 0.1);
+    }
+  }
+
   cricket(dest: AudioNode, vol = 0.05) { const t = this.a.now; for (let i = 0; i < 3; i++) this.tone(dest, t + i * 0.06, 4400, 0.035, vol); }
 }

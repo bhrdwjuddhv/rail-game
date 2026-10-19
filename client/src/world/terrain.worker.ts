@@ -21,14 +21,23 @@ const hex = (s: string): [number, number, number] => {
 
 self.onmessage = (e: MessageEvent) => {
   const m = e.data;
+  // (failures are answered, never left hanging: the loading screen shows them, streaming goes on without the tile)
+  const fail = (e: unknown) => String((e as Error)?.stack ?? e);
   if (m.type === 'init') {
-    route = new Route(m.route as RouteData, m.regions as Record<string, RegionData>);
-    field = new TerrainField(route);
-    setBillboardZones((m.billboardZones as number[][]) ?? []);
-    (self as any).postMessage({ type: 'ready' });
+    try {
+      route = new Route(m.route as RouteData, m.regions as Record<string, RegionData>);
+      field = new TerrainField(route);
+      setBillboardZones((m.billboardZones as number[][]) ?? []);
+      (self as any).postMessage({ type: 'ready' });
+    } catch (e) { (self as any).postMessage({ type: 'init-failed', error: fail(e) }); }
     return;
   }
-  if (m.type === 'tile') buildTile(m as TileRequest);
+  if (m.type !== 'tile') return;
+  try { buildTile(m as TileRequest); } catch (e) {
+    // its scenery failed: the bare ground at least
+    console.error('terrain tile failed', (m as TileRequest).x0, (m as TileRequest).z0, fail(e));
+    try { buildTile({ ...(m as TileRequest), scenery: 'none' }); } catch (e2) { (self as any).postMessage({ type: 'tile-failed', id: m.id, error: fail(e2) }); }
+  }
 };
 
 function buildTile(req: TileRequest) {

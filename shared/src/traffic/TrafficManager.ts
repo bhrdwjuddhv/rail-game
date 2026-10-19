@@ -1,3 +1,5 @@
+import { goodsStations, planGoods } from '../gameplay/GoodsPlanner';
+import type { CoachData } from '../train/Consist';
 import { AITrain, AITrainDef } from '../gameplay/AITrain';
 import type { LineControl } from '../signalling/Control';
 import type { Route } from '../track/Route';
@@ -31,6 +33,8 @@ export interface TrafficConfig {
    * dispatcher turns the slower train into a loop), slower ones start ahead.
    */
   sameLine?: { playerKmph: number };
+  /** wagon types (what they carry): goods trains are given cargo and sent to the yards with work for them (GoodsPlanner) */
+  coaches?: Record<string, CoachData>;
 }
 
 export const DEFAULT_TRAFFIC: TrafficConfig = {
@@ -105,9 +109,21 @@ export class TrafficManager {
     const lengthKm = (20.56 + cars * kind.carLengthM) / 1000;
     const km = this.outsideYards(headKm);
     if (km - lengthKm < 0.05 || km > this.route.lengthKm - 0.3 || !this.clear(km, lengthKm)) return null;
+    // a goods train runs loaded (with one of the cargoes its wagons carry) or empty; the goods dispatcher sends it to
+    // the first yard ahead with work for it (its siding long enough), where it is routed in to unload or load
+    let yard: { code: string; goodsLine?: string } | undefined;
+    if (kind.kind === 'goods') {
+      const wt = this.cfg.coaches?.[kind.stock ?? 'goods'], carries = wt?.carries ?? (wt?.load ? [wt.load] : []);
+      const loaded = this.rand() < 0.6, cargo = carries[Math.floor(this.rand() * carries.length)];
+      if (carries.length) {
+        const plan = planGoods(goodsStations(this.route, km + 1), Array.from({ length: cars }, () => ({ carries, loaded, cargo: loaded ? cargo : undefined })), lengthKm * 1000);
+        const first = plan.stops[0];
+        if (first) yard = { code: first.station, goodsLine: first.line };
+      }
+    }
     const def: AITrainDef = {
       id: `${this.route.running.id}-${this.cfg.sameLine ? 'S' : 'T'}${++this.seq}`, name: `${kind.kind === 'goods' ? 'Goods' : 'Express'} ${100 + this.seq}`,
-      startKm: km, line: this.route.running.id, maxKmph: kind.maxKmph, wagons: cars, stops: [],
+      startKm: km, line: this.route.running.id, maxKmph: kind.maxKmph, wagons: cars, stops: yard?.goodsLine ? [{ station: yard.code, line: yard.goodsLine, dwellS: 240 }] : [],
       despawnKm: this.route.lengthKm - 0.4, track: this.route.running.id, carLengthM: kind.carLengthM, kind: kind.kind, stock: kind.stock,
     };
     const t = new AITrain(def, this.route, this.line.block);

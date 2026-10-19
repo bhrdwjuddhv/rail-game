@@ -193,7 +193,7 @@ export class Dispatcher {
    */
   loopAt(st: StationInfo) {
     const run = this.route.running.offset;
-    return st.lineInfo.filter(l => l.id !== this.route.running.id && Math.sign(l.offset) === Math.sign(run) && Math.abs(l.offset) > Math.abs(run))
+    return st.lineInfo.filter(l => l.id !== this.route.running.id && l.id !== st.goodsLine && Math.sign(l.offset) === Math.sign(run) && Math.abs(l.offset) > Math.abs(run))
       .sort((a, b) => Math.abs(a.offset - run) - Math.abs(b.offset - run))[0] ?? st.lineInfo.find(l => l.id === MIDDLE_LINE);
   }
 

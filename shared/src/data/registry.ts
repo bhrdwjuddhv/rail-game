@@ -4,13 +4,14 @@
 // broken file can never crash a run. The caller supplies the raw files (Vite
 // import.meta.glob in the browser, fs in Node), keyed by path.
 import { DataIssue, normaliseLoco, reportIssues, validateCoach, validateRoute } from './validate';
-import type { RegionData, RouteData } from '../track/Route';
+import { biomeOf, type RegionData, type RouteData } from '../track/Route';
 import { JunctionData, joinThroughJunction } from '../track/Junctions';
+import { applyProfile, Cargo, resolveProfile, StationProfileData } from '../track/StationProfile';
 import type { CoachData, LocoData } from '../train/Consist';
 import type { ScenarioData } from '../gameplay/Scenario';
 
 export type RawFiles = Record<string, unknown>;
-export interface DataFiles { regions: RawFiles; routes: RawFiles; locomotives: RawFiles; coaches: RawFiles; scenarios: RawFiles; junctions?: RawFiles }
+export interface DataFiles { regions: RawFiles; routes: RawFiles; locomotives: RawFiles; coaches: RawFiles; scenarios: RawFiles; junctions?: RawFiles; stations?: RawFiles }
 
 export interface Registry {
   issues: DataIssue[];
@@ -24,6 +25,10 @@ export interface Registry {
   /** Locomotive by id, falling back to the first valid one (never undefined). */
   locoOrDefault(id: string | undefined): LocoData;
 }
+
+/** what a region's goods yards handle, by its landscape */
+const cargoOf = (biome?: string): Cargo[] => biome === 'desert' ? ['marble', 'salt', 'stone'] : biome === 'coast' ? ['salt', 'fish', 'cartons']
+  : biome === 'ghats' || biome === 'hills' ? ['cement', 'stone', 'cartons'] : biome === 'snow' ? ['tea', 'timber', 'cartons'] : ['grain', 'sugar', 'fertiliser', 'cartons'];
 
 const fileName = (path: string) => path.replace(/\\/g, '/').split('/').slice(-2).join('/');
 
@@ -42,6 +47,21 @@ export function buildRegistry(files: DataFiles, report = true): Registry {
 
   const regions = byId<RegionData>(files.regions);
   const routes = byId<RouteData>(files.routes, (f, r) => validateRoute(f, r, regions, issues));
+  // stations: each route's class, look and goods yard (data/stations/<route>.json); every station gets a profile
+  const profiles: Record<string, { stations?: Record<string, StationProfileData> }> = {};
+  for (const [path, raw] of Object.entries(files.stations ?? {})) {
+    const r = raw as { route?: string; stations?: Record<string, StationProfileData> };
+    if (!r.route || !routes[r.route]) { issues.push({ file: fileName(path), level: 'error', message: `route "${r.route}" not found - ignored` }); continue; }
+    for (const code of Object.keys(r.stations ?? {})) if (!routes[r.route].stations.some(s => s.code === code)) issues.push({ file: fileName(path), level: 'warning', message: `station "${code}" is not on ${r.route} - ignored` });
+    profiles[r.route] = r;
+  }
+  for (const [id, route] of Object.entries(routes)) {
+    const p = profiles[id]?.stations ?? {};
+    route.stations = route.stations.map(s => {
+      const reg = regions[route.regions.find(g => s.km >= g.fromKm && s.km <= g.toKm)?.region ?? ''], cargo = cargoOf(reg && biomeOf(reg));
+      return applyProfile(s, resolveProfile(s, p[s.code], cargo));
+    });
+  }
   const locos = byId<LocoData>(files.locomotives, (f, r) => normaliseLoco(f, r, issues));
   const coaches = byId<CoachData>(files.coaches, (f, r) => validateCoach(f, r, issues));
   const scenarios = byId<ScenarioData>(files.scenarios, (f, r: ScenarioData) => {

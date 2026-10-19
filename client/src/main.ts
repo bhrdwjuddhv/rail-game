@@ -1,3 +1,5 @@
+import { planScenes } from './world/scenery/Scenes';
+import { parallelRoads, roadAt } from './world/roads/Highways';
 import { TrainDynamics } from '@rail/shared/physics/TrainDynamics';
 TrainDynamics.strictNaN = import.meta.env.DEV;
 import './style.css';
@@ -92,7 +94,8 @@ async function boot() {
   initModelLoader(rs.renderer);
   rs.resize(innerWidth, innerHeight);
   document.body.dataset.backend = rs.backend;
-  (window as any).__rail = { backend: rs.backend };
+  // (automation: the benchmark and the realism shots read the game and the scene planner from here)
+  (window as any).__rail = { backend: rs.backend, planScenes, roadAt, parallelRoads };
 
   // last-resort handlers: an uncaught error anywhere shows the friendly error screen
   const onFatal = (e: unknown) => {

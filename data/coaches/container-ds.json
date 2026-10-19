@@ -1,5 +1,6 @@
 {
   "id": "container-ds",
+  "carries": ["cartons", "fish", "tea"],
   "name": "Double-stack Container Wagon",
   "kind": "container",
   "containers": "double",

@@ -1,3 +1,4 @@
+import type { StationProfile } from './StationProfile';
 import { clamp } from '../util';
 import { Alignment, newFrame } from './Chainage';
 import { compileLandforms, Landform, LandformData } from './Landforms';
@@ -26,6 +27,8 @@ export interface StationData {
    * this length is built by the station building.
    */
   servicePlatformM?: number;
+  /** its class, look and goods yard (data/stations; StationProfile) - the class's layout already applied */
+  profile?: StationProfile;
 }
 export interface StructureData {
   /** rob: a road over-bridge crossing the line (fromKm..toKm = its width) */
@@ -166,6 +169,8 @@ export interface StationInfo extends StationData {
   ladderIn?: string[]; ladderOut?: string[];
   /** big junction: lines with a platform for trains calling here (bays excluded), the bays, the freight avoiding line */
   platformLines?: string[]; bayIn?: string; bayOut?: string; avoiding?: string;
+  /** its goods line, this direction (a loop beside the goods platform; StationProfile): only booked trains are routed in */
+  goodsLine?: string;
 }
 export interface BoardDef { kind: 'km' | 'whistle' | 'speed' | 'caution' | 'termination' | 'gradient' | 'approach' | 'stop' | 'ghat'; km: number; text: string; offset: number }
 export interface RiverDef { id: string; points: { x: number; z: number }[]; width: number; floor: number; water: number; bridgeKm: number; minX: number; maxX: number; minZ: number; maxZ: number }
@@ -333,6 +338,9 @@ export class Route {
     const run = this.running;
     const loops = s.lines.filter(l => !this.isRunning(l.id));
     const own = loops.filter(l => this.parentOf(l.offset).id === run.id);
+    // the goods line: off the passenger loop on its side when there is one (a siding off the loop), else off the running line
+    const goods = own.find(l => l.role === 'goods');
+    const via = goods && own.filter(l => l !== goods && Math.sign(l.offset) === Math.sign(goods.offset)).sort((a, b) => Math.abs(b.offset) - Math.abs(a.offset))[0];
     // the middle line: turnouts into it from this direction's running line (not at halts)
     const mid = this.middle && s.type !== 'halt';
     if (mid) own.push({ id: MIDDLE_LINE, offset: 0 });
@@ -350,12 +358,27 @@ export class Route {
     }
     const r = RAMP_M / 1000;
     for (const l of own) {
+      if (l === goods && via) continue;
       const li = { id: l.id, offset: l.offset, fromKm: st.entryKm + r, toKm: st.exitKm - r };
       st.lineInfo.push(li);
       // (the middle line itself runs the whole route: only its turnouts are the station's)
       if (l.id !== MIDDLE_LINE) this.graph.addLine({ ...li, id: `${s.code}-${l.id}`, station: s.code });
       this.graph.addSwitch({ id: `${s.code}-${l.id}-E`, station: s.code, kind: 'facing', from: run.offset, to: l.offset, rampStart: st.entryKm, rampEnd: st.entryKm + r });
       this.graph.addSwitch({ id: `${s.code}-${l.id}-X`, station: s.code, kind: 'trailing', from: l.offset, to: run.offset, rampStart: st.exitKm - r, rampEnd: st.exitKm });
+    }
+    if (goods) {
+      st.goodsLine = goods.id;
+      if (via) {
+        // in off the loop once it has reached its own offset, back onto it before it leaves; both its points set
+        // for a train going in or out (the loop's and its own: a two-step ladder)
+        const a = st.entryKm + r + 0.03, b = st.exitKm - r - 0.03;
+        const li = { id: goods.id, offset: goods.offset, fromKm: a + r, toKm: b - r };
+        st.lineInfo.push(li);
+        this.graph.addLine({ ...li, id: `${s.code}-${goods.id}`, station: s.code });
+        this.graph.addSwitch({ id: `${s.code}-${goods.id}-E`, station: s.code, kind: 'facing', from: via.offset, to: goods.offset, rampStart: a, rampEnd: a + r });
+        this.graph.addSwitch({ id: `${s.code}-${goods.id}-X`, station: s.code, kind: 'trailing', from: goods.offset, to: via.offset, rampStart: b - r, rampEnd: b });
+        st.ladderIn = [via.id, goods.id]; st.ladderOut = [via.id, goods.id];
+      }
     }
     // the middle line's ends of the station: in from it before the station (I), out onto it after (O)
     if (mid) {
@@ -724,11 +747,13 @@ export class Route {
     const st = this.stationAt(km, 0.05);
     if (!st) return base;
     let w = base;
-    for (const l of st.lines) w = Math.max(w, Math.abs(l.offset) + 4);
+    // (a goods line: its loading platform and truck yard beyond it, StationProfile / GoodsYard)
+    for (const l of st.lines) w = Math.max(w, Math.abs(l.offset) + (l.role === 'goods' ? 30 : 4));
     const half = (st.servicePlatformM ?? st.platformLengthM) / 2000;
     if (km >= st.km - half - 0.06 && km <= st.km + half + 0.06) {
       for (const p of st.platforms) w = Math.max(w, Math.abs(p.from) + 1, Math.abs(p.to) + 1);
-      w += 22; // station building / circulating area
+      // station building / circulating area (a city's: its porch, auto stand and car park)
+      w += st.profile?.class === 'city' ? 42 : 22;
     }
     return w;
   }

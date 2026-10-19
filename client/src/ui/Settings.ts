@@ -19,6 +19,7 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
         <label>Fog density <input type="range" min="0.3" max="2" step="0.1" value="${s.fogMultiplier}" data-s="fogMultiplier"><output>${s.fogMultiplier}x</output></label>
         <label>Bloom (night, fog, tunnels) <input type="checkbox" ${s.bloom ? 'checked' : ''} data-s="bloom"></label>
         <label>Adaptive resolution <input type="checkbox" ${s.adaptiveQuality ? 'checked' : ''} data-s="adaptiveQuality"></label>
+        <label title="String lights on the houses and diyas at the doors by night, kites over the towns by day">Festival mode <input type="checkbox" ${s.festival ? 'checked' : ''} data-s="festival"></label>
         <p class="note">Adaptive resolution renders slightly sharper or softer to keep the frame rate smooth (render scale is the most it uses).</p>
         <p class="note">Antialiasing and quality preset changes to terrain detail apply fully after restarting the run.</p>
       </section>

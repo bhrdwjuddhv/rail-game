@@ -1,0 +1,34 @@
+{
+  "id": "open-steel",
+  "name": "Open Wagon (BOXN) - steel coils",
+  "kind": "open",
+  "massEmptyT": 23,
+  "massLoadedT": 81,
+  "lengthM": 10.7,
+  "bogieCentresM": 6.5,
+  "axleSpacingM": 2,
+  "maxBrakeForceKN": 60,
+  "resistance": {
+    "aN": 1050,
+    "bNperMs": 13,
+    "cNperMs2": 1.4
+  },
+  "livery": {
+    "body": "#4a3a30",
+    "band": "#4a3a30",
+    "roof": "#4a3a30",
+    "window": "#4a3a30"
+  },
+  "windows": "none",
+  "interiorLight": "#000000",
+  "tints": [
+    "#ffffff",
+    "#e8ddd6",
+    "#d9c9bd"
+  ],
+  "load": "steel",
+  "carries": [
+    "steel"
+  ],
+  "emptyLook": "open-empty"
+}

@@ -73,6 +73,8 @@ export interface SettingsData {
   adaptiveQuality: boolean;
   /** touch devices: fade the on-screen controls after a few seconds without a touch */
   touchAutoHide: boolean;
+  /** festival mode: string lights on the houses and diyas at the doors by night, kites over the towns by day */
+  festival: boolean;
   /** touch devices: both levers on the right (default) or throttle on the left edge */
   leverLayout: 'right' | 'split';
   /**
@@ -106,7 +108,7 @@ const defaults = (): SettingsData => ({
   quality: 'high', renderScale: 1, shadows: 'high', drawDistance: 3400, bloom: true, fogMultiplier: 1,
   volumes: { master: 0.8, train: 0.9, horn: 0.8, env: 0.7, ui: 0.6 },
   units: 'kmh', keys: { ...DEFAULT_KEYS }, dayNightSpeed: 10, mouseSensitivity: 1, autoDetected: false, renderer: 'webgl', maxPixelRatio: 1.5, adaptiveQuality: true,
-  touchAutoHide: true, leverLayout: 'right', controls: 'auto', traffic: 1, driving: 'advanced',
+  touchAutoHide: true, leverLayout: 'right', controls: 'auto', traffic: 1, driving: 'advanced', festival: false,
 });
 
 export const settings = new Store<SettingsData>((() => {

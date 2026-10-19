@@ -9,6 +9,7 @@ const reg = buildRegistry({
   coaches: import.meta.glob('../../data/coaches/*.json', { eager: true, import: 'default' }),
   scenarios: import.meta.glob('../../data/scenarios/*.json', { eager: true, import: 'default' }),
   junctions: import.meta.glob('../../data/junctions/*.json', { eager: true, import: 'default' }),
+  stations: import.meta.glob('../../data/stations/*.json', { eager: true, import: 'default' }),
 });
 
 export const DATA_ISSUES = reg.issues;

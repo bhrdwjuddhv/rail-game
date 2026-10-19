@@ -8,6 +8,8 @@ const POOL: Record<Quality, number> = { low: 0, medium: 1, high: 2, ultra: 4 };
 import type { Sky } from './Sky';
 import type { TimeOfDay } from './TimeOfDay';
 import type { Weather } from './Weather';
+import { festiveDecals, festiveMaterial, festiveSprites, lampPool } from '../world/scenery/Props';
+import { textures } from '../core/TextureLibrary';
 
 /**
  * Sun/moon directional light with a shadow frustum that follows the camera
@@ -71,7 +73,8 @@ export class Lighting {
     const fx = Math.round(focus.x / texel) * texel, fz = Math.round(focus.z / texel) * texel;
     this.sun.target.position.set(fx, focus.y, fz);
     this.sun.position.set(fx + dir.x * 500, focus.y + Math.max(0.15, dir.y) * 500, fz + dir.z * 500);
-    const sunCol = new THREE.Color().setRGB(1, lerp(0.62, 0.97, clamp(time.elevation * 4, 0, 1)), lerp(0.4, 0.92, clamp(time.elevation * 3, 0, 1)));
+    // (a touch warm even at noon: the dusty light of the plains, never orange)
+    const sunCol = new THREE.Color().setRGB(1, lerp(0.62, 0.955, clamp(time.elevation * 4, 0, 1)), lerp(0.4, 0.87, clamp(time.elevation * 3, 0, 1)));
     if (moonUp) {
       this.sun.color.setRGB(0.6, 0.7, 1);
       this.sun.intensity = 0.22 * (1 - oc) * dark;
@@ -97,6 +100,13 @@ export class Lighting {
     const lampOn = this.nightLight > 0.25;
     M.lamp.color.setRGB(lampOn ? 4 : 0.75, lampOn ? 3.6 : 0.75, lampOn ? 2.8 : 0.7);
     M.facade.emissiveIntensity = this.nightLight * 0.9;
+    // the towns after dark: lit windows and shopfronts, pools of light under the street lamps
+    textures.setGlow(this.nightLight);
+    lampPool.visible = lampOn;
+    lampPool.opacity = 0.32 * this.nightLight;
+    // festival mode: the houses' string lights and diyas after dark
+    festiveMaterial.visible = festiveSprites.visible = settings.get().festival && this.nightLight > 0.3;
+    if (festiveDecals) festiveDecals.visible = settings.get().festival;
     for (const m of allLabelMaterials()) m.emissiveIntensity = 0.04 + this.nightLight * 0.12;
 
     // pooled point lights at the nearest platform lamps

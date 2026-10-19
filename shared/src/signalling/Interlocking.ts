@@ -187,7 +187,8 @@ export class Interlocking {
     if (existing) return existing;
     // only one reception at a time per station (single home signal)
     if (this.routes.some(r => r.station === st && r.kind === 'reception')) return null;
-    const order = only ? prefs : [...prefs, ...st.lineInfo.map(l => l.id).filter(id => !prefs.includes(id))];
+    // (the goods line only when asked for: a train booked to load or unload there)
+    const order = only ? prefs : [...prefs, ...st.lineInfo.map(l => l.id).filter(id => !prefs.includes(id) && id !== st.goodsLine)];
     for (const lineId of order) {
       if (!st.lineInfo.some(l => l.id === lineId)) continue;
       if (!this.lineClear(st, lineId, occupants, trainId)) continue;

@@ -350,6 +350,7 @@ export class RecordCameras {
     const target = () => this.trains.camTarget(this.follow) ?? this.trains.camTarget({ kind: 'player' }) ?? (this.trains.list[0] ? this.trains.camTarget({ kind: 'spawned', s: this.trains.list[0] }) : null);
     this.orbit.target = this.attach.target = this.trackside.target = this.followCam.target = target;
     this.followCam.avoid = p => this.keepOut(p);
+    this.trackside.spots.push(...this.stationSpots());
     this.attach.hideLead = on => {
       const tg = on ? target() : null;
       const lead = tg && this.follow.kind !== 'player' ? tg.view.locos[0]?.group ?? null : null;
@@ -521,6 +522,30 @@ export class RecordCameras {
     this.trackside.follow = true;
     const h = this.st.h;
     if (h.cameras.index === this.idx.trackside) this.trackside.enter(); else h.cameras.select(this.idx.trackside, this.ctx(), true);
+  }
+
+  /**
+   * Ready-made trackside spots at the route's bigger stations (StationProfile): a town's or city's platform
+   * end looking up the platforms, a city's forecourt from above, a goods yard over its loading platform.
+   */
+  private stationSpots() {
+    const h = this.st.h, r = h.route, f = newFrame(), out: TracksideCam['spots'] = [];
+    const spot = (name: string, km: number, lat: number, up: number, lookKm: number, lookLat: number) => {
+      r.alignment.sampleOffset(km * 1000, lat, f);
+      const pos = new THREE.Vector3(f.x, Math.max(h.field.height(f.x, f.z), f.y) + up, f.z);
+      r.alignment.sampleOffset(lookKm * 1000, lookLat, f);
+      out.push({ name, pos, quat: lookAtQuat(pos, new THREE.Vector3(f.x, f.y + 2, f.z), new THREE.Quaternion()).clone() });
+    };
+    for (const st of r.stations) {
+      const p = st.profile;
+      if (!p || (p.class !== 'town' && p.class !== 'city' && !p.goods)) continue;
+      const side = st.buildingSide, outer = Math.max(...st.platforms.map(x => Math.abs(x.to)));
+      if (p.class === 'town' || p.class === 'city') spot(`${st.name}: platform end`, st.platformFromKm - 0.02, side * (outer - 2), 4, st.km, 0);
+      if (p.class === 'city') spot(`${st.name}: station front`, st.km - 0.06, side * (outer + 45), 14, st.km, side * (outer + 10));
+      const gl = st.lines.find(l => l.role === 'goods');
+      if (gl) spot(`${st.name}: goods yard`, st.km + 0.17, gl.offset + Math.sign(gl.offset) * 14, 7, st.km, gl.offset);
+    }
+    return out;
   }
 
   /** Manual camera use stops the director. */

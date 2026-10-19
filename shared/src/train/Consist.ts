@@ -1,4 +1,5 @@
 // Data shapes for rolling stock and the flat vehicle list the physics works on.
+import type { Cargo } from '../track/StationProfile';
 
 export interface LocoData {
   /** electric loco, diesel loco, or a fixed electric trainset (EMU: powered cars, no coaches added) */
@@ -166,9 +167,13 @@ export interface CoachData {
   livery: { body: string; band: string; roof: string; window: string };
   windows: 'open' | 'sealed' | 'none'; interiorLight: string;
   /** body type (client model): passenger coach (default), covered boxcar, container wagon, brake van */
-  kind?: 'coach' | 'boxcar' | 'container' | 'brakevan';
+  kind?: 'coach' | 'boxcar' | 'container' | 'brakevan' | 'open';
   /** container wagons: what they carry */
   containers?: 'double' | 'double-20' | 'single' | 'empty';
+  /** goods wagons: the cargoes it can carry (GoodsPlanner: where it loads and unloads); the first is its usual one */
+  carries?: Cargo[];
+  /** open wagons: the load drawn on it when loaded (one type per load) */
+  load?: Cargo;
   /** colours the bodies are tinted with, one picked per vehicle (containers, weathering) */
   tints?: string[];
   /** passenger seats (default 72) */
@@ -195,7 +200,7 @@ export interface CoachModelFile {
 }
 
 /** Freight stock (boxcars, container wagons, brake vans). */
-export const isFreightStock = (c: CoachData | undefined) => !!c && (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan' || c.windows === 'none');
+export const isFreightStock = (c: CoachData | undefined) => !!c && (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan' || c.kind === 'open' || c.windows === 'none');
 
 export interface Vehicle {
   kind: 'loco' | 'coach';
@@ -207,6 +212,8 @@ export interface Vehicle {
   massKg: number;
   /** goods / passengers aboard (coaches): the mass is the loaded or the empty one */
   loaded?: boolean;
+  /** goods wagons: the cargo aboard (while loaded) */
+  cargo?: Cargo;
   length: number;
   /** distance from head of train to this vehicle's front, metres */
   frontOffset: number;
@@ -217,7 +224,8 @@ export interface Vehicle {
 }
 
 /** `locos`: number of loco units (1-2) worked from the lead cab (multiple working) */
-export interface ConsistSpec { loco: string; coaches: { type: string; count: number }[]; loaded?: boolean; locos?: number }
+/** `cargo`: what that group's wagons carry when loaded (default: the wagon type's usual cargo) */
+export interface ConsistSpec { loco: string; coaches: { type: string; count: number; cargo?: Cargo }[]; loaded?: boolean; locos?: number }
 
 /**
  * Space left between coupled vehicles (m). Lengths in the data are over buffers / couplers (as published), so
@@ -259,6 +267,7 @@ export class Consist {
       for (let i = 0; i < g.count; i++) {
         this.vehicles.push({
           kind: 'coach', typeId: c.id, massKg: (spec.loaded === false ? c.massEmptyT : c.massLoadedT) * 1000, loaded: spec.loaded !== false,
+          cargo: spec.loaded !== false ? g.cargo ?? c.load ?? c.carries?.[0] : undefined,
           length: c.lengthM, frontOffset: off, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM,
           maxBrakeN: c.maxBrakeForceKN * 1000,
           davis: { a: c.resistance.aN, b: c.resistance.bNperMs, c: c.resistance.cNperMs2 },
@@ -275,9 +284,10 @@ export class Consist {
   get coachCount() { return this.vehicles.filter(v => v.kind === 'coach').length; }
 
   /** Load or unload one vehicle (index into vehicles): its mass, and the train's, change. */
-  setLoaded(i: number, loaded: boolean, coachTypes: Record<string, CoachData>) {
+  setLoaded(i: number, loaded: boolean, coachTypes: Record<string, CoachData>, cargo?: Cargo) {
     const v = this.vehicles[i], c = coachTypes[v.typeId];
     if (v.kind !== 'coach' || !c || v.loaded === loaded) return;
+    v.cargo = loaded ? cargo ?? c.load ?? c.carries?.[0] : undefined;
     const m = (loaded ? c.massLoadedT : c.massEmptyT) * 1000;
     this.mass += m - v.massKg;
     v.massKg = m;

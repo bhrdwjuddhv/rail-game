@@ -19,12 +19,14 @@ export const FOB = {
 /** the stairs' length along the platform, from the deck's edge to the foot */
 export const STAIR_RUN = 2 * (FOB.steps - 1) * FOB.going + FOB.landing;
 
-/** km of a station's foot over bridge, or null (one platform, or a junction whose own architecture has the concourse) */
-export function fobKm(st: StationInfo): number | null {
+/** km of a station's foot over bridges (a city station has a second one): none with one platform, or at a junction whose own architecture has the concourse */
+export function fobKms(st: StationInfo): number[] {
   const jn = st.junction?.style;
-  if (st.platforms.length < 2 || jn === 'modern' || jn === 'dravidian') return null;
-  return st.km + (jn === 'colonial' ? 0.19 : 0.09);
+  if (st.platforms.length < 2 || jn === 'modern' || jn === 'dravidian') return [];
+  return [st.km + (jn === 'colonial' ? 0.19 : 0.09), ...(st.profile?.class === 'city' && !jn ? [st.km - 0.13] : [])];
 }
+/** the first (or only) bridge's km, or null */
+export const fobKm = (st: StationInfo): number | null => fobKms(st)[0] ?? null;
 
 /** the km range the bridge and its stairs take on the platforms (shelters, benches and boards keep out of it) */
 export const fobSpan = (km: number): [number, number] => [km - FOB.half / 1000 - 0.002, km + (FOB.half + STAIR_RUN) / 1000 + 0.002];

@@ -21,7 +21,7 @@ import { DEFAULT_LINE_SPACING_M, PostcardData, RouteData, StationData } from './
 
 export type JunctionStyle = 'modern' | 'rajasthani' | 'colonial' | 'dravidian';
 /** platform line, bay entered from the low-km end (bay-low) or the high-km end (bay-high), freight avoiding line, sidings (not routed) */
-export type LineRole = 'platform' | 'bay-low' | 'bay-high' | 'avoiding' | 'siding' | 'carriage' | 'shed';
+export type LineRole = 'platform' | 'bay-low' | 'bay-high' | 'avoiding' | 'siding' | 'carriage' | 'shed' | 'goods';
 
 export interface JunctionData {
   id: string; name: string; nameHi: string; nameRegional: string; code: string;

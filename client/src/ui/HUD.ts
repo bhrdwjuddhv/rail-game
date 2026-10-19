@@ -6,7 +6,8 @@ export interface HudData {
   speed: number; units: string; limit: number; notch: string; reverser: string;
   bp: number; bc: number; mr: number;
   signal: { id: string; aspect: string; dist: number } | null;
-  station: { name: string; dist: number; stop: boolean } | null;
+  /** note: the goods work planned there ("Unload 20 wagons of cement at Retiwala (goods siding)") */
+  station: { name: string; dist: number; stop: boolean; note?: string | null } | null;
   restriction: { kmph: number; dist: number } | null;
   clock: string; eta: string; due: string; gradient: string; km: number; score: number | null;
   camera: string; weather: string;
@@ -46,6 +47,7 @@ export class HUD {
         <div class="row"><b>BP</b><span data-k="bp">5.0</span><b>BC</b><span data-k="bc">0.0</span><b>MR</b><span data-k="mr">9.0</span></div>
         <div class="row"><b>Signal</b><span data-k="signal">-</span></div>
         <div class="row"><b>Station</b><span data-k="station">-</span></div>
+        <div class="row" data-k="nextRow" hidden><b>Next</b><span data-k="next"></span></div>
         <div class="row"><b>Next limit</b><span data-k="restriction">-</span></div>
         <div class="row"><b>Grade</b><span data-k="grade">Level</span><b>km</b><span data-k="km">0</span></div>
         <div class="row"><b>Time</b><span data-k="clock">--</span><b>ETA</b><span data-k="eta">--</span></div>
@@ -95,6 +97,9 @@ export class HUD {
     e.bp.textContent = d.bp.toFixed(1); e.bc.textContent = d.bc.toFixed(1); e.mr.textContent = d.mr.toFixed(1);
     e.signal.innerHTML = d.signal ? `${ASPECT_HTML[d.signal.aspect] ?? ''} ${d.signal.id} &middot; ${fmtDist(d.signal.dist)}` : '—';
     e.station.textContent = d.station ? `${d.station.name} ${fmtDist(d.station.dist)}${d.station.stop ? ' (stop)' : ''}` : '—';
+    const note = d.station?.note ?? '';
+    if (e.next.textContent !== note) e.next.textContent = note;
+    e.nextRow.hidden = !note;
     e.restriction.textContent = d.restriction ? `${d.restriction.kmph} in ${fmtDist(d.restriction.dist)}` : '—';
     e.grade.textContent = d.gradient;
     e.km.textContent = d.km.toFixed(2);

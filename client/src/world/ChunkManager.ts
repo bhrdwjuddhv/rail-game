@@ -128,13 +128,25 @@ export class ChunkManager {
     let n = 0;
     for (const t of this.tiles.values()) {
       const d = Math.hypot((t.tx + 0.5) * TILE - x, (t.tz + 0.5) * TILE - z);
-      if (d < radius && (!t.group || t.res !== t.wantRes || t.pendingId)) n++;
+      if (d < radius && t.pendingId >= 0 && (!t.group || t.res !== t.wantRes || t.pendingId)) n++;
     }
     return n;
   }
 
+  /** a worker could not set up (the route data broken): the loading screen reports it */
+  initError: string | null = null;
+
   private onMessage(m: any) {
     if (m.type === 'ready') { this.ready++; return; }
+    if (m.type === 'init-failed') { this.initError ??= m.error; console.error('terrain worker init failed', m.error); return; }
+    if (m.type === 'tile-failed') {
+      // left out (not asked for again: pendingId stays negative), the rest go on
+      console.error('terrain tile failed', m.error);
+      const t = this.inFlight.get(m.id);
+      this.inFlight.delete(m.id);
+      if (t && t.pendingId === m.id) t.pendingId = -1;
+      return;
+    }
     if (m.type !== 'tile') return;
     const tile = this.inFlight.get(m.id);
     this.inFlight.delete(m.id);

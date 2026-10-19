@@ -1,7 +1,8 @@
 // Texture pipeline: `npm run textures`  (options: --only <id-substring> --force --selftest)
 //
 // For every entry in data/textures.json whose source image exists under client/public/assets/:
-//  1. validate (PNG, size, alpha, painted-in "fake transparency" checkerboards)
+//  1. validate (PNG, size, alpha, painted-in "fake transparency" checkerboards); "keyChecker" entries: the
+//     painted checkerboard (and an atlas's black gutter lines) keyed out to real alpha
 //  2. power-of-two size from the manifest; crop (tiles) or pad (sprites/decals/atlases), never stretch
 //  3. de-light tileable colour maps (divide out large-scale brightness, keep fine detail)
 //  4. make tile / tile-x / tile-y seamless along their wrap axes, then score the seams
@@ -12,6 +13,9 @@
 //  9-10. export KTX2 (Basis Universal, mipmapped; the main format) + WebP fallback, for every size the
 //     presets need, into client/public/assets/textures/_processed/, and record it in the manifest
 //  11. print a summary table and estimated GPU memory per preset
+// Sources may be PNG, WebP or JPEG (an entry's file found under another of these extensions is used, and the
+// manifest corrected). "pack" entries compose the cells of several source atlases into one texture (one material,
+// one draw for all of them): processed.cells holds each cell's UV rect, processed.names each source's cells.
 // Results are cached by content hash: unchanged sources are not re-encoded.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,7 +24,16 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { encodeToKTX2 } from 'ktx2-encoder';
 
-const PIPELINE_VERSION = 3;
+const PIPELINE_VERSION = 13;
+const SOURCE_EXT = ['.png', '.webp', '.jpg', '.jpeg'];
+/** the source's path: as the manifest says, else the same name with another image extension; null if none */
+function resolveSource(file) {
+  const abs = path.join(ASSETS, file);
+  if (fs.existsSync(abs)) return file;
+  const base = file.replace(/\.(png|webp|jpe?g)$/i, '');
+  for (const e of SOURCE_EXT) if (fs.existsSync(path.join(ASSETS, base + e))) return base + e;
+  return null;
+}
 const args = process.argv.slice(2);
 const flag = n => args.includes(n);
 const opt = n => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
@@ -87,6 +100,149 @@ export function fakeTransparency(px, w, h) {
     if (flips >= 3 && flips <= n / 3) hits++;
   }
   return hits >= 2;
+}
+
+/**
+ * Painted-in transparency keyed out to alpha (entries with "keyChecker": an image generator drew the
+ * editor checkerboard into the pixels). Background: pale grey pixels at one of the checkerboard's two
+ * levels whose neighbourhood holds both levels, flood-filled in from each atlas cell's edges. Inside a
+ * white or grey wall the two levels never both appear, so the fill stops at the content. An atlas's
+ * dark gutter lines along the cell borders go too. Returns false when no checkerboard is found.
+ */
+export function keyCheckerboard(px, w, h, grid = [1, 1]) {
+  const [cols, rows] = grid, cw = w / cols, ch = h / rows, inset = Math.max(4, Math.round(Math.min(cw, ch) * 0.025));
+  const grey = i => { const mx = Math.max(px[i], px[i + 1], px[i + 2]), mn = Math.min(px[i], px[i + 1], px[i + 2]); return mx - mn < 14 && mx > 150; };
+  // the two levels and the square size, from each cell's corners (inside its gutter)
+  const lv = [];
+  const n = Math.max(8, Math.round(Math.min(cw, ch) * 0.06));
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) for (const [fx, fy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    const ox = Math.round(c * cw + (fx ? cw - inset - n : inset)), oy = Math.round(r * ch + (fy ? ch - inset - n : inset));
+    for (let y = oy; y < oy + n; y++) for (let x = ox; x < ox + n; x++) { const i = (y * w + x) * 4; if (grey(i)) lv.push(lum(px, i)); }
+  }
+  if (lv.length < 64) return false;
+  lv.sort((a, b) => a - b);
+  const lo = lv[Math.floor(lv.length * 0.1)], hi = lv[Math.floor(lv.length * 0.9)];
+  if (hi - lo < 10) return false;
+  const tol = Math.max(6, (hi - lo) * 0.35);
+  // 1 / 0: the light / dark squares; 2: the shades between them (anti-aliased square edges); -1: not checkerboard
+  const level = i => { if (!grey(i)) return -1; const l = lum(px, i); return Math.abs(l - hi) < tol ? 1 : Math.abs(l - lo) < tol ? 0 : l > lo && l < hi ? 2 : -1; };
+  // square size: the median run between level flips along the corner rows
+  const runs = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const y = Math.round(r * ch + inset + n / 2), x0 = Math.round(c * cw + inset);
+    let run = 0, prev = -1;
+    for (let x = x0; x < x0 + cw * 0.4; x++) {
+      const k = level((y * w + x) * 4);
+      if (k < 0) break;
+      if (k === 2) continue;
+      if (k === prev) run++; else { if (prev >= 0 && run > 2) runs.push(run); run = 1; prev = k; }
+    }
+  }
+  runs.sort((a, b) => a - b);
+  const sq = runs.length ? runs[runs.length >> 1] : 12, R = Math.max(3, Math.round(sq * 1.1));
+  // integral images of the two levels
+  const W1 = w + 1, iH = new Uint32Array(W1 * (h + 1)), iL = new Uint32Array(W1 * (h + 1)), cls = new Int8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    let sh = 0, sl = 0;
+    for (let x = 0; x < w; x++) {
+      const k = level((y * w + x) * 4);
+      cls[y * w + x] = k;
+      sh += k === 1 ? 1 : 0; sl += k === 0 ? 1 : 0;
+      iH[(y + 1) * W1 + x + 1] = iH[y * W1 + x + 1] + sh;
+      iL[(y + 1) * W1 + x + 1] = iL[y * W1 + x + 1] + sl;
+    }
+  }
+  const box = (I, x0, y0, x1, y1) => I[y1 * W1 + x1] - I[y0 * W1 + x1] - I[y1 * W1 + x0] + I[y0 * W1 + x0];
+  const bgLike = (x, y) => {
+    if (cls[y * w + x] < 0) return false;
+    const x0 = Math.max(0, x - R), y0 = Math.max(0, y - R), x1 = Math.min(w, x + R + 1), y1 = Math.min(h, y + R + 1), a = (x1 - x0) * (y1 - y0);
+    return box(iH, x0, y0, x1, y1) > a * 0.15 && box(iL, x0, y0, x1, y1) > a * 0.15;
+  };
+  // flood fill per cell from its edge band
+  const bg = new Uint8Array(w * h);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x0 = Math.round(c * cw), y0 = Math.round(r * ch), x1 = Math.round((c + 1) * cw), y1 = Math.round((r + 1) * ch), band = inset * 2;
+    const stack = [];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      if (x - x0 >= band && x1 - 1 - x >= band && y - y0 >= band && y1 - 1 - y >= band) continue;
+      if (!bg[y * w + x] && bgLike(x, y)) { bg[y * w + x] = 1; stack.push(x, y); }
+    }
+    while (stack.length) {
+      const y = stack.pop(), x = stack.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < x0 || yy < y0 || xx >= x1 || yy >= y1 || bg[yy * w + xx] || !bgLike(xx, yy)) continue;
+        bg[yy * w + xx] = 1; stack.push(xx, yy);
+      }
+    }
+  }
+  // one pixel more where the edge is still checker-grey (no pale fringe)
+  const edge = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) if (!bg[y * w + x] && cls[y * w + x] >= 0 && (bg[y * w + x - 1] || bg[y * w + x + 1] || bg[(y - 1) * w + x] || bg[(y + 1) * w + x])) edge.push(y * w + x);
+  for (const i of edge) bg[i] = 1;
+  // crumbs: checker-grey pixels left mostly surrounded by background
+  for (let pass = 0; pass < 2; pass++) {
+    const drop = [];
+    for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+      if (bg[y * w + x] || cls[y * w + x] < 0) continue;
+      let n = 0;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) n += bg[(y + dy) * w + x + dx];
+      if (n >= 15) drop.push(y * w + x);
+    }
+    for (const i of drop) bg[i] = 1;
+  }
+  for (let i = 0; i < w * h; i++) px[i * 4 + 3] = bg[i] ? 0 : 255;
+  return true;
+}
+
+/**
+ * An atlas's dark gutter lines (drawn between the cells, not always on the exact grid) made transparent:
+ * rows and columns dark across (nearly) the whole image, gaps between the cells too (a shadow lined up across
+ * a row of buildings stops at the gaps), and their dark neighbours.
+ */
+export function clearGutterLines(px, w, h) {
+  const dark = (x, y) => px[(y * w + x) * 4 + 3] > 0 && lum(px, (y * w + x) * 4) < 60;
+  let n = 0;
+  for (let y = 0; y < h; y++) {
+    let d = 0;
+    for (let x = 0; x < w; x++) d += dark(x, y) ? 1 : 0;
+    if (d < w * 0.95) continue;
+    for (let yy = Math.max(0, y - 2); yy <= Math.min(h - 1, y + 2); yy++) for (let x = 0; x < w; x++) if (dark(x, yy)) { px[(yy * w + x) * 4 + 3] = 0; n++; }
+  }
+  for (let x = 0; x < w; x++) {
+    let d = 0;
+    for (let y = 0; y < h; y++) d += dark(x, y) ? 1 : 0;
+    if (d < h * 0.95) continue;
+    for (let xx = Math.max(0, x - 2); xx <= Math.min(w - 1, x + 2); xx++) for (let y = 0; y < h; y++) if (dark(xx, y)) { px[(y * w + xx) * 4 + 3] = 0; n++; }
+  }
+  return n;
+}
+
+/**
+ * A cut-out made clean: what is not fully opaque and reaches a cell's edge (a background removed by a tool,
+ * half-transparent and tinted at the edges, or a translucent checkerboard) becomes transparent; everything
+ * it encloses (translucent glass, railings) solid. Returns the pixels made transparent.
+ */
+export function cutOut(px, w, h, grid = [1, 1]) {
+  // (solid: 200 and up - an image generator's "transparent" background can be half-opaque, its buildings not quite opaque)
+  const [cols, rows] = grid, cw = w / cols, ch = h / rows, solid = i => px[i * 4 + 3] >= 200;
+  const bg = new Uint8Array(w * h);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x0 = Math.round(c * cw), y0 = Math.round(r * ch), x1 = Math.round((c + 1) * cw), y1 = Math.round((r + 1) * ch), stack = [];
+    const seed = (x, y) => { const i = y * w + x; if (!bg[i] && !solid(i)) { bg[i] = 1; stack.push(x, y); } };
+    for (let x = x0; x < x1; x++) { seed(x, y0); seed(x, y1 - 1); }
+    for (let y = y0; y < y1; y++) { seed(x0, y); seed(x1 - 1, y); }
+    while (stack.length) {
+      const y = stack.pop(), x = stack.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= x0 && yy >= y0 && xx < x1 && yy < y1) seed(xx, yy);
+      }
+    }
+  }
+  let n = 0;
+  for (let i = 0; i < w * h; i++) { if (bg[i]) { if (px[i * 4 + 3] > 0) n++; px[i * 4 + 3] = 0; } else px[i * 4 + 3] = 255; }
+  return n;
 }
 
 // ------------------------------------------------------------------ 3. de-light
@@ -236,7 +392,7 @@ export async function processAtlas(px, w, h, grid, hasAlpha) {
   const [cols, rows] = grid;
   const cw = w / cols, ch = h / rows;
   const gutter = Math.max(2, Math.round(8 * (w / 1024)));
-  const warnings = [], cells = [];
+  const warnings = [], cells = [], info = [];
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const x0 = Math.round(c * cw), y0 = Math.round(r * ch), x1 = Math.round((c + 1) * cw), y1 = Math.round((r + 1) * ch);
     let bx0 = x1, by0 = y1, bx1 = x0, by1 = y0;
@@ -264,8 +420,124 @@ export async function processAtlas(px, w, h, grid, hasAlpha) {
     if (hasAlpha) cleanAndBleed(px, w, h, { x0, y0, x1, y1 }, gutter * 4);
     // UV rect of the whole cell with a half-texel inset (v = 0 at the bottom, as three.js samples it)
     cells.push([(x0 + 0.5) / w, 1 - (y1 - 0.5) / h, (x1 - 0.5) / w, 1 - (y0 + 0.5) / h].map(v => +v.toFixed(6)));
+    if (hasAlpha && !empty) info.push(cellInfo(px, w, h, x0, y0, x1, y1));
   }
-  return { cells, warnings };
+  return { cells, warnings, ...(info.length === cells.length ? { info } : {}) };
+}
+
+/**
+ * What a cut-out atlas cell holds, for objects drawn from it (UVs, v = 0 at the bottom): rect, its content's
+ * bounds; body, the solid block of it (rows from the first nearly full one down, the columns full there:
+ * a building's walls without its water tank, rods or sunshades); colour, the body's average colour (0..1);
+ * cap, the average colour above the body (a drawn roof or parapet).
+ */
+function cellInfo(px, w, h, x0, y0, x1, y1) {
+  const op = (x, y) => px[(y * w + x) * 4 + 3] > 128;
+  const rowN = [];
+  for (let y = y0; y < y1; y++) { let n = 0; for (let x = x0; x < x1; x++) if (op(x, y)) n++; rowN.push(n); }
+  // the content: the run of rows (no empty row in it) holding the most of it; stray bits apart from it dropped
+  let best = [y0, y0], bestN = 0;
+  for (let y = y0; y < y1;) {
+    if (!rowN[y - y0]) { y++; continue; }
+    let e = y, n = 0;
+    while (e < y1 && rowN[e - y0]) n += rowN[e++ - y0];
+    if (n > bestN) { bestN = n; best = [y, e]; }
+    y = e;
+  }
+  for (let y = y0; y < y1; y++) if (y < best[0] || y >= best[1]) for (let x = x0; x < x1; x++) px[(y * w + x) * 4 + 3] = 0;
+  let by0 = best[0], by1 = best[1], bx0 = x1, bx1 = x0;
+  for (let y = by0; y < by1; y++) for (let x = x0; x < x1; x++) if (op(x, y)) { bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x + 1); }
+  for (let y = y0; y < y1; y++) if (y < by0 || y >= by1) rowN[y - y0] = 0;
+  const lower = rowN.slice(by0 - y0 + Math.round((by1 - by0) * 0.3), by1 - y0).sort((a, b) => a - b);
+  const med = lower[lower.length >> 1] ?? 0;
+  let top = by0;
+  while (top < by1 - 1 && rowN[top - y0] < med * 0.85) top++;
+  let cx0 = bx1, cx1 = bx0;
+  for (let x = bx0; x < bx1; x++) {
+    let n = 0;
+    for (let y = top; y < by1; y++) if (op(x, y)) n++;
+    if (n >= (by1 - top) * 0.8) { cx0 = Math.min(cx0, x); cx1 = Math.max(cx1, x + 1); }
+  }
+  if (cx1 <= cx0) { cx0 = bx0; cx1 = bx1; }
+  const avg = (ya, yb) => {
+    let r = 0, g = 0, b = 0, k = 0;
+    for (let y = ya; y < yb; y += 2) for (let x = cx0; x < cx1; x += 2) if (op(x, y)) { const i = (y * w + x) * 4; r += px[i]; g += px[i + 1]; b += px[i + 2]; k++; }
+    return [r, g, b].map(v => +(v / Math.max(1, k) / 255).toFixed(3));
+  };
+  const uv = (ax, ay, bx, byy) => [ax / w, 1 - byy / h, bx / w, 1 - ay / h].map(v => +v.toFixed(5));
+  // (cap: the colour drawn above the body - a roof, a parapet)
+  return { rect: uv(bx0, by0, bx1, by1), body: uv(cx0, top, cx1, by1), colour: avg(top, by1), cap: top - by0 > 3 ? avg(by0, top) : avg(top, top + 3) };
+}
+
+// ------------------------------------------------------------------ 7b. lit windows
+/**
+ * A facade atlas's night map (entries with nightWindows): its windows found as the dark, nearly grey patches of
+ * the walls (glass behind the grilles; the grille bars closed over), kept when window-shaped (size, fill, aspect);
+ * about 60 % of them lit - a warm bulb or a cool tube light, brighter at the top - the rest and everything else
+ * black. Seeded per window: the same every run. Returns { px, windows, lit }.
+ */
+export function windowGlow(px, w, h) {
+  const N = w * h, dark = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2], a = px[i * 4 + 3];
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b, sat = Math.max(r, g, b) - Math.min(r, g, b);
+    dark[i] = a > 200 && lum < 72 && sat < 55 ? 1 : 0;
+  }
+  // closing (dilate then erode, 2 px at 1024): grille bars and glazing bars merge into one blob per window
+  const k = Math.max(1, Math.round(2 * w / 1024));
+  const pass = (src, grow) => {
+    const out = new Uint8Array(N);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let v = grow ? 0 : 1;
+      for (let dy = -k; dy <= k && v === (grow ? 0 : 1); dy++) for (let dx = -k; dx <= k; dx++) {
+        const xx = x + dx, yy = y + dy, s = xx < 0 || yy < 0 || xx >= w || yy >= h ? 0 : src[yy * w + xx];
+        if (grow ? s : !s) { v = grow ? 1 : 0; break; }
+      }
+      out[y * w + x] = v;
+    }
+    return out;
+  };
+  const blob = pass(pass(dark, true), false);
+  const out = Buffer.alloc(N * 4), seen = new Uint8Array(N), stack = new Int32Array(N);
+  let windows = 0, lit = 0;
+  for (let s = 0; s < N; s++) {
+    if (!blob[s] || seen[s]) continue;
+    // one blob: its pixels and bounds
+    let n = 0, top = 0, x0 = w, y0 = h, x1 = 0, y1 = 0;
+    const px0 = [];
+    stack[top++] = s; seen[s] = 1;
+    while (top) {
+      const p = stack[--top], x = p % w, y = (p / w) | 0;
+      n++; px0.push(p);
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      for (const q of [p - 1, p + 1, p - w, p + w]) {
+        if (q < 0 || q >= N || seen[q] || !blob[q] || Math.abs((q % w) - x) > 1) continue;
+        seen[q] = 1; stack[top++] = q;
+      }
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1, fill = n / (bw * bh), asp = bw / bh;
+    if (Math.min(bw, bh) < w * 0.009 || Math.max(bw, bh) > w * 0.11 || fill < 0.55 || asp < 0.3 || asp > 3.5) continue;
+    // (a window is set in a wall: nothing see-through just round it - unlike a water tank on the skyline)
+    let open = false;
+    for (let y = y0 - 2; y <= y1 + 2 && !open; y++) for (let x = x0 - 2; x <= x1 + 2; x++) {
+      if (y >= y0 && y <= y1 && x >= x0 && x <= x1) continue;
+      if (x < 0 || y < 0 || x >= w || y >= h || px[(y * w + x) * 4 + 3] < 128) { open = true; break; }
+    }
+    if (open) continue;
+    windows++;
+    const hsh = ((x0 * 73856093) ^ (y0 * 19349663)) >>> 0, r1 = (hsh % 1000) / 1000, r2 = ((hsh >>> 10) % 1000) / 1000;
+    if (r1 > 0.6) continue;
+    lit++;
+    const col = r2 < 0.3 ? [205, 228, 255] : [255, 190 + Math.round(r2 * 20), 110 + Math.round(r2 * 30)];
+    for (const p of px0) {
+      const t = 1 - ((p / w | 0) - y0) / Math.max(1, bh) * 0.35;
+      // (a grille bar in front of the glass stays darker)
+      const bar = dark[p] ? 1 : 0.45;
+      for (let c = 0; c < 3; c++) out[p * 4 + c] = Math.round(col[c] * t * bar);
+    }
+  }
+  for (let i = 0; i < N; i++) out[i * 4 + 3] = 255;
+  return { px: out, windows, lit };
 }
 
 // ------------------------------------------------------------------ 8. normal + roughness
@@ -303,7 +575,7 @@ async function maps(px, w, h, ax, strength, [rMin, rMax]) {
 // ------------------------------------------------------------------ 9-10. export
 async function encodeKtx2(px, w, h, kind) {
   const raw = new Uint8Array(toU8(px));
-  const color = kind === 'color';
+  const color = kind === 'color' || kind === 'emissive';
   return encodeToKTX2(raw, {
     isKTX2File: true, generateMipmap: true, isYFlip: true, // same orientation as WebP loaded with flipY
     isUASTC: kind === 'normal', isNormalMap: kind === 'normal', needSupercompression: kind === 'normal',
@@ -313,9 +585,9 @@ async function encodeKtx2(px, w, h, kind) {
   });
 }
 
-async function writeSet(base, px, w, h, entry, ax, warnings) {
+async function writeSet(base, px, w, h, entry, ax, warnings, extra = []) {
   const out = { size: [w, h] };
-  const files = [['color', px]];
+  const files = [['color', px], ...extra];
   if (entry.normal > 0 && TILE_TYPES.has(entry.type)) {
     const m = await maps(px, w, h, ax, entry.normal, entry.roughness);
     files.push(['normal', m.nrm], ['roughness', m.rough]);
@@ -342,12 +614,14 @@ async function writeSet(base, px, w, h, entry, ax, warnings) {
 
 // ------------------------------------------------------------------ one texture
 async function processEntry(id, t, groups) {
+  if (t.type === 'pack') return processPack(id, t);
   const warnings = [];
-  const src = path.join(ASSETS, t.file);
-  if (!fs.existsSync(src)) return { status: 'missing', warnings: ['no source image (procedural fallback)'] };
+  const file = resolveSource(t.file);
+  if (!file) return { status: 'missing', warnings: ['no source image (procedural fallback)'] };
+  const src = path.join(ASSETS, file);
   let meta;
   try { meta = await sharp(src).metadata(); } catch (e) { return { status: 'skipped', warnings: [`cannot read image: ${e.message}`] }; }
-  if (meta.format !== 'png') return { status: 'skipped', warnings: [`${meta.format} file - expected a PNG source`] };
+  if (!['png', 'webp', 'jpeg'].includes(meta.format)) return { status: 'skipped', warnings: [`${meta.format} file - expected a PNG, WebP or JPEG source`] };
   if (meta.width < 256 || meta.height < 128) return { status: 'skipped', warnings: [`too small (${meta.width}x${meta.height})`] };
   const ax = t.type === 'tile' ? 'xy' : t.type === 'tile-x' ? 'x' : t.type === 'tile-y' ? 'y' : null;
   const sizes = [...new Set(Object.values(t.maxSize))].sort((a, b) => b - a);
@@ -359,11 +633,27 @@ async function processEntry(id, t, groups) {
   const potAspect = 2 ** Math.round(Math.log2(aspect));
   if (Math.abs(aspect / potAspect - 1) > 0.02) warnings.push(`aspect ${aspect.toFixed(2)} is not a power of two - ${ax ? 'cropped' : 'padded'} to ${potAspect >= 1 ? `${potAspect}:1` : `1:${1 / potAspect}`}`);
   const W = potAspect >= 1 ? L : Math.round(L * potAspect), H = potAspect >= 1 ? Math.round(L / potAspect) : L;
-  const img = sharp(src).resize(W, H, ax ? { fit: 'cover', position: 'centre', kernel: 'lanczos3' } : { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'lanczos3' });
+  // 1c. painted-in checkerboard keyed out (at the source's full size, before any resampling)
+  const opaque = !meta.hasAlpha || (await sharp(src).stats()).isOpaque;
+  let source = sharp(src), keyed = false;
+  if (t.keyChecker) {
+    const raw = await toRaw(sharp(src));
+    if (opaque) keyed = keyCheckerboard(raw.px, raw.w, raw.h, t.grid);
+    if (keyed) warnings.push('checkerboard keyed out to alpha');
+    if (keyed || !opaque) {
+      const g = clearGutterLines(raw.px, raw.w, raw.h), f = cutOut(raw.px, raw.w, raw.h, t.grid);
+      if (g) warnings.push(`gutter lines cleared (${g} px)`);
+      if (f > raw.w * raw.h * 0.002) warnings.push(`${f} half-transparent background pixels cut out`);
+      source = rawSharp(raw.px, raw.w, raw.h);
+    }
+  }
+  // (an atlas a little off its power-of-two aspect is resized to it: padding would shift its grid off the cells)
+  const nearPot = t.type === 'atlas' && Math.abs(aspect / potAspect - 1) < 0.05;
+  const img = source.resize(W, H, ax ? { fit: 'cover', position: 'centre', kernel: 'lanczos3' } : nearPot ? { fit: 'fill', kernel: 'lanczos3' } : { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 }, kernel: 'lanczos3' });
   let { px, w, h } = await toRaw(img);
 
   // 1b. alpha checks
-  const hasAlpha = !!meta.hasAlpha && !(await sharp(src).stats()).isOpaque;
+  const hasAlpha = keyed || !opaque;
   if (t.alpha && !hasAlpha) warnings.push(fakeTransparency(px, w, h) ? 'FAKE TRANSPARENCY: checkerboard painted into an opaque image' : 'expected alpha but the image is opaque');
   if (!t.alpha && meta.hasAlpha && !(await sharp(src).stats()).isOpaque) warnings.push('has transparency but the entry is opaque - alpha ignored');
   if (!t.alpha) for (let i = 3; i < px.length; i += 4) px[i] = 255;
@@ -385,23 +675,111 @@ async function processEntry(id, t, groups) {
   const colour = group ? normalise(px, w, h, group) : null;
   if (colour && (colour.gain < 0.8 || colour.gain > 1.25)) warnings.push(`brightness far from its group (x${colour.gain.toFixed(2)} applied)`);
   // 6-7. atlases and alpha
-  let cells;
+  let cells, cellInfo;
   if (t.type === 'atlas' && t.grid) {
     const a = await processAtlas(px, w, h, t.grid, t.alpha && hasAlpha);
-    cells = a.cells; warnings.push(...a.warnings);
+    cells = a.cells; cellInfo = a.info; warnings.push(...a.warnings);
   } else if (t.alpha && hasAlpha) cleanAndBleed(px, w, h);
+  // 7b. lit windows for the night
+  let glow = null;
+  if (t.nightWindows) {
+    glow = windowGlow(px, w, h);
+    warnings.push(`night map: ${glow.lit} of ${glow.windows} windows lit`);
+    if (!glow.windows) warnings.push('NO WINDOWS FOUND for the night map');
+  }
 
   // 9-10. export every size the presets use
   const base = id.replace(/\//g, '_');
   const sets = {};
   for (const s of sizes) {
     const sw = Math.round(w * s / L), sh = Math.round(h * s / L);
-    let spx = px;
+    let spx = px, gpx = glow?.px;
     if (s !== L) ({ px: spx } = await toRaw(rawSharp(px, w, h).resize(sw, sh, { kernel: 'lanczos3' })));
-    sets[s] = await writeSet(base, spx, sw, sh, t, ax ?? 'none', warnings);
+    if (glow && s !== L) ({ px: gpx } = await toRaw(rawSharp(glow.px, w, h).resize(sw, sh, { kernel: 'lanczos3' })));
+    sets[s] = await writeSet(base, spx, sw, sh, t, ax ?? 'none', warnings, gpx ? [['emissive', gpx]] : []);
   }
-  const processed = { sizes: sets, ...(cells ? { cells } : {}), ...(seam ? { seam } : {}) };
+  const processed = { sizes: sets, ...(cells ? { cells } : {}), ...(cellInfo ? { cellInfo } : {}), ...(seam ? { seam } : {}) };
   return { status: warnings.some(w => w.startsWith('FAKE')) ? 'warn' : 'ok', warnings, processed, seam };
+}
+
+// ------------------------------------------------------------------ packs
+/**
+ * A pack: the cells of several source atlases (t.sources: { name, file, grid, keyChecker? }) in one texture.
+ * Each cell (cut out where the source has alpha, or keyed; trimmed to its content) is scaled by one factor for
+ * the whole pack and shelf-packed into the pack's square, leaving a gutter round each; alpha packs bleed edge
+ * colours into the gaps. processed.cells: UV rect per cell (v up); processed.names: { name: [first cell, count] };
+ * processed.aspect: each cell's width / height.
+ */
+async function processPack(id, t) {
+  const warnings = [], cells = [], names = {};
+  const S = Math.max(...Object.values(t.maxSize)), gutter = Math.max(4, Math.round(S / 256));
+  let found = 0;
+  for (const src of t.sources) {
+    const file = resolveSource(src.file);
+    if (!file) { warnings.push(`${src.name}: no source image (left out)`); continue; }
+    if (file !== src.file) src.file = file;
+    found++;
+    const meta = await sharp(path.join(ASSETS, file)).metadata();
+    const raw = await toRaw(sharp(path.join(ASSETS, file)));
+    const opaque = !meta.hasAlpha || (await sharp(path.join(ASSETS, file)).stats()).isOpaque;
+    if (t.alpha) {
+      // a painted checkerboard keyed out (and what it encloses kept solid, as a building's glass); real alpha kept as
+      // drawn - line art (a kolam, a stencil) has holes - only made sharp; the dark lines between the cells cleared
+      if (src.keyChecker && opaque && keyCheckerboard(raw.px, raw.w, raw.h, src.grid)) cutOut(raw.px, raw.w, raw.h, src.grid);
+      else if (!opaque) for (let i = 3; i < raw.px.length; i += 4) raw.px[i] = raw.px[i] >= 128 ? 255 : 0;
+      else for (let i = 3; i < raw.px.length; i += 4) raw.px[i] = 255;
+      clearGutterLines(raw.px, raw.w, raw.h);
+    } else for (let i = 3; i < raw.px.length; i += 4) raw.px[i] = 255;
+    const [cols, rows] = src.grid, cw = raw.w / cols, ch = raw.h / rows, inset = Math.max(2, Math.round(Math.min(cw, ch) * 0.02));
+    names[src.name] = [cells.length, cols * rows];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      let x0 = Math.round(c * cw) + inset, y0 = Math.round(r * ch) + inset, x1 = Math.round((c + 1) * cw) - inset, y1 = Math.round((r + 1) * ch) - inset;
+      if (t.alpha) {
+        // trimmed to what is drawn in it
+        let bx0 = x1, by0 = y1, bx1 = x0, by1 = y0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (raw.px[(y * raw.w + x) * 4 + 3] > 12) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x + 1); by1 = Math.max(by1, y + 1); }
+        if (bx1 > bx0 && by1 > by0) { x0 = bx0; y0 = by0; x1 = bx1; y1 = by1; } else warnings.push(`${src.name} cell ${c},${r} is empty`);
+      }
+      const w = x1 - x0, h = y1 - y0, buf = Buffer.alloc(w * h * 4);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let k = 0; k < 4; k++) buf[(y * w + x) * 4 + k] = clamp(Math.round(raw.px[((y0 + y) * raw.w + x0 + x) * 4 + k]), 0, 255);
+      cells.push({ w, h, buf });
+    }
+  }
+  if (!found) return { status: 'missing', warnings: ['no source images (procedural fallback)'] };
+  // one scale for every cell; shelves of the tallest first; smaller until it fits
+  const area = cells.reduce((a, c) => a + (c.w + gutter * 2) * (c.h + gutter * 2), 0);
+  let k = Math.min(1, Math.sqrt((S * S * 0.86) / area)), place;
+  for (let tries = 0; tries < 40; tries++, k *= 0.95) {
+    place = [];
+    const order = cells.map((c, i) => i).sort((a, b) => cells[b].h - cells[a].h);
+    let x = 0, y = 0, rowH = 0, ok = true;
+    for (const i of order) {
+      const w = Math.max(4, Math.round(cells[i].w * k)) + gutter * 2, h = Math.max(4, Math.round(cells[i].h * k)) + gutter * 2;
+      if (x + w > S) { x = 0; y += rowH; rowH = 0; }
+      if (y + h > S || w > S) { ok = false; break; }
+      place[i] = { x: x + gutter, y: y + gutter, w: w - gutter * 2, h: h - gutter * 2 };
+      x += w; rowH = Math.max(rowH, h);
+    }
+    if (ok) break;
+  }
+  const px = new Float32Array(S * S * 4);
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i], pl = place[i];
+    const { data } = await sharp(c.buf, { raw: { width: c.w, height: c.h, channels: 4 } }).resize(pl.w, pl.h, { fit: 'fill', kernel: 'lanczos3' }).raw().toBuffer({ resolveWithObject: true });
+    for (let y = 0; y < pl.h; y++) for (let x = 0; x < pl.w; x++) for (let q = 0; q < 4; q++) px[((pl.y + y) * S + pl.x + x) * 4 + q] = data[(y * pl.w + x) * 4 + q];
+  }
+  if (t.alpha) cleanAndBleed(px, S, S, { x0: 0, y0: 0, x1: S, y1: S }, gutter * 2);
+  else for (let i = 3; i < px.length; i += 4) px[i] = 255;
+  const rects = place.map(pl => [(pl.x + 0.5) / S, 1 - (pl.y + pl.h - 0.5) / S, (pl.x + pl.w - 0.5) / S, 1 - (pl.y + 0.5) / S].map(v => +v.toFixed(6)));
+  const aspect = place.map(pl => +(pl.w / pl.h).toFixed(4));
+  const base = id.replace(/\//g, '_'), sets = {};
+  for (const size of [...new Set(Object.values(t.maxSize))].sort((a, b) => b - a)) {
+    let spx = px;
+    if (size !== S) ({ px: spx } = await toRaw(rawSharp(px, S, S).resize(size, size, { kernel: 'lanczos3' })));
+    sets[size] = await writeSet(base, spx, size, size, t, 'none', warnings);
+  }
+  warnings.push(`${cells.length} cells from ${found} source${found > 1 ? 's' : ''}, scaled x${k.toFixed(2)}`);
+  return { status: 'ok', warnings, processed: { sizes: sets, cells: rects, names, aspect } };
 }
 
 // ------------------------------------------------------------------ GPU memory per preset
@@ -414,10 +792,10 @@ function memoryPerPreset(manifest) {
     for (const t of Object.values(manifest.textures)) {
       const set = t.processed?.sizes?.[t.maxSize[q]];
       if (!set) continue;
-      const kinds = ['color', ...(q === 'low' ? [] : ['normal', 'roughness'])].filter(k => set[k]);
+      const kinds = ['color', 'emissive', ...(q === 'low' ? [] : ['normal', 'roughness'])].filter(k => set[k]);
       for (const k of kinds) {
         const texels = set.size[0] * set.size[1] * 1.333;
-        ktx += texels * (k === 'normal' ? 1 : t.alpha ? 1 : 0.5);
+        ktx += texels * (k === 'normal' ? 1 : t.alpha && k === 'color' ? 1 : 0.5);
         webp += texels * 4;
       }
     }
@@ -447,6 +825,13 @@ async function selftest() {
   }
   assert(fakeTransparency(chk, W, W), 'checkerboard background flagged as fake transparency');
   assert(!fakeTransparency(flat, W, W), 'plain white background not flagged');
+  // keyed out: the checkerboard goes, a white wall (and a grey one) on it stays
+  const kc = Float32Array.from(chk);
+  for (let y = 80; y < 180; y++) for (let x = 60; x < 120; x++) kc.set([252, 252, 250, 255], (y * W + x) * 4);
+  for (let y = 80; y < 180; y++) for (let x = 140; x < 200; x++) kc.set([206, 205, 204, 255], (y * W + x) * 4);
+  assert(keyCheckerboard(kc, W, W), 'checkerboard found');
+  assert(kc[(20 * W + 20) * 4 + 3] === 0 && kc[(230 * W + 240) * 4 + 3] === 0, 'checkerboard keyed to transparent');
+  assert(kc[(130 * W + 90) * 4 + 3] === 255 && kc[(130 * W + 170) * 4 + 3] === 255, 'white and grey walls on it kept opaque');
   // a hard left/right gradient has a bad seam; blending fixes it
   const grad = new Float32Array(W * W * 4);
   for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) { const v = 40 + (x / W) * 180 + Math.sin(y * 0.9 + x * 1.3) * 6; grad.set([v, v, v, 255], (y * W + x) * 4); }
@@ -479,9 +864,12 @@ console.log(`Processing textures from ${path.relative(process.cwd(), ASSETS)} (K
 for (const [id, t] of Object.entries(manifest.textures)) {
   if (only && !id.includes(only)) continue;
   const { processed: _p, source: _s, ...def } = t;
-  const src = path.join(ASSETS, t.file);
-  const key = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify(def)).update(JSON.stringify(manifest.groups?.[t.group] ?? null))
-    .update(fs.existsSync(src) ? fs.readFileSync(src) : Buffer.alloc(0)).digest('hex');
+  // (the found source - another extension than the manifest's is taken, and the manifest corrected; a pack: its sources)
+  const files = t.type === 'pack' ? t.sources.map(x => resolveSource(x.file)) : [resolveSource(t.file)];
+  if (t.type !== 'pack' && files[0] && files[0] !== t.file) t.file = files[0];
+  const hash = crypto.createHash('sha1').update(String(PIPELINE_VERSION)).update(JSON.stringify(def)).update(JSON.stringify(manifest.groups?.[t.group] ?? null));
+  for (const f of files) hash.update(f ? fs.readFileSync(path.join(ASSETS, f)) : Buffer.alloc(0));
+  const key = hash.digest('hex');
   const hit = cache[id];
   const outputsExist = hit?.result?.processed && Object.values(hit.result.processed.sizes).every(s => fs.existsSync(path.join(ASSETS, s.color)));
   let r;

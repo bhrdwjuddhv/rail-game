@@ -6,6 +6,7 @@ import { approach } from '@rail/shared/util';
 import { newFrame, RAIL_TOP } from '@rail/shared/track/Chainage';
 import type { RoadDef, Route } from '@rail/shared/track/Route';
 import type { TerrainField } from '../world/TerrainField';
+import { parallelRoads, pavedHalf } from '../world/roads/Highways';
 
 const roadMat = new THREE.MeshStandardMaterial({ color: 0x8a8580, roughness: 0.95 });
 function stripes() {
@@ -14,19 +15,29 @@ function stripes() {
   });
 }
 
-/** Road ribbon along an LC road, following the shared road profile. */
-export function buildLcRoad(field: TerrainField, r: RoadDef): THREE.Mesh {
+/**
+ * Road ribbon along an LC road, following the shared road profile. Where it meets a road alongside the line (a
+ * junction) it stops at that road's paved edge and carries on from the far one.
+ */
+export function buildLcRoad(route: Route, field: TerrainField, r: RoadDef): THREE.Mesh {
   const pos: number[] = [], uv: number[] = [], idx: number[] = [];
   const half = 3.6;
-  let n = 0;
-  for (let t = -r.halfLength; t <= r.halfLength; t += 8) {
-    const y = field.lcRoadElevation(r, t) + 0.04;
+  // (the road runs square to the line: t is its offset from it)
+  const cut = parallelRoads(route).filter(p => r.km >= p.fromKm && r.km <= p.toKm).map(p => { const c = p.offsetAt(r.km), h = pavedHalf(p.kind); return [c - h, c + h]; });
+  const ts: number[] = [];
+  for (let t = -r.halfLength; t <= r.halfLength; t += 8) if (!cut.some(([a, b]) => t > a && t < b)) ts.push(t);
+  for (const [a, b] of cut) ts.push(a, b);
+  ts.sort((x, y) => x - y);
+  let prev = -1;
+  for (const t of ts) {
+    const y = field.lcRoadElevation(r, t) + 0.04, i = pos.length / 3;
     for (const s of [-1, 1]) {
       pos.push(r.dx * t + -r.dz * s * half, y, r.dz * t + r.dx * s * half);
       uv.push(s * 0.5, t / 8);
     }
-    if (n > 0) { const a = (n - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-    n++;
+    // (no quad across a road it meets)
+    if (prev >= 0 && !cut.some(([a, b]) => t > a && t - 1e-6 <= b && prev >= a - 1e-6)) idx.push(i - 2, i - 1, i, i - 1, i + 1, i);
+    prev = t;
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -36,32 +47,6 @@ export function buildLcRoad(field: TerrainField, r: RoadDef): THREE.Mesh {
   g.computeBoundingSphere();
   const m = new THREE.Mesh(g, roadMat);
   m.position.set(r.ax, 0, r.az);
-  m.receiveShadow = true;
-  return m;
-}
-
-/** Town/colony road running parallel to the track. */
-export function buildParallelRoad(route: Route, r: RoadDef): THREE.Mesh {
-  const f = newFrame();
-  const pos: number[] = [], idx: number[] = [];
-  route.alignment.sample(r.fromKm! * 1000, f);
-  const ox = f.x, oz = f.z;
-  let n = 0;
-  for (let s = r.fromKm! * 1000; s <= r.toKm! * 1000; s += 10) {
-    for (const d of [-3.5, 3.5]) {
-      route.alignment.sampleOffset(s, r.offset! + d, f);
-      pos.push(f.x - ox, f.y - 0.12 + 0.05, f.z - oz);
-    }
-    if (n > 0) { const a = (n - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-    n++;
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  const m = new THREE.Mesh(g, roadMat);
-  m.position.set(ox, 0, oz);
   m.receiveShadow = true;
   return m;
 }

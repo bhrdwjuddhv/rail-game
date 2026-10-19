@@ -1,5 +1,6 @@
 {
   "id": "container-ds20",
+  "carries": ["cartons", "fish", "tea"],
   "name": "Double-stack Container Wagon (2 x 20 ft below)",
   "kind": "container",
   "containers": "double-20",

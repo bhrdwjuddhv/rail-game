@@ -195,10 +195,14 @@ export class LocoModel {
     this.headlight.target = this.headlightTarget;
     if (realLight) this.body.add(this.headlight, this.headlightTarget);
     // volumetric-looking beam (visible in fog/night)
-    const beamGeo = new THREE.ConeGeometry(9, 120, 20, 1, true);
+    const beamGeo = new THREE.ConeGeometry(9, 120, 20, 8, true);
     beamGeo.translate(0, -60, 0);
     beamGeo.rotateZ(Math.PI / 2);
-    this.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xfff0d0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    // (fading in from the lamp and out along its length: no hard-edged cone)
+    const bp = beamGeo.attributes.position as THREE.BufferAttribute, fade = new Float32Array(bp.count * 3);
+    for (let i = 0; i < bp.count; i++) { const x = bp.getX(i), k = Math.min(1, x / 10) * (1 - x / 120) ** 1.6; fade.fill(k, i * 3, i * 3 + 3); }
+    beamGeo.setAttribute('color', new THREE.BufferAttribute(fade, 3));
+    this.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xfff0d0, vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
     this.beam.position.set(headX + 0.3, headY - 0.05, 0);
     this.beam.rotation.z = -0.03;
     this.beam.renderOrder = 10;
@@ -569,8 +573,9 @@ export class LocoModel {
   }
 
   setLights(headlight: number, markers: boolean, flasher: boolean, t: number, reverser: number) {
-    this.headMat.color.setRGB(headlight ? 4 : 0.13, headlight ? 3.8 : 0.13, headlight ? 3.4 : 0.13);
-    this.headlight.intensity = headlight === 2 ? 2600 : headlight === 1 ? 700 : 0;
+    // (bright enough to light the line a few hundred metres ahead, not to white out the ballast at the buffers)
+    this.headMat.color.setRGB(headlight ? 2.2 : 0.13, headlight ? 2.1 : 0.13, headlight ? 1.9 : 0.13);
+    this.headlight.intensity = headlight === 2 ? 1100 : headlight === 1 ? 380 : 0;
     for (const m of this.markerMats) {
       const front = (m as THREE.MeshBasicMaterial & { end?: number }).end! > 0;
       // front markers white when leading, red at the rear end

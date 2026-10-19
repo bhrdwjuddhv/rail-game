@@ -106,9 +106,9 @@
   ],
   "scenery": [
     {"fromKm": 0, "toKm": 2.4, "zone": "town", "roadOffset": 55},
-    {"fromKm": 2.4, "toKm": 8.5, "zone": "fields"},
+    {"fromKm": 2.4, "toKm": 8.5, "zone": "fields", "roadOffset": -85},
     {"fromKm": 8.5, "toKm": 9.6, "zone": "village"},
-    {"fromKm": 9.6, "toKm": 16, "zone": "fields"},
+    {"fromKm": 9.6, "toKm": 16, "zone": "fields", "roadOffset": 90},
     {"fromKm": 16, "toKm": 18, "zone": "village"},
     {"fromKm": 18, "toKm": 25.5, "zone": "snow"},
     {"fromKm": 25.5, "toKm": 26.6, "zone": "village"},

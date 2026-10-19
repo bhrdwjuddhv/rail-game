@@ -1,0 +1,85 @@
+{
+  "help": "Station classes and looks for this route (StationProfile). class: halt | rural | town | city (town: a loop and two more platform faces on the building side; city: loops and platforms both sides, full-length roofs, two foot over bridges, a big building). scheme: cream-maroon | yellow-red | white-blue | stone. canopy: shelter | long | cast-iron | steel | tiled. landmark: banyan | watertank | signalcabin | clock | garden | steamloco | viewdeck | well. stalls: tea, snacks, books, fruit. boards: extra boards by the name board. goods: true (or { side: 1 | -1, cargo: [...], sends: [...], receives: [...] }: what it loads into wagons and what wagons bring it, GoodsPlanner) for a goods line, loading platform and shed (side: +1 the Up side, -1 the Down side; Down trains run toward increasing km and use the -1 side). Anything left out is chosen from the station code (the same every run).",
+  "route": "freight-corridor",
+  "stations": {
+    "MRDI": {
+      "class": "rural",
+      "landmark": "watertank"
+    },
+    "RTWL": {
+      "class": "town",
+      "scheme": "yellow-red",
+      "landmark": "well",
+      "goods": {
+        "side": 1,
+        "cargo": [
+          "marble",
+          "salt",
+          "cement",
+          "cartons",
+          "stone"
+        ],
+        "sends": [
+          "marble",
+          "salt"
+        ],
+        "receives": [
+          "cement",
+          "cartons"
+        ]
+      }
+    },
+    "PHGH": {
+      "class": "town",
+      "scheme": "stone",
+      "landmark": "signalcabin",
+      "goods": {
+        "side": -1,
+        "cargo": [
+          "cement",
+          "stone",
+          "steel",
+          "cartons",
+          "grain"
+        ],
+        "sends": [
+          "cement",
+          "stone",
+          "steel"
+        ],
+        "receives": [
+          "cartons",
+          "grain"
+        ]
+      }
+    },
+    "LVNP": {
+      "class": "town",
+      "scheme": "white-blue",
+      "landmark": "banyan",
+      "goods": {
+        "side": 1,
+        "cargo": [
+          "salt",
+          "fish",
+          "steel",
+          "cartons"
+        ],
+        "sends": [
+          "salt",
+          "fish"
+        ],
+        "receives": [
+          "steel",
+          "cartons"
+        ]
+      }
+    },
+    "SGPT": {
+      "class": "city",
+      "scheme": "white-blue",
+      "canopy": "steel",
+      "landmark": "clock"
+    }
+  }
+}

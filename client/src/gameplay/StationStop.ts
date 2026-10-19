@@ -1,3 +1,4 @@
+import type { Cargo } from '@rail/shared/track/StationProfile';
 import * as THREE from 'three/webgpu';
 import { StationWork, WorkKind } from '@rail/shared/gameplay/StationWork';
 import type { StopPlan } from '@rail/shared/gameplay/Timetable';
@@ -41,7 +42,7 @@ export interface StopHost {
   scene: THREE.Object3D;
 }
 
-const LOADABLE = new Set(['boxcar', 'container']);
+const LOADABLE = new Set(['boxcar', 'container', 'open']);
 
 export class StationStop {
   readonly work: StationWork;
@@ -91,7 +92,7 @@ export class StationStop {
     this.work.onWagon = (w, isLoaded) => {
       const vi = this.wagons[w];
       if (vi === undefined) return;
-      h.consist.setLoaded(vi, isLoaded, h.coachTypes);
+      h.consist.setLoaded(vi, isLoaded, h.coachTypes, isLoaded ? this.loadCargo[w] : undefined);
       h.trainView().setLook(vi, isLoaded);
     };
     this.doors = new CoachDoors(c.vehicles, h.coachTypes);
@@ -131,12 +132,16 @@ export class StationStop {
     const end = this.h.endStation === st.code;
     const work: WorkKind[] = end ? [] : p.work ?? (this.passengerTrain ? ['board'] : []);
     const busy = st.type === 'halt' ? 0.3 : st.type === 'wayside' ? 0.55 : 1;
-    this.work.arrive(st.code, work, { busy, festival: p.festival, origin });
+    // at a goods yard: which wagons it unloads (their cargo is what it receives) and which it loads (empty ones that
+    // can carry what it sends), and with what (GoodsPlanner's rules)
+    const yard = st.profile?.goods, subsets = yard && work.some(k => k !== 'board') ? this.yardWork(yard) : undefined;
+    this.work.arrive(st.code, work, { busy, festival: p.festival, origin }, subsets);
     // which side the platform (or the yard) is: from the platform serving the train's line
     const off = this.h.offsetAt(this.h.headKm());
     const line = st.lineInfo.reduce((b, l) => (Math.abs(l.offset - off) < Math.abs(b.offset - off) ? l : b)).id;
     const pf = st.platforms.find(x => x.lines.includes(line)) ?? st.platforms.reduce((b, x) => (Math.abs(x.from - off) < Math.abs(b.from - off) ? x : b));
-    this.side = Math.sign(pf.from - off) || 1;
+    // (on the goods line: its loading platform is beyond it, away from the running lines)
+    this.side = line === st.goodsLine ? Math.sign(off) || 1 : Math.sign(pf.from - off) || 1;
     if (!origin) {
       const err = (this.h.headKm() - (this.h.stopTarget?.(st) ?? this.h.route().stopKm(st, this.h.consist.length))) * 1000;
       this.accuracy = Math.abs(err) <= 2 ? 'Stopped on the mark &#10003;' : err > 0 ? `Overshot by ${Math.round(err)} m` : `Stopped ${Math.round(-err)} m short`;
@@ -197,8 +202,9 @@ export class StationStop {
     this.doors.update(this.h.trainView().vehicleMatrices, this.side);
     // the wagon being worked: crane (containers) or forklift (covered wagons)
     const j = w.job;
-    if (j && j.kind !== 'board' && this.wagons.length) {
-      const n = this.wagons.length, at = Math.min(n - 1, Math.floor(j.progress * n)), vi = this.wagons[at];
+    if (j && j.kind !== 'board' && j.wagons.length) {
+      // (the wagons this job works, one after another)
+      const n = j.wagons.length, at = Math.min(n - 1, Math.floor(j.progress * n)), vi = this.wagons[j.wagons[at]];
       const kind = this.h.coachTypes[this.h.consist.vehicles[vi].typeId]?.kind;
       this.works.update({ kind: j.kind, wagon: this.h.trainView().vehicleMatrices[vi], containers: kind === 'container', u: j.progress * n - at }, this.side);
     } else this.works.update(null, this.side);
@@ -219,6 +225,17 @@ export class StationStop {
   }
 
   /** covered wagons open their doors while they are worked */
+  /** cargo each wagon (by its index among the wagons) is to be loaded with here */
+  private loadCargo: (Cargo | undefined)[] = [];
+  private yardWork(yard: { sends: Cargo[]; receives: Cargo[] }) {
+    const c = this.h.consist, T = this.h.coachTypes;
+    const carries = (vi: number) => { const t = T[c.vehicles[vi].typeId]; return t?.carries ?? (t?.load ? [t.load] : []); };
+    const unload = this.wagons.map((vi, k) => { const v = c.vehicles[vi]; return v.loaded !== false && v.cargo && yard.receives.includes(v.cargo) ? k : -1; }).filter(k => k >= 0);
+    this.loadCargo = this.wagons.map((vi, k) => (c.vehicles[vi].loaded === false || unload.includes(k) ? yard.sends.find(x => carries(vi).includes(x)) : undefined));
+    const load = this.loadCargo.map((x, k) => (x ? k : -1)).filter(k => k >= 0);
+    return { unload, load };
+  }
+
   private wagonDoors() { return this.wagons.some(i => this.h.coachTypes[this.h.consist.vehicles[i].typeId]?.kind === 'boxcar'); }
 
   private view(): StopView | null {

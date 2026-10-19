@@ -8,7 +8,10 @@ import { Strip } from '../track/TrackMeshBuilder';
 import type { Route, StationInfo } from '@rail/shared/track/Route';
 import { Crowd } from '../world/people/Crowd';
 import { buildJunction, ClockSpot } from './JunctionArchitecture';
-import { FOB, fobKm, fobSpan } from './fobLayout';
+import { FOB, fobKms, fobSpan } from './fobLayout';
+import { goodsYard } from './GoodsYard';
+import { canopyLook, forecourt, landmark, platformClutter, platformStalls, shelterHalfOf, signage, stationBuilding } from './StationLook';
+import { resolveProfile } from '@rail/shared/track/StationProfile';
 import { addWaterStalls, STALL_HALF } from './WaterStall';
 import type { LineDef, Switch } from '@rail/shared/track/TrackGraph';
 
@@ -122,24 +125,38 @@ export class StationView {
     const canopies = !jn || jn === 'rajasthani';
     // Dravidian: granite slab platforms
     if (jn === 'dravidian') tint(pm.geometry, new THREE.Color(0xc4beb4));
-    const shelterHalf = jn ? 0.2 : big ? 0.13 : 0.05;
-    // the foot over bridge (every station with more than one platform) and its stairs: shelters, benches and
-    // people keep out of the platforms' stretch under them
-    const fob = fobKm(st), fobGap = fob === null ? null : fobSpan(fob);
-    const underFob = (km: number) => !!fobGap && km > fobGap[0] && km < fobGap[1];
+    // the station's class and look (data/stations; a big junction: the defaults, its architecture does the rest)
+    const prof = st.profile ?? resolveProfile(st);
+    const shelterHalf = jn ? 0.2 : freight ? 0.05 : shelterHalfOf(prof, pfFrom, pfTo);
+    const roofLook = canopyLook(jn ? 'long' : prof.canopy);
+    // the foot over bridges (every station with more than one platform; two at a city) and their stairs: shelters,
+    // benches and people keep out of the platforms' stretch under them
+    const fobs = fobKms(st), fobGaps = fobs.map(fobSpan);
+    const underFob = (km: number) => fobGaps.some(g => km > g[0] && km < g[1]);
     // drinking water stalls: two on a long platform, one on a short, mid-platform along the line (between a
     // junction's column bays; clear of the tea stall, the name boards and the FOB); benches and people keep off
     const stallKms = (pfTo - pfFrom >= 0.5 ? [st.km - 0.104, st.km + 0.04] : [st.km - 0.02]).filter(k => !underFob(k));
-    const nearStall = (km: number, lat: number, mid: number) => Math.abs(lat - mid) < STALL_HALF.across + 1 && stallKms.some(k => Math.abs(km - k) * 1000 < STALL_HALF.along + 1.2);
+    // the stalls' places (the profile's mix, in order): along the building-side platform and the next one out
+    const mainPf = st.platforms.find(p => Math.sign(p.to) === st.buildingSide && p.lines.some(l => route.runningLines.some(r => r.id === l))) ?? st.platforms.find(p => Math.sign(p.to) === st.buildingSide) ?? st.platforms[0];
+    const otherPf = st.platforms.find(p => p !== mainPf) ?? mainPf;
+    const pmid = (p: typeof mainPf) => (p.from + p.to) / 2;
+    const kioskSpots = freight ? [] : [{ km: st.km - 0.06, mid: pmid(mainPf) }, { km: st.km + 0.065, mid: pmid(otherPf) }, { km: st.km - 0.015, mid: pmid(otherPf) }, { km: st.km + 0.14, mid: pmid(mainPf) }]
+      .filter(s => !underFob(s.km) && s.km > pfFrom + 0.02 && s.km < pfTo - 0.02).slice(0, prof.stalls.length);
+    const nearStall = (km: number, lat: number, mid: number) => Math.abs(lat - mid) < STALL_HALF.across + 1 && (stallKms.some(k => Math.abs(km - k) * 1000 < STALL_HALF.along + 1.2)
+      || kioskSpots.some(s => Math.abs(s.mid - mid) < 0.5 && Math.abs(km - s.km) * 1000 < 2.6));
     const stalls: THREE.Matrix4[] = [];
 
     // ---- shelters, benches, lamps, crowd spots ----
     const spots: { x: number; y: number; z: number; heading: number }[] = [];
     const solar = big && r() < 0.5;
+    const roofStrips: CanopyStrips = { top: new Strip(), cap: new Strip(), under: new Strip(), pv: new Strip() };
     for (const p of st.platforms) {
       const mid = (p.from + p.to) / 2, w = Math.abs(p.to - p.from);
       const c0 = st.km - shelterHalf - 0.003, c1 = st.km + shelterHalf + 0.003;
-      if (canopies) for (const [a, z] of fobGap ? [[c0, Math.min(c1, fobGap[0])], [Math.max(c0, fobGap[1]), c1]] : [[c0, c1]]) if (z - a > 0.008) this.canopy(route, a, z, mid, w * 0.9, ox, oz, solar);
+      // (cut where a bridge's stairs come down)
+      let pieces: number[][] = [[c0, c1]];
+      for (const g of fobGaps) pieces = pieces.flatMap(([a, z]) => [[a, Math.min(z, g[0])], [Math.max(a, g[1]), z]]);
+      if (canopies) for (const [a, z] of pieces) if (z - a > 0.008) this.canopy(route, a, z, mid, w * 0.9, ox, oz, solar, roofStrips);
       for (const k of stallKms) { const q = top(k, mid); stalls.push(mat(q.x, q.y, q.z, q.ry)); }
       for (let km = st.km - shelterHalf; km <= st.km + shelterHalf; km += 0.006) {
         if (underFob(km) || underFob(km + 0.002)) continue;
@@ -151,11 +168,11 @@ export class StationView {
           const under = (l: number) => eave + rise * (1 - Math.abs(l) / hw);
           const bar = (la: number, ya: number, lb: number, yb: number, t: number) => {
             const L = Math.hypot(lb - la, yb - ya);
-            b.box(t, t, L, mat(o.x, o.y + (ya + yb) / 2, o.z, o.ry).multiply(mat(0, 0, (la + lb) / 2, 0, Math.atan2(-(yb - ya), lb - la))), '#4d6b7a', 'metal');
+            b.box(t, t, L, mat(o.x, o.y + (ya + yb) / 2, o.z, o.ry).multiply(mat(0, 0, (la + lb) / 2, 0, Math.atan2(-(yb - ya), lb - la))), roofLook.post, 'metal');
           };
           for (const dl of [-w * 0.18, w * 0.18]) {
             const q = top(km, mid + dl), ph = under(dl);
-            b.box(0.14, ph, 0.14, mat(q.x, q.y + ph / 2, q.z, q.ry), '#4d6b7a', 'metal');
+            b.box(0.14, ph, 0.14, mat(q.x, q.y + ph / 2, q.z, q.ry), roofLook.post, 'metal');
           }
           bar(-hw + 0.1, eave - 0.08, hw - 0.1, eave - 0.08, 0.15);
           bar(-hw, eave, 0, ridge, 0.17);
@@ -187,7 +204,7 @@ export class StationView {
         b.box(0.9, 0.12, 0.25, mat(q.x, q.y + 4.6, q.z, q.ry), '#fff6d8', 'lamp');
         this.lampSpots.push(new THREE.Vector3(q.x + ox, q.y + 4.4, q.z + oz));
       }
-      const n = freight ? 3 : big ? 34 : 14;
+      const n = freight ? 3 : prof.class === 'city' ? 46 : prof.class === 'town' ? 30 : prof.class === 'rural' ? 16 : 8;
       for (let i = 0; i < n; i++) {
         const km = st.km + (r() - 0.5) * (pfTo - pfFrom) * 0.75;
         const lat = p.from + (p.to - p.from) * (0.3 + r() * 0.6);
@@ -213,39 +230,25 @@ export class StationView {
       }
     }
 
+    this.canopyMeshes(roofStrips, roofLook);
+
     // ---- station building (a big junction: its architecture), clock, tea stall, water tank, FOB ----
     const side = st.buildingSide;
     const outer = st.platforms.filter(p => Math.sign(p.to) === side).reduce((m, p) => Math.max(m, Math.abs(p.to)), 0) || Math.abs(st.platforms[0].to);
-    const bl = side * (outer + (big ? 6 : 3.5));
+    // the building's front 1.5 m behind the platform's back edge, whatever its size (its arcade over the platform)
+    const dep = prof.class === 'halt' ? 4.5 : prof.class === 'rural' ? 7.5 : prof.class === 'town' ? 9 : 13;
+    const bl = jn ? side * (outer + (big ? 6 : 3.5)) : side * (outer + 1.5 + dep / 2);
     let clockSpot: ClockSpot;
+    let dims = { len: 38, dep: 9, hgt: 6 };
     if (jn) clockSpot = buildJunction(jn, { route, st, b, group: this.group, roofs: this.roofs, at, ox, oz, pfH: PLATFORM_H, layout,
       fit: { clock: (q, ceil) => this.ledClock(q, ceil, b), speaker: (q, ceil, dir) => this.speaker(q, ceil, dir, b), board: (m, w, h) => this.departureBoard(m, w, h, b) },
       lamps: this.lampSpots });
     else {
-      const bb = at(st.km, bl);
-      const stone = region.stationStyle === 'stone';
-      // plains stations: rendered wall with a dado band (station-wall texture, band at the bottom); ghats: stone
-      const wallKey = stone ? 'stone' : 'wall';
-      const wallTint = stone ? '#c9c2b3' : '#ffffff';
-      // heights in whole 3 m storeys, the height of one station-wall texture copy (dado band per floor)
-      const len = big ? 38 : 10, dep = big ? 9 : 5, hgt = big ? 6 : 3;
-      b.box(len, hgt, dep, mat(bb.x, bb.y + PLATFORM_H + hgt / 2 - 0.2, bb.z, bb.ry), wallTint, wallKey);
-      // arched verandah facing the platform
-      const vl = bl - side * (dep / 2 + 1.6);
-      for (let i = -len / 2 + 1.5; i <= len / 2 - 1.5; i += 3) {
-        const q = at(st.km + i / 1000, vl);
-        b.box(0.5, 3.4, 0.5, mat(q.x, q.y + PLATFORM_H + 1.7, q.z, q.ry), '#f0e6d6');
-      }
-      const vq = at(st.km, vl);
-      b.box(len, 0.35, 3.6, mat(vq.x, vq.y + PLATFORM_H + 3.55, vq.z, vq.ry), '#c94f3d');
-      if (stone || !big) b.add(new THREE.CylinderGeometry(0, 1, 1, 4, 1), mat(bb.x, bb.y + PLATFORM_H + hgt + 1.0, bb.z, bb.ry + Math.PI / 4, 0, 0, (len * 0.78), 2.2, (dep * 0.85)), '#ffffff', 'roof');
-      else b.box(len + 0.4, 0.8, dep + 0.4, mat(bb.x, bb.y + PLATFORM_H + hgt + 0.2, bb.z, bb.ry), '#d9c7b0', 'stone');
-      for (let i = -len / 2 + 2; i < len / 2 - 1; i += 3.2) {
-        const q = at(st.km + i / 1000, bl - side * (dep / 2 + 0.03));
-        b.box(1.2, 1.6, 0.06, mat(q.x, q.y + PLATFORM_H + 1.6, q.z, q.ry), '#2b3640');
-      }
-      const cq = at(st.km, bl - side * (dep / 2 + 0.05));
-      clockSpot = { x: cq.x, y: cq.y + PLATFORM_H + hgt - 1.2, z: cq.z, ry: cq.ry + (side > 0 ? Math.PI : 0), scale: 1 };
+      const built = stationBuilding(b, at, st, prof, region, bl, side, PLATFORM_H);
+      dims = built.dims;
+      const { len, hgt } = dims;
+      clockSpot = built.clock;
+      const cq = at(st.km, bl - side * (dims.dep / 2 + 0.05));
       // station name on the building
       const nameT = labelTexture(`${st.name}|bld`, { bg: '#1d3557', fg: '#fff', w: 1024, h: 128, lines: [`${st.nameHi}   ${st.name.toUpperCase()}   ${st.nameRegional}`] });
       const nb = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(len - 2, 16), 2), labelMaterial2(nameT));
@@ -265,15 +268,17 @@ export class StationView {
     this.group.add(clock);
     this.drawClock(0);
 
+    // platform life: the profile's stalls, a weighing machine and luggage; the landmark, the forecourt; the boards
+    platformStalls(b, top, prof, kioskSpots);
+    if (!freight) platformClutter(b, top, prof, st.km - 0.035, pmid(mainPf) + Math.sign(mainPf.to - mainPf.from) * Math.abs(mainPf.to - mainPf.from) * 0.28);
+    if (!jn) {
+      landmark(b, at, st, prof, bl, side, dims, pfFrom, pfTo, pmid(mainPf), PLATFORM_H);
+      forecourt(b, at, st, prof, bl, side, dims);
+    }
+    signage(this.group, b, top, st, prof, pfFrom, pfTo, pmid(mainPf), route.alignment.elevationAt(st.km));
     if (big) {
-      // tea stall on the main platform
-      const mp = st.platforms.find(p => p.lines.some(l => route.runningLines.some(r => r.id === l))) ?? st.platforms[0];
-      const ts = top(st.km - 0.06, (mp.from + mp.to) / 2);
-      b.box(2.6, 2.2, 1.8, mat(ts.x, ts.y + 1.1, ts.z, ts.ry), '#e67e22');
-      b.box(3.2, 0.1, 2.4, mat(ts.x, ts.y + 2.35, ts.z, ts.ry, 0, 0.1), '#c0392b');
-      b.box(2.6, 0.1, 0.5, mat(ts.x, ts.y + 1.0, ts.z, ts.ry).multiply(mat(0, 0, 1.1)), '#8e5b33');
-      // water tank behind the building
-      if (!jn) {
+      // water tank behind the building (unless the landmark is the old steel one)
+      if (!jn && prof.landmark !== 'watertank') {
         const wt = at(st.km - 0.09, bl + side * 20);
         const gy = wt.y;
         for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) b.box(0.4, 10, 0.4, mat(wt.x + dx, gy + 5, wt.z + dz), '#bfb8aa', 'concrete');
@@ -281,8 +286,11 @@ export class StationView {
         b.add(new THREE.ConeGeometry(3.4, 1.2, 16), mat(wt.x, gy + 14.05, wt.z), '#bdb5a6', 'concrete');
       }
     }
-    // foot over bridge across all tracks (Navyug has its air concourse; Sagarpur's is beyond the train shed)
-    if (fob !== null) this.footbridge(fob, at, b);
+    // foot over bridges across all tracks (Navyug has its air concourse; Sagarpur's is beyond the train shed)
+    for (const k of fobs) this.footbridge(k, at, b);
+    // the goods yard beside the goods line (from the line itself: in a journey's mirrored route it is on the other side)
+    const gl = st.lines.find(l => l.role === 'goods');
+    if (gl) this.goods = goodsYard(b, this.group, at, st, gl.offset, prof.goods?.cargo ?? ['cartons'], spots);
 
     this.group.add(b.build(M as unknown as Record<string, THREE.Material>));
     addWaterStalls(this.group, stalls, () => this.disposed);
@@ -383,7 +391,7 @@ export class StationView {
    * ridge cap, a white fascia board hanging along each eave and a galvanised
    * underside. Some stations have rows of solar panels on one slope.
    */
-  private canopy(route: Route, km0: number, km1: number, mid: number, width: number, ox: number, oz: number, solar: boolean) {
+  private canopy(route: Route, km0: number, km1: number, mid: number, width: number, ox: number, oz: number, solar: boolean, acc: CanopyStrips) {
     const frames: TrackFrame[] = [], ss: number[] = [];
     const f = newFrame();
     for (let km = km0; km <= km1 + 1e-9; km += 0.002) {
@@ -393,28 +401,35 @@ export class StationView {
     }
     const hw = width / 2, rise = canopyRise(width), T = 0.1, F = 0.03;
     // counter-clockwise profiles (outward faces): top surface right to left; edges down, underside left to right
-    const top = new Strip(), cap = new Strip(), under = new Strip();
+    // (into the station's strips: every roof of the station one mesh per part, see canopyMeshes)
+    const { top, cap, under } = acc, u0 = top.uv.length;
     top.extrude(frames, ss, [[hw, 0], [0, rise], [-hw, 0]], ox, oz, 1, 1);
     cap.extrude(frames, ss, [[0.3, rise - 0.02], [0, rise + 0.09], [-0.3, rise - 0.02]], ox, oz, 1, 1);
     under.extrude(frames, ss, [[-hw, 0], [-hw, -T], [0, rise - T], [hw, -T], [hw, 0]], ox, oz, 1, 1);
     // fascia boards along both eaves
     for (const e of [-hw, hw]) under.extrude(frames, ss, [[e - F, 0.14], [e - F, -0.45], [e + F, -0.45], [e + F, 0.14]], ox, oz, 1, 1, true);
     // UVs: u along the platform, v across it, so the corrugations (vertical in the image) run down the slopes
-    for (let i = 0; i < top.uv.length; i += 2) { const u = top.uv[i]; top.uv[i] = top.uv[i + 1]; top.uv[i + 1] = u; }
-    const M = materials();
+    for (let i = u0; i < top.uv.length; i += 2) { const u = top.uv[i]; top.uv[i] = top.uv[i + 1]; top.uv[i + 1] = u; }
     route.alignment.sampleOffset((km0 + km1) * 500, mid, f);
     this.roofs.push({ x: f.x, z: f.z, cos: Math.cos(f.heading), sin: Math.sin(f.heading), halfLen: (km1 - km0) * 500, halfWid: hw, top: f.y + PLATFORM_H + CANOPY_EAVE });
-    const roof = new THREE.Mesh(tint(top.geometry(), ROOF_BLUE), M.sheet);
-    const ridge = new THREE.Mesh(tint(cap.geometry(), RIDGE_BLUE), M.sheet);
-    const base = new THREE.Mesh(under.geometry(), CANOPY_UNDER);
-    const parts = [roof, ridge, base];
     if (solar) {
       // panels 4 m long with 2 m gaps, 8 cm above the slope away from the track side
       const sg = mid < 0 ? -1 : 1, l0 = sg * hw * 0.12, l1 = sg * hw * 0.88, y = (l: number) => rise * (1 - Math.abs(l) / hw) + 0.08;
-      const pv = new Strip(), prof: [number, number][] = sg > 0 ? [[l1, y(l1)], [l0, y(l0)]] : [[l0, y(l0)], [l1, y(l1)]];
-      for (let i = 1; i + 2 < frames.length - 1; i += 3) pv.extrude(frames.slice(i, i + 3), ss.slice(i, i + 3), prof, ox, oz, 1, 1);
-      if (pv.pos.length) parts.push(new THREE.Mesh(pv.geometry(), SOLAR));
+      const prof: [number, number][] = sg > 0 ? [[l1, y(l1)], [l0, y(l0)]] : [[l0, y(l0)], [l1, y(l1)]];
+      for (let i = 1; i + 2 < frames.length - 1; i += 3) acc.pv.extrude(frames.slice(i, i + 3), ss.slice(i, i + 3), prof, ox, oz, 1, 1);
     }
+  }
+
+  /** The station's platform roofs, each part one mesh (the profile's roof: coloured sheet, or clay tiles). */
+  private canopyMeshes(acc: CanopyStrips, look: ReturnType<typeof canopyLook>) {
+    if (!acc.top.pos.length) return;
+    const M = materials();
+    const parts = [
+      new THREE.Mesh(tint(acc.top.geometry(), look.roof), look.tiles ? M.roof : M.sheet),
+      new THREE.Mesh(tint(acc.cap.geometry(), look.ridge), look.tiles ? M.roof : M.sheet),
+      new THREE.Mesh(acc.under.geometry(), CANOPY_UNDER),
+    ];
+    if (acc.pv.pos.length) parts.push(new THREE.Mesh(acc.pv.geometry(), SOLAR));
     for (const m of parts) { m.castShadow = true; m.receiveShadow = true; this.group.add(m); }
   }
 
@@ -541,6 +556,8 @@ export class StationView {
   }
 
   private disposed = false;
+  /** the goods yard (stations with one): how full its stacks look */
+  goods: ReturnType<typeof goodsYard> | null = null;
   dispose() {
     this.disposed = true;
     this.group.removeFromParent();
@@ -572,10 +589,11 @@ const BOARD_GEO = new THREE.PlaneGeometry(4.2, 4.2);
 const CANOPY_UNDER = new THREE.MeshStandardMaterial({ color: 0xe2e6e9, roughness: 0.7, metalness: 0.05 });
 /** platform canopy: eaves this high over the platform; the ridge rises with the width */
 const CANOPY_EAVE = 3.72;
+/** a station's platform roofs, gathered: one mesh per part */
+interface CanopyStrips { top: Strip; cap: Strip; under: Strip; pv: Strip }
 const canopyRise = (width: number) => Math.min(1.4, Math.max(0.5, width * 0.1));
 /** face of a hanging digital clock */
 const LED_GEO = new THREE.PlaneGeometry(1.3, 0.42);
-const ROOF_BLUE = new THREE.Color(0x7aa6d6), RIDGE_BLUE = new THREE.Color(0x5b88b8);
 /** photovoltaic panels on some platform roofs */
 const SOLAR = new THREE.MeshStandardMaterial({ color: 0x2b3d5e, roughness: 0.3, metalness: 0.4 });
 /** Every vertex of `g` coloured `c` (the vertex-coloured sheet material). */

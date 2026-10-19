@@ -65,7 +65,7 @@ const bodyCache = new Map<string, { body: THREE.BufferGeometry; under: THREE.Buf
 function coachTemplate(c: CoachData) {
   let t = bodyCache.get(c.id);
   if (t) return t;
-  if (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan') {
+  if (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan' || c.kind === 'open') {
     t = wagonTemplate(c);
     bodyCache.set(c.id, t);
     return t;

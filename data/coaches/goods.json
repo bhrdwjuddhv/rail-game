@@ -1,5 +1,6 @@
 {
   "id": "goods",
+  "carries": ["grain", "sugar", "fertiliser", "cement", "salt", "tea", "cartons"],
   "name": "Covered Goods Wagon",
   "massEmptyT": 27,
   "massLoadedT": 81,

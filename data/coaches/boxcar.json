@@ -1,5 +1,6 @@
 {
   "id": "boxcar",
+  "carries": ["grain", "sugar", "fertiliser", "cement", "salt", "tea", "cartons"],
   "name": "Covered Wagon (BCNX)",
   "kind": "boxcar",
   "massEmptyT": 27,
