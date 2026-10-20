@@ -1,7 +1,6 @@
-import { isFreightStock } from '../train/Consist';
 import type { RouteData, StationData } from '../track/Route';
 import { flipJunction, joinedRouteId, joinRoutes, JUNCTION_SECTION_KM, JunctionData, sliceRoute, turnRoute } from '../track/Junctions';
-import { Consist, type CoachData, type ConsistSpec, type LocoData } from '../train/Consist';
+import { Consist, isFreightStock, type CoachData, type ConsistSpec, type LocoData, withPowerCar } from '../train/Consist';
 import type { ScenarioData } from '../gameplay/Scenario';
 import type { TimetableEntry } from '../gameplay/Timetable';
 import type { WeatherId } from '../weather';
@@ -205,7 +204,8 @@ export function defaultStops(route: RouteData, from: string, to: string): Journe
 export function trainSize(spec: ConsistSpec, locos: Record<string, LocoData>, coaches: Record<string, CoachData>) {
   const loco = locos[spec.loco];
   if (!loco) return { lengthM: 0, massT: 0, maxKmph: 0 };
-  const c = new Consist(loco, coaches, { ...spec, coaches: spec.coaches.filter(x => coaches[x.type] && x.count > 0) });
+  // (as it will run: with its generator van if it is a passenger train)
+  const c = new Consist(loco, coaches, withPowerCar({ ...spec, coaches: spec.coaches.filter(x => coaches[x.type] && x.count > 0) }, coaches));
   return { lengthM: c.length, massT: c.mass / 1000, maxKmph: loco.maxSpeedKmph };
 }
 

@@ -1,0 +1,47 @@
+{
+  "id": "humsafar",
+  "name": "Humsafar AC 3-tier coach",
+  "massEmptyT": 44,
+  "massLoadedT": 52,
+  "lengthM": 16.23,
+  "bogieCentresM": 10.32,
+  "axleSpacingM": 1.14,
+  "maxBrakeForceKN": 30,
+  "resistance": {
+    "aN": 850,
+    "bNperMs": 22,
+    "cNperMs2": 1
+  },
+  "livery": {
+    "body": "#3c4f8f",
+    "band": "#e8a33a",
+    "roof": "#8a8f94",
+    "window": "#20303c"
+  },
+  "windows": "sealed",
+  "interiorLight": "#e9f2ff",
+  "seats": 72,
+  "model": {
+    "file": "assets/models/coach/humsafar.glb",
+    "title": "Humsafar coach",
+    "author": "FILL IN: model author",
+    "licence": "FILL IN: licence",
+    "source": "FILL IN: where the model came from (URL)",
+    "scale": 1.24,
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "offset": [
+      -0.093,
+      -0.068,
+      -0.005
+    ],
+    "look": {
+      "roughness": 0.5,
+      "metalness": 0.15
+    },
+    "maxTriangles": 90000
+  }
+}

@@ -166,8 +166,8 @@ export interface CoachData {
   resistance: { aN: number; bNperMs: number; cNperMs2: number };
   livery: { body: string; band: string; roof: string; window: string };
   windows: 'open' | 'sealed' | 'none'; interiorLight: string;
-  /** body type (client model): passenger coach (default), covered boxcar, container wagon, brake van */
-  kind?: 'coach' | 'boxcar' | 'container' | 'brakevan' | 'open';
+  /** body type (client model): passenger coach (default), covered boxcar, container wagon, brake van, power car (generator van) */
+  kind?: 'coach' | 'boxcar' | 'container' | 'brakevan' | 'open' | 'power';
   /** container wagons: what they carry */
   containers?: 'double' | 'double-20' | 'single' | 'empty';
   /** goods wagons: the cargoes it can carry (GoodsPlanner: where it loads and unloads); the first is its usual one */
@@ -200,7 +200,52 @@ export interface CoachModelFile {
 }
 
 /** Freight stock (boxcars, container wagons, brake vans). */
-export const isFreightStock = (c: CoachData | undefined) => !!c && (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan' || c.kind === 'open' || c.windows === 'none');
+export const isFreightStock = (c: CoachData | undefined) => !!c && c.kind !== 'power' && (c.kind === 'boxcar' || c.kind === 'container' || c.kind === 'brakevan' || c.kind === 'open' || c.windows === 'none');
+/** a coach carrying passengers (not goods stock, not the power car) */
+export const isPassengerCoach = (c: CoachData | undefined) => !!c && !isFreightStock(c) && c.kind !== 'power';
+
+/** the generator van (power car) every passenger train runs with, right behind the loco */
+export const POWER_CAR = 'generator-van';
+
+/**
+ * A passenger train as it runs: with its generator van leading the coaches (added behind the loco if the train
+ * has passenger coaches and does not start with one). The same spec back when there is nothing to add.
+ */
+export function withPowerCar(spec: ConsistSpec, coaches: Record<string, CoachData>): ConsistSpec {
+  if (!coaches[POWER_CAR]) return spec;
+  const groups = spec.coaches.filter(g => g.count > 0), type = (g: { type: string }) => coaches[g.type] ?? coaches[currentCoach(g.type)];
+  if (!groups.length || groups[0].type === POWER_CAR || !groups.some(g => isPassengerCoach(type(g)))) return spec;
+  return { ...spec, coaches: [{ type: POWER_CAR, count: 1 }, ...spec.coaches] };
+}
+
+/**
+ * An AI passenger train's make-up within `lengthM` of coaches (seeded by its id: the same train always looks the
+ * same): the generator van first, then either a mixed rake - ICF, Humsafar and LHB coaches only, general ICF at
+ * both ends, LHB between with Humsafar ones among them - or a rake of one type alone (all LHB, all Humsafar, or one
+ * of the special trains: double-decker, Shatabdi, Garib Rath - never mixed with anything else).
+ */
+export const MIXABLE = ['icf', 'humsafar', 'lhb'];
+export const SPECIAL_RAKES = ['double-decker', 'shatabdi', 'gareeb-rath'];
+export function passengerRake(id: string, lengthM: number, coaches: Record<string, CoachData>): string[] {
+  let h = 2166136261;
+  for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const r = (h % 10000) / 10000, r2 = ((h >>> 13) % 1000) / 1000;
+  const has = (t: string) => !!coaches[t];
+  const out: string[] = [];
+  let used = 0;
+  const add = (t: string) => { const c = coaches[t]; if (!c || used + c.lengthM > lengthM) return false; out.push(t); used += c.lengthM; return true; };
+  if (has(POWER_CAR)) add(POWER_CAR);
+  const specials = SPECIAL_RAKES.filter(has);
+  const uniform = r < 0.25 && specials.length ? specials[Math.floor(r2 * specials.length)] : r < 0.35 && has('humsafar') ? 'humsafar' : r < 0.45 && has('lhb') ? 'lhb' : null;
+  if (uniform) { while (add(uniform)); return out; }
+  // mixed: what fits, counted first so the rear end gets its general coaches too
+  const mix = MIXABLE.filter(has);
+  if (!mix.length) return out;
+  const icf = has('icf') ? 'icf' : mix[0], mid = has('lhb') ? 'lhb' : mix[mix.length - 1], hum = has('humsafar') ? 'humsafar' : mid;
+  const n = Math.max(0, Math.floor((lengthM - used) / (coaches[mid].lengthM)));
+  for (let i = 0; i < n; i++) add(i < 2 || i >= n - 2 ? icf : i % 4 === 2 ? hum : mid);
+  return out;
+}
 
 export interface Vehicle {
   kind: 'loco' | 'coach';

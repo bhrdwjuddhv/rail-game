@@ -1,0 +1,48 @@
+{
+  "id": "generator-van",
+  "name": "Generator van (power car)",
+  "massEmptyT": 60,
+  "massLoadedT": 60,
+  "lengthM": 15.4,
+  "bogieCentresM": 9.8,
+  "axleSpacingM": 1.14,
+  "maxBrakeForceKN": 30,
+  "resistance": {
+    "aN": 850,
+    "bNperMs": 22,
+    "cNperMs2": 1
+  },
+  "livery": {
+    "body": "#7a2230",
+    "band": "#c9ccd1",
+    "roof": "#8a8f94",
+    "window": "#20303c"
+  },
+  "windows": "none",
+  "interiorLight": "#e9f2ff",
+  "seats": 0,
+  "model": {
+    "file": "assets/models/coach/generatorvan.glb",
+    "title": "Generator van",
+    "author": "FILL IN: model author",
+    "licence": "FILL IN: licence",
+    "source": "FILL IN: where the model came from (URL)",
+    "scale": 1.24,
+    "rotationDeg": [
+      0,
+      0,
+      0
+    ],
+    "offset": [
+      0.008,
+      -0.068,
+      -7.381
+    ],
+    "look": {
+      "roughness": 0.5,
+      "metalness": 0.15
+    },
+    "maxTriangles": 90000
+  },
+  "kind": "power"
+}

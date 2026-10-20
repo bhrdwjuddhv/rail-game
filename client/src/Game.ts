@@ -94,7 +94,7 @@ import { TrackGraph, TrackPath, Ramp } from '@rail/shared/track/TrackGraph';
 import { CabControls, CONTROL_NAMES } from './train/cab/CabControls';
 import { CabModel, cabLayout } from './train/cab/CabModel';
 import { TrainView } from './train/Coach';
-import { Consist, isFreightStock, Vehicle } from '@rail/shared/train/Consist';
+import { Consist, isFreightStock, passengerRake, Vehicle, withPowerCar } from '@rail/shared/train/Consist';
 import { LocoSystems } from '@rail/shared/train/LocoSystems';
 import { BRAKE_POSITIONS, BrakeSystem } from '@rail/shared/physics/BrakeSystem';
 import { TrainDynamics } from '@rail/shared/physics/TrainDynamics';
@@ -359,6 +359,8 @@ export class Game {
     this.lc = this.ctl.of(this.line);
 
     // ---- player train ----
+    // (a passenger train runs with its generator van behind the loco)
+    s.consist = withPowerCar(s.consist, COACHES);
     const loco = locoOrDefault(s.consist.loco);
     this.consist = new Consist(loco, COACHES, s.consist);
     const head = startHeadKm(s, this.line, this.consist.length);
@@ -612,14 +614,14 @@ export class Game {
     const def = t.def, goods = (def.kind ?? 'goods') === 'goods';
     const loco = def.loco && LOCOS[def.loco] ? LOCOS[def.loco] : goods ? locoOrDefault('ep-7') : (LOCOS.wap7 ?? locoOrDefault('ep-7'));
     const carM = def.carLengthM ?? AI_WAGON_LEN;
-    const pax = ['icf', 'lhb', 'double-decker'].filter(id => COACHES[id]);
+    // (a passenger train: generator van first, then its rake - see passengerRake)
+    const rake = goods || def.stock ? [] : passengerRake(def.id, def.wagons * carM, COACHES);
     // a trainset (the bullet train): its own cars, nothing coupled
     const vehicles: Vehicle[] = loco.trainset ? new Consist(loco, COACHES, { loco: loco.id, coaches: [] }).vehicles
       : [{ kind: 'loco', typeId: loco.id, massKg: 0, length: AI_LOCO_LEN, frontOffset: 0, bogieCentres: loco.bogieCentresM, axleSpacing: loco.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } }];
     let off = AI_LOCO_LEN; // each wagon after the one before it, coupled (no gap, whatever their lengths)
-    for (let i = 0; i < def.wagons; i++) {
-      // express make-up: general coaches at both ends, sleepers with an AC coach every few
-      const type = def.stock ? freightStock(def.stock, i, def.wagons) : goods ? 'goods' : pax[i < 2 || i >= def.wagons - 2 ? 0 : i % 5 === 0 ? Math.min(2, pax.length - 1) : Math.min(1, pax.length - 1)];
+    for (let i = 0; i < (rake.length || def.wagons); i++) {
+      const type = def.stock ? freightStock(def.stock, i, def.wagons) : goods ? 'goods' : rake[i];
       const c = COACHES[type];
       vehicles.push({ kind: 'coach', typeId: type, massKg: 0, length: c.lengthM, frontOffset: off, bogieCentres: c.bogieCentresM, axleSpacing: c.axleSpacingM, maxBrakeN: 0, davis: { a: 0, b: 0, c: 0 } });
       off += c.lengthM;

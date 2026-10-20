@@ -4,7 +4,7 @@ import { TrainView } from '../train/Coach';
 import { DieselSmoke } from '../train/Smoke';
 import { cabLayout } from '../train/cab/CabModel';
 import { effective } from '../core/Settings';
-import { Consist, ConsistSpec, LocoData, Vehicle, isFreightStock } from '@rail/shared/train/Consist';
+import { Consist, ConsistSpec, LocoData, Vehicle, isFreightStock, withPowerCar } from '@rail/shared/train/Consist';
 import { DriveMode, DriveStyle, RecordTrain, PathStop } from '@rail/shared/record/RecordTrain';
 import type { PathEnd, ScenePath, SceneTrain } from '@rail/shared/record/SceneFile';
 import type { LineControl } from '@rail/shared/signalling/Control';
@@ -106,6 +106,8 @@ export class RecordTrains implements RecordRunner {
   spawn(spec: ConsistSpec, track: string, km: number, offset: number, opts: Partial<SceneTrain> = {}): Spawned | null {
     const h = this.host, loco = LOCOS[spec.loco];
     if (!loco) return null;
+    // (a passenger train with its generator van behind the loco)
+    spec = withPowerCar(spec, COACHES);
     const consist = new Consist(loco, COACHES, spec);
     const route = h.railway.view(track), lc = h.ctl.of(route);
     const head = Math.min(route.lengthKm - 0.06, Math.max(consist.length / 1000 + 0.06, route.viewKm(km)));
@@ -559,7 +561,7 @@ export class RecordTrains implements RecordRunner {
     }
     const v = h.railway.view(track);
     const spec = this.spec();
-    const len = new Consist(LOCOS[spec.loco], COACHES, spec).length / 1000;
+    const len = new Consist(LOCOS[spec.loco], COACHES, withPowerCar(spec, COACHES)).length / 1000;
     // a train placed at a station stands with its head at the far end of the platform, otherwise the head is where you clicked
     const st = !hit && p.station ? v.station(p.station) : undefined;
     const headView = st ? v.stopKm(st, len * 1000) : v.viewKm(km);
