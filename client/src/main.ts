@@ -9,7 +9,7 @@ import { AudioEngine } from './audio/AudioEngine';
 import { assets } from './core/AssetRegistry';
 import { textures } from './core/TextureLibrary';
 import { RendererKind, RenderSystem } from './core/Renderer';
-import { applyMobileDefaults, applyPreset, PRESETS, settings } from './core/Settings';
+import { applyMobileDefaults, applyPreset, MOBILE_TUNING, PRESETS, settings } from './core/Settings';
 import { enterGameScreen, isTouch, lockControlMode, syncViewport } from './input/Device';
 import { RotateScreen } from './ui/RotateScreen';
 import { setMaxAnisotropy } from './core/Textures';
@@ -70,7 +70,8 @@ async function boot() {
   let rs: RenderSystem;
   try {
     const kind = (params.get('renderer') && params.get('renderer') !== 'auto' ? params.get('renderer') : settings.get().renderer) as RendererKind;
-    rs = await RenderSystem.create(app, PRESETS[settings.get().quality].antialias, kind);
+    // (MSAA on a phone at a high pixel ratio: costly and hardly seen - the pixels are small already)
+    rs = await RenderSystem.create(app, PRESETS[settings.get().quality].antialias && !(isTouch && settings.get().maxPixelRatio >= 1.5), kind);
     rs.setMaxPixelRatio(settings.get().maxPixelRatio);
   } catch (e) {
     menus.error(`Could not start WebGPU or WebGL2 in this browser.\n${(e as Error).message}`);
@@ -81,6 +82,8 @@ async function boot() {
     if (isTouch) applyMobileDefaults(rs.detectQuality()); else applyPreset(rs.detectQuality());
     settings.set({ autoDetected: true });
   }
+  // phones that saved the old mobile values (pixel ratio 1 at any preset): their preset's pixel ratio, once
+  if (isTouch && settings.get().mobileTuned !== MOBILE_TUNING) { applyPreset(settings.get().quality); settings.set({ mobileTuned: MOBILE_TUNING }); }
   // URL overrides (benchmarks/diagnostics) are applied after auto-detection so they always win
   applyUrlOverrides();
   rs.setMaxPixelRatio(settings.get().maxPixelRatio);

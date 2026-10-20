@@ -54,8 +54,9 @@ export function buildTunnel(route: Route, t: StructureData): THREE.Group {
     const ring = new THREE.TorusGeometry(4.3, 0.45, 6, 16, Math.PI).scale(sx, sy, 1);
     const rm = fw(0, 0); rm.elements[13] = y + 3.6;
     b.add(ring, rm.multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), '#6f695f', 'stone');
-    // parapet + cover slab into the hill (hides the terrain hole)
-    place(-dir * 8, 0, y + 13.6 + lift, 24 + 2 * H, 1.2, 18, '#5f6f45');
+    // parapet + cover slab into the hill: it hides the terrain's hole, which reaches 20 m in from the portal and
+    // 9.5 m either side of the line, plus a grid cell (5 m) all round - with room to spare
+    place(-dir * 16, 0, y + 13.6 + lift, 34 + 2 * H, 1.2, 34, '#5f6f45');
     place(0.6 * -dir, 0, y + 13.9 + lift, 24 + 2 * H, 1, 1.4, '#9a9386');
     // wing walls
     for (const s2 of [-1, 1]) place(dir * 4, s2 * (12.5 + H), y + 3.5, 2, 7, 9, '#857e72');

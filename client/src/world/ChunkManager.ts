@@ -4,6 +4,8 @@ import { TerrainTextures } from './TerrainTextures';
 import { tex } from '../core/Textures';
 import type { QualityPreset } from '../core/Settings';
 import type { Route } from '@rail/shared/track/Route';
+import { newFrame } from '@rail/shared/track/Chainage';
+import { isTouch } from '../input/Device';
 import { PROP_STRIDE, PROP_TYPES, PropType } from './scenery/Placement';
 import { propMaterials, propTemplate } from './scenery/Props';
 import type { TileRequest } from './terrain.worker';
@@ -99,7 +101,11 @@ export class ChunkManager {
   ponds = new Map<string, THREE.Mesh>();
 
   /** billboardZones: clear zones the scenery keeps out of (BillboardSlots) */
+  /** tunnel portals (x, z): their tiles always get the fine grid (its holes stay inside the portal) */
+  private portals: { x: number; z: number }[] = [];
+
   constructor(route: Route, private preset: () => QualityPreset, private billboardZones: number[][] = []) {
+    for (const t of route.tunnels) for (const km of [t.fromKm, t.toKm]) { const p = newFrame(); route.alignment.sample(km * 1000, p); this.portals.push({ x: p.x, z: p.z }); }
     this.root.name = 'terrain';
     // vertex colours + procedural grain (terrain UVs: 1 unit = 6 m) until the texture layers load
     this.terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: tex.ground() });
@@ -285,9 +291,10 @@ export class ChunkManager {
 
   private want(dist: number): { res: number; scenery: TileRequest['scenery'] } {
     const p = this.preset();
-    const fine = p.terrainDetail === 1 ? 80 : 40;
+    // (a phone: 6.25 m near the camera at most, out to 380 m)
+    const fine = p.terrainDetail === 1 ? (isTouch ? 64 : 80) : 40, near = isTouch ? 380 : 450;
     // ~5 m grid only near the camera; 12.5 m and 33 m further out (fog hides the rest)
-    const res = dist < 450 ? fine : dist < 1200 ? 32 : 12;
+    const res = dist < near ? fine : dist < 1200 ? 32 : 12;
     const scenery = dist < p.sceneryRange + TILE * 0.5 ? 'full' : dist < p.impostorRange ? 'impostor' : 'none';
     return { res, scenery };
   }
@@ -310,6 +317,8 @@ export class ChunkManager {
       let t = this.tiles.get(key);
       if (!t) { t = { key, tx, tz, res: 0, scenery: 'none', group: null, pendingId: 0, wantRes: 0, wantScenery: 'none' }; this.tiles.set(key, t); }
       const w = this.want(d);
+      // (a portal's tile: the 5 m grid whatever the preset - a coarser one cuts a hole wider than the portal)
+      if (d < 1200 && this.portals.some(p => p.x > tx * TILE - 60 && p.x < (tx + 1) * TILE + 60 && p.z > tz * TILE - 60 && p.z < (tz + 1) * TILE + 60)) w.res = Math.max(w.res, 80);
       t.wantRes = w.res; t.wantScenery = w.scenery;
       // hysteresis: only rebuild if detail must go up, or is far too high
       const better = w.res > t.res || rank(w.scenery) > rank(t.scenery);

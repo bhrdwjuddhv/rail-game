@@ -14,6 +14,8 @@ export function settingsPanel(onClose: () => void, captureKey: (cb: (code: strin
       <section><h3>Graphics</h3>
         <label>Preset <select data-s="quality">${(Object.keys(PRESETS) as Quality[]).map(q => `<option ${q === s.quality ? 'selected' : ''}>${q}</option>`).join('')}</select></label>
         <label>Render scale <input type="range" min="0.5" max="1.25" step="0.05" value="${s.renderScale}" data-s="renderScale"><output>${s.renderScale}</output></label>
+        <label title="Device pixels drawn per screen pixel (capped by the screen's own): higher is sharper, lower is faster">Resolution <input type="range" min="0.75" max="3" step="0.05" value="${s.maxPixelRatio}" data-s="maxPixelRatio"><output>${s.maxPixelRatio}</output></label>
+        ${isTouch ? `<label title="Shadows cost more than half of each frame on a phone">Shadows on this device <input type="checkbox" ${s.mobileShadows ? 'checked' : ''} data-s="mobileShadows"></label>` : ''}
         <label>Shadows <select data-s="shadows">${['off', 'low', 'high'].map(o => `<option ${o === s.shadows ? 'selected' : ''}>${o}</option>`).join('')}</select></label>
         <label>Draw distance <input type="range" min="1200" max="5000" step="100" value="${s.drawDistance}" data-s="drawDistance"><output>${s.drawDistance} m</output></label>
         <label>Fog density <input type="range" min="0.3" max="2" step="0.1" value="${s.fogMultiplier}" data-s="fogMultiplier"><output>${s.fogMultiplier}x</output></label>

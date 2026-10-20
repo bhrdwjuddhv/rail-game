@@ -347,6 +347,9 @@ export class TerrainField {
 
     if (nt) h = this.carve(nt, h, out);
     h = this.roads(x, z, nt, h, out);
+    // a portal's hole is the tunnel mouth, down at the line: the hillside over the portal keeps its surface (a
+    // hole there opened a window of sky behind the portal face)
+    if (out.hole && nt && h > this.route.alignment.elevationAt(nt.km) + 10) out.hole = false;
     out.h = h;
     out.nt = nt;
     return out;
@@ -361,7 +364,15 @@ export class TerrainField {
       if (km < t.fromKm - 0.004 || km > t.toKm + 0.004) continue;
       const nearPortal = km < t.fromKm + 0.02 || km > t.toKm - 0.02;
       if (nearPortal && nt.dist < 9.5 + H) out.hole = true;
-      if (R.overTunnel(km)) return nt.dist < 14 + H ? Math.max(h, bed + 13 + H * 0.5) : h;
+      if (R.overTunnel(km)) {
+        // the hill comes down to the portal's headwall (its cover slab's height) and climbs back at 1 : 1 behind
+        // it - a cut over the portal, as built - so the hole at the mouth never opens a face taller than the portal
+        const into = Math.min(km - t.fromKm, t.toKm - km) * 1000;
+        const cap = bed + 14 + H * 0.5 + Math.max(0, into - 12);
+        const w = 1 - smoothstep(14 + H, 26 + H, nt.dist);
+        const hh = lerp(h, Math.min(h, cap), w);
+        return nt.dist < 14 + H ? Math.max(hh, bed + 13 + H * 0.5) : hh;
+      }
     }
     for (const b of R.bridges) {
       if (km >= b.fromKm && km <= b.toKm) return nt.dist < 7 + H ? Math.min(h, bed - 3.5) : h;

@@ -1318,7 +1318,8 @@ export class Game {
   /** the player's station stops: doors, boarding, loading, and when the train may leave */
   private stop!: StationStop;
   private doorHintAt = -Infinity;
-  private adaptiveRes = new AdaptiveResolution(isTouch ? 0.5 : 0.6);
+  // (a phone aims at 30 FPS: it softens the picture only under ~27, and never below 0.7 - at 0.5 it was always there)
+  private adaptiveRes = isTouch ? new AdaptiveResolution(0.7, 27, 40) : new AdaptiveResolution(0.6);
   private appliedScale = 1;
   private routePicker!: RoutePicker;
   /** diesel exhaust (null for electric locos) */
@@ -2539,6 +2540,9 @@ export class Game {
     this.chunks.update(cam.x, cam.z);
     // track + lineside chunks
     const want = Math.min(p.drawDistance, 2600);
+    // (builds share a time budget per call: a station, a bridge and a km of highway in one frame was a hitch;
+    // what is left waits for the next call, a quarter second on)
+    const t0 = performance.now(), budget = () => all || performance.now() - t0 < 8;
     let built = 0;
     this.chunkCentres.forEach((c, i) => {
       const dd = Math.hypot(c.x - cam.x, c.z - cam.z);
@@ -2557,6 +2561,12 @@ export class Game {
       } else if (dd > want + 400 && have) {
         disposeObject(have);
         this.trackChunks.delete(i);
+      } else if (have && isTouch) {
+        // a phone: the lineside (masts, wires, boxes) out to 1 km, sleepers to 700 m - beyond, the ballast and
+        // the rails carry the line (each is less than a pixel there)
+        const [tc, ls] = have.children;
+        if (ls) ls.visible = dd < 1000;
+        for (const c of tc?.children ?? []) if ((c as THREE.InstancedMesh).isInstancedMesh) c.visible = dd < 700;
       }
     });
     for (const it of this.streamed) {
@@ -2564,7 +2574,7 @@ export class Game {
       // textures by area: acquire ahead of the build ring, release well after it
       if (!it.texHeld && dd < p.drawDistance + TEX_PREFETCH_M) { it.texHeld = true; for (const m of it.materials) textures.acquire(m); }
       else if (it.texHeld && dd > p.drawDistance + TEX_RELEASE_M) { it.texHeld = false; for (const m of it.materials) textures.release(m); }
-      if (dd < p.drawDistance && !it.obj && (all || built < 4)) { built++; const o = (it.obj = it.build()); this.addCompiled(o, () => it.obj === o, all); }
+      if (dd < p.drawDistance && !it.obj && (all || built < 4) && budget()) { built++; const o = (it.obj = it.build()); this.addCompiled(o, () => it.obj === o, all); }
       else if (dd > p.drawDistance + 600 && it.obj) it.dispose!();
     }
   }

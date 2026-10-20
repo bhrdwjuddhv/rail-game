@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
-import { GeoBatch, mat } from '../../core/GeoBatch';
+import { FastBatch, mat } from '../../core/GeoBatch';
 import { canvasTexture, uvToRect } from '../../core/Textures';
 import { lampPool } from '../scenery/Props';
 import { boardKey, routeSigns, stoneKey } from './RoadSigns';
 import { materials } from '../../core/Materials';
+import { isTouch } from '../../input/Device';
 import { hash2, rng } from '@rail/shared/util';
 import { newFrame } from '@rail/shared/track/Chainage';
 import type { Route } from '@rail/shared/track/Route';
@@ -169,7 +170,7 @@ const STEP = 5;
  * a signal over each lane (green arrow; one lane closed, red cross); rumble strips before it. Barriers: the
  * traffic's (they lift for each vehicle). Only the parts inside [s0, s1) of this piece.
  */
-function tollPlaza(st: number, at: (s: number, lat: number, dy: number) => { x: number; y: number; z: number; ry: number }, b: GeoBatch, s0: number, s1: number,
+function tollPlaza(st: number, at: (s: number, lat: number, dy: number) => { x: number; y: number; z: number; ry: number }, b: FastBatch, s0: number, s1: number,
   inner: number, paintBox: (s: number, lat: number, lenAlong: number, wAcross: number, col: number[], dy?: number, h?: number) => void) {
   const inRange = (s: number) => s >= s0 && s < s1;
   const box = (s: number, lat: number, dy: number, lx: number, h: number, lz: number, col: string, key = 'fixtures') => {
@@ -250,10 +251,13 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
 
   // bridges: where a river runs under the road's centre (and 10 m either side, its abutments)
   const S0: GroundSample = { h: 0, hole: false, nt: null, river: 0, waterY: 0, road: 0, pond: 0, natural: 0 };
-  const wet = rows.map((s, i) => { route.alignment.sampleOffset(s, cen[i], f); return field.sample(f.x, f.z, S0).river < 6; });
+  // (a river reaching the road crosses the line near a railway bridge: the ground is only sampled there)
+  const nearRiver = (s: number) => route.bridges.some(br => s > br.fromKm * 1000 - 350 && s < br.toKm * 1000 + 350);
+  const wet = rows.map((s, i) => { if (!nearRiver(s)) return false; route.alignment.sampleOffset(s, cen[i], f); return field.sample(f.x, f.z, S0).river < 6; });
   const bridge = wet.map((_, i) => wet.slice(Math.max(0, i - 2), i + 3).some(Boolean));
   // openings in the median: the U-turn gaps and the junctions
-  const open = (s: number) => nh && ([...road.gaps, ...road.junctions].some(g => Math.abs(g * 1000 - s) < 9) || inRound(s, road.offsetAt(s / 1000), 8));
+  const openings = [...road.gaps, ...road.junctions].map(g => g * 1000);
+  const open = (s: number) => nh && (openings.some(g => Math.abs(g - s) < 9) || (rounds.length > 0 && inRound(s, road.offsetAt(s / 1000), 8)));
   // wear: patched, darker stretches; a concrete stretch now and then (3 km at a time)
   const wear = rows.map(s => { const n = hash2(Math.floor(s / 25), 7, 313); return n < 0.15 ? 0.84 : 0.95 + n * 0.08; });
   const concrete = nh && hash2(Math.floor(km0 / 3), road.fromKm * 10, 571) < 0.3;
@@ -302,17 +306,29 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
     ribbon(fix, dry, cols);
   }
 
-  const b = new GeoBatch();
+  const b = new FastBatch();
+  // the small things (hedge tufts and flowers, trees, crash barrier posts, stones, road studs): drawn only near
+  // the camera - from a few hundred metres they are less than a pixel
+  const bd = new FastBatch();
   // ---- the median: soil between kerbs painted black and yellow, oleanders and bougainvillea in it
   if (nh) {
     const inner = S.median / 2;
     ribbon(fix, i => !open(rows[i]), () => [[-inner + 0.2, 0.2, SOIL, 0], [inner - 0.2, 0.2, SOIL, 0]]);
+    // (the kerb's points along each edge, from the rows: every metre between them interpolated)
+    const edge = (lat: number) => rows.map((_, i) => P(i, lat, 0));
+    const kerbAt = (pts: [number, number, number][], s: number, dy: number) => {
+      const i = Math.min(rows.length - 2, Math.max(0, Math.floor((s - s0) / STEP))), t = (s - rows[i]) / (rows[i + 1] - rows[i]);
+      const a = pts[i], c = pts[i + 1];
+      return { x: a[0] + (c[0] - a[0]) * t, y: a[1] + (c[1] - a[1]) * t + dy, z: a[2] + (c[2] - a[2]) * t };
+    };
+    const K = { [-1]: [edge(-inner), edge(-inner + 0.2)], [1]: [edge(inner), edge(inner - 0.2)] } as Record<number, [number, number, number][][]>;
     for (let s = Math.ceil(s0); s < s1; s += 1) {
       if (open(s) || open(s + 1)) continue;
       const col = Math.floor(s) % 2 ? KERB_K : KERB_Y;
       for (const e of [-1, 1]) {
-        const a0 = at(s, e * inner, 0), a1 = at(s + 1, e * inner, 0), b0 = at(s, e * inner, 0.2), b1 = at(s + 1, e * inner, 0.2);
-        const c0 = at(s, e * (inner - 0.2), 0.2), c1 = at(s + 1, e * (inner - 0.2), 0.2);
+        const [o, ii] = K[e], s2 = Math.min(s + 1, s1);
+        const a0 = kerbAt(o, s, 0), a1 = kerbAt(o, s2, 0), b0 = kerbAt(o, s, 0.2), b1 = kerbAt(o, s2, 0.2);
+        const c0 = kerbAt(ii, s, 0.2), c1 = kerbAt(ii, s2, 0.2);
         const ids = [a0, a1, b1, b0].map(p => fix.v(p.x, p.y, p.z, col));
         fix.q(ids[0], ids[1], ids[2], ids[3]);
         const t = [b0, b1, c1, c0].map(p => fix.v(p.x, p.y, p.z, col));
@@ -334,11 +350,11 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
       if (!hedge(i)) continue;
       for (const side of [-1, 1]) {
         const p = at(s + (rr() - 0.5), side * (0.35 + rr() * 0.2), hh[i] - 0.25 + rr() * 0.2);
-        b.add(tuft, mat(p.x, p.y, p.z, rr() * 6, rr(), 0, 1.3, 0.7 + rr() * 0.4, 1.1), ['#2d4f27', '#3a6131', '#456d38', '#2a4524'][Math.floor(rr() * 4)], 'fixtures');
+        bd.add(tuft, mat(p.x, p.y, p.z, rr() * 6, rr(), 0, 1.3, 0.7 + rr() * 0.4, 1.1), ['#2d4f27', '#3a6131', '#456d38', '#2a4524'][Math.floor(rr() * 4)], 'fixtures');
       }
       if (rr() < 0.55) continue;
       const fc = flowers[Math.floor(rr() * flowers.length)];
-      for (let n = 0; n < 4; n++) { const q = at(s + (rr() - 0.5) * 2.4, (rr() - 0.5) * 1.3, 0.5 + rr() * (hh[i] - 0.3)); b.add(bloom, mat(q.x, q.y, q.z, rr() * 3), fc, 'fixtures'); }
+      for (let n = 0; n < 4; n++) { const q = at(s + (rr() - 0.5) * 2.4, (rr() - 0.5) * 1.3, 0.5 + rr() * (hh[i] - 0.3)); bd.add(bloom, mat(q.x, q.y, q.z, rr() * 3), fc, 'fixtures'); }
     }
   }
 
@@ -365,7 +381,7 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
   const studs = (lat: number, col: string, from = 0) => {
     for (let s = Math.ceil((s0 - from) / PERIOD) * PERIOD + from; s < s1; s += PERIOD) {
       const p = at(s, lat, 0.02);
-      b.box(0.14, 0.04, 0.12, mat(p.x, p.y, p.z, p.ry), col, 'stud');
+      bd.box(0.14, 0.04, 0.12, mat(p.x, p.y, p.z, p.ry), col, 'stud');
     }
   };
   if (nh) {
@@ -453,6 +469,14 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
   const M = roadMaterials();
   const out = b.build({ surface: M.surface, fixtures: M.fixtures, stud: M.stud, panel: M.panel, lamp: materials().lamp, signs: routeSigns(route).material, pool: lampPool });
   for (const c of out.children) if (['surface', 'stud', 'panel', 'pool', 'signs'].includes(c.name)) c.castShadow = false;
+  if (!bd.isEmpty()) {
+    const near = bd.build({ fixtures: M.fixtures, stud: M.stud });
+    for (const c of near.children) if (c.name === 'stud') c.castShadow = false;
+    const lod = new THREE.LOD();
+    lod.addLevel(near, 0);
+    lod.addLevel(new THREE.Object3D(), isTouch ? 600 : 800);
+    out.add(lod);
+  }
   out.position.set(ox, 0, oz);
   return out;
 
@@ -496,10 +520,10 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
       if (busyAt(s, 30) || bridge[Math.round((s - s0) / STEP)]) continue;
       const whole = Math.abs(km - Math.round(km)) < 1e-6, lat = e * (ph + fl(s, e) + 0.9), p = at(s, lat, 0);
       if (whole) {
-        b.box(0.22, 0.74, 0.5, mat(p.x, p.y + 0.37, p.z, p.ry), '#f6f4ee', 'fixtures');
+        bd.box(0.22, 0.74, 0.5, mat(p.x, p.y + 0.37, p.z, p.ry), '#f6f4ee', 'fixtures');
         for (const dir of [1, -1] as const) plate(stoneKey(road, Math.round(km), dir), s - dir * 0.115, lat, 0.4, 0.5, 0.625, dir);
       } else {
-        b.box(0.12, 0.36, 0.26, mat(p.x, p.y + 0.18, p.z, p.ry), '#f6f4ee', 'fixtures');
+        bd.box(0.12, 0.36, 0.26, mat(p.x, p.y + 0.18, p.z, p.ry), '#f6f4ee', 'fixtures');
         const d = Math.round((km - Math.floor(km)) * 10);
         for (const dir of [1, -1] as const) plate(`hm-${d}`, s - dir * 0.065, lat, 0.2, 0.22, 0.22, dir);
       }
@@ -594,12 +618,13 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
     // crash barriers (galvanised W-beam on posts, a reflector every 4 m): bridge approaches, bends, high banks
     const S1: GroundSample = { h: 0, hole: false, nt: null, river: 0, waterY: 0, road: 0, pond: 0, natural: 0 };
     for (const e of [-1, 1] as const) {
+      // (the bank's height checked every 20 m)
+      let high = false;
       const need = rows.map((s, i) => {
+        if (i % 4 === 0) { route.alignment.sampleOffset(s, cen[i] + e * (fh + 4), f); high = top[i] - field.sample(f.x, f.z, S1).natural > 2.4; }
         if (bridge[i] || flared(e, i)) return false;
         const nearBridge = bridge.some((v, j) => v && Math.abs(j - i) <= 12);
         const bend = i > 0 && i < rows.length - 1 && Math.abs(cen[i + 1] - cen[i - 1]) / (2 * STEP) > 0.1;
-        route.alignment.sampleOffset(s, cen[i] + e * (fh + 4), f);
-        const high = top[i] - field.sample(f.x, f.z, S1).natural > 2.4;
         return nearBridge || bend || high;
       });
       const lat = (i: number) => e * (ph + flS[e][i] + 0.45);
@@ -610,8 +635,8 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
           const s = rows[i] + d;
           if (s >= s1) break;
           const p = at(s, lat(i) + e * 0.12, 0);
-          b.box(0.1, 0.8, 0.1, mat(p.x, p.y + 0.4, p.z, p.ry), '#7d858c', 'fixtures');
-          if (d === 0) { const q = at(s, lat(i) - e * 0.03, 0.6); b.box(0.1, 0.08, 0.03, mat(q.x, q.y, q.z, q.ry), '#ffb21e', 'stud'); }
+          bd.box(0.1, 0.8, 0.1, mat(p.x, p.y + 0.4, p.z, p.ry), '#7d858c', 'fixtures');
+          if (d === 0) { const q = at(s, lat(i) - e * 0.03, 0.6); bd.box(0.1, 0.08, 0.03, mat(q.x, q.y, q.z, q.ry), '#ffb21e', 'stud'); }
         }
       }
     }
@@ -624,10 +649,10 @@ export function buildRoadPiece(route: Route, field: TerrainField, road: Parallel
       const ss = s + (rt() - 0.5) * 5, i = Math.max(0, Math.min(rows.length - 1, Math.round((ss - s0) / STEP)));
       if (!older(ss) || busyAt(ss, 45) || bridge[i] || flared(e, i) || rt() < 0.15) continue;
       const p = at(ss, e * (fh + flS[e][i] + 4 + rt() * 2), -0.3), sc = 0.8 + rt() * 0.5;
-      b.cyl(0.2 * sc, 0.26 * sc, 3.4 * sc, 7, mat(p.x, p.y + 1.7 * sc, p.z), '#5b4330', 'fixtures');
-      b.cyl(0.275 * sc, 0.275 * sc, 1.0, 7, mat(p.x, p.y + 0.5, p.z), '#f2f0ea', 'fixtures');
-      b.cyl(0.28 * sc, 0.28 * sc, 0.22, 7, mat(p.x, p.y + 1.1, p.z), '#c0392b', 'fixtures');
-      for (let n = 0; n < 3; n++) b.add(crown, mat(p.x + (rt() - 0.5) * 2.2 * sc, p.y + (3.6 + rt() * 1.2) * sc, p.z + (rt() - 0.5) * 2.2 * sc, rt() * 6, 0, 0, sc, sc * 0.8, sc), ['#3d5f2e', '#4a6b35', '#56773c'][n], 'fixtures');
+      bd.cyl(0.2 * sc, 0.26 * sc, 3.4 * sc, 7, mat(p.x, p.y + 1.7 * sc, p.z), '#5b4330', 'fixtures');
+      bd.cyl(0.275 * sc, 0.275 * sc, 1.0, 7, mat(p.x, p.y + 0.5, p.z), '#f2f0ea', 'fixtures');
+      bd.cyl(0.28 * sc, 0.28 * sc, 0.22, 7, mat(p.x, p.y + 1.1, p.z), '#c0392b', 'fixtures');
+      for (let n = 0; n < 3; n++) bd.add(crown, mat(p.x + (rt() - 0.5) * 2.2 * sc, p.y + (3.6 + rt() * 1.2) * sc, p.z + (rt() - 0.5) * 2.2 * sc, rt() * 6, 0, 0, sc, sc * 0.8, sc), ['#3d5f2e', '#4a6b35', '#56773c'][n], 'fixtures');
     }
   }
 }

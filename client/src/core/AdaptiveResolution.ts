@@ -12,8 +12,8 @@ export class AdaptiveResolution {
   private avg = 16.7;
   private cool = 2;
 
-  /** min: the lowest scale it may use */
-  constructor(private min: number) {}
+  /** min: the lowest scale it may use; it lowers the scale under `lowFps` and raises it again over `highFps` */
+  constructor(private min: number, private lowFps = 45, private highFps = 56) {}
 
   /**
    * frameMs: this frame's wall time; gpuMs: GPU time (0 if unknown); max: the
@@ -24,8 +24,8 @@ export class AdaptiveResolution {
     this.cool -= dt;
     this.scale = Math.min(this.scale, max);
     if (this.cool > 0) return this.scale;
-    if (this.avg > 1000 / 45 && this.scale > this.min + 1e-3) { this.scale = Math.max(this.min, this.scale - 0.05); this.cool = 1; }
-    else if (this.avg < 1000 / 56 && this.scale < max - 1e-3) { this.scale = Math.min(max, this.scale + 0.05); this.cool = 2.5; }
+    if (this.avg > 1000 / this.lowFps && this.scale > this.min + 1e-3) { this.scale = Math.max(this.min, this.scale - 0.05); this.cool = 1; }
+    else if (this.avg < 1000 / this.highFps && this.scale < max - 1e-3) { this.scale = Math.min(max, this.scale + 0.05); this.cool = 2.5; }
     return this.scale;
   }
 }

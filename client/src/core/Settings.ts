@@ -67,6 +67,10 @@ export interface SettingsData {
   dayNightSpeed: number;
   mouseSensitivity: number;
   autoDetected: boolean;
+  /** phones: the version of the mobile tuning last applied (re-applied once when it changes) */
+  mobileTuned?: number;
+  /** phones and tablets: draw shadows (off unless asked for: they cost more than half the frame there) */
+  mobileShadows?: boolean;
   renderer: 'webgl' | 'webgpu' | 'webgpu-gl';
   maxPixelRatio: number;
   /** dynamic resolution: drop the render scale when frames run slow (AdaptiveResolution) */
@@ -123,7 +127,17 @@ settings.subscribe(s => safeStorageSet(KEY, s));
 export function applyPreset(q: Quality) {
   const p = PRESETS[q];
   settings.set({ quality: q, renderScale: p.renderScale, shadows: p.shadows, drawDistance: p.drawDistance, bloom: p.bloom });
+  // a phone: the preset's sharpness is its pixel ratio (rendered at full scale; adaptive resolution trims it)
+  if (isTouch) settings.set({ maxPixelRatio: MOBILE_PIXELS[q], renderScale: 1 });
 }
+
+/**
+ * Pixel ratio per preset on a phone or tablet (their screens are 2-3 device pixels to a CSS pixel: at 1 the
+ * picture was drawn at a third of the screen's resolution and stretched - soft even on Ultra).
+ */
+export const MOBILE_PIXELS: Record<Quality, number> = { low: 1, medium: 1.35, high: 1.7, ultra: 2 };
+/** bump to re-apply the mobile tuning once on phones that saved the old values */
+export const MOBILE_TUNING = 2;
 
 /**
  * Phones and tablets: whatever preset is chosen, keep grass, close scenery,
@@ -146,16 +160,17 @@ export function effective(): QualityPreset {
     p.impostorRange = Math.min(p.impostorRange, MOBILE_CAPS.impostorRange);
     p.grassDensity = Math.min(p.grassDensity, MOBILE_CAPS.grassDensity);
     p.grassRadius = Math.min(p.grassRadius, MOBILE_CAPS.grassRadius);
-    if (p.shadows === 'high') p.shadows = 'low';
+    // shadows: the costliest thing on a phone (every object drawn twice: 15 -> 24 FPS without them on a phone-like
+    // test at Ultra): off unless asked for in Settings, then the small map
+    p.shadows = s.mobileShadows && p.shadows !== 'off' ? 'low' : 'off';
   }
   return p;
 }
 
 /** First run on a phone/tablet: always Low (most phones cannot hold 30 FPS on Medium); players can raise it. */
 export function applyMobileDefaults(_detected: Quality) {
-  const q: Quality = 'low';
-  applyPreset(q);
-  settings.set({ maxPixelRatio: q === 'low' ? 1 : 1.25, bloom: false, renderScale: q === 'low' ? 0.75 : 0.85 });
+  applyPreset('low');
+  settings.set({ bloom: false, mobileTuned: MOBILE_TUNING });
 }
 
 // ---- save data (best scores) ----

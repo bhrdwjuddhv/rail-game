@@ -85,7 +85,8 @@ export default defineConfig({
     // (Record Mode is its own lazy chunk already: loaded only when opened)
     rollupOptions: { output: { manualChunks: (id: string) => (id.includes('node_modules/three/') ? 'three' : undefined) } },
   },
-  // data/ lives at the repo root, shared by client and server
-  server: { fs: { allow: ['..'] } },
+  // data/ lives at the repo root, shared by client and server. host: on the local network too ("Network:" in the
+  // output) - open it on a phone on the same Wi-Fi to try a change before pushing
+  server: { fs: { allow: ['..'] }, host: true },
   test: { name: 'client', environment: 'node', include: ['test/**/*.test.ts'] },
 });

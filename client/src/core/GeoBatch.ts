@@ -101,3 +101,99 @@ export class GeoBatch {
 }
 
 export { _m as tmpMatrix };
+
+/** a shape ready to be copied: indexed, with normals, UVs and (its own) colours */
+interface Proto { pos: ArrayLike<number>; nor: ArrayLike<number>; uv: ArrayLike<number> | null; col: ArrayLike<number> | null; idx: ArrayLike<number> }
+const protos = new WeakMap<THREE.BufferGeometry, Proto>();
+const unitShapes = new Map<string, THREE.BufferGeometry>();
+const _n3 = new THREE.Matrix3();
+const _v = new THREE.Vector3();
+
+/**
+ * GeoBatch's quick sibling, for thousands of small copies of a few shapes (a hedge's tufts, a road's studs, its
+ * trees): each shape is made indexed once and every copy only transformed and appended - no clone, no vertex
+ * merge per copy (GeoBatch's cost: a km of highway took 400 ms). Same add / box / cyl / build; one mesh per key.
+ */
+export class FastBatch {
+  private parts = new Map<string, { p: number[]; n: number[]; u: number[]; c: number[]; i: number[] }>();
+
+  private proto(geo: THREE.BufferGeometry): Proto {
+    let p = protos.get(geo);
+    if (p) return p;
+    let g = geo;
+    if (!g.index) g = mergeVertices(g.clone());
+    if (!g.attributes.normal) g.computeVertexNormals();
+    p = { pos: g.attributes.position.array, nor: g.attributes.normal.array, uv: g.attributes.uv?.array ?? null, col: g.attributes.color?.array ?? null, idx: g.index!.array };
+    protos.set(geo, p);
+    return p;
+  }
+
+  add(geo: THREE.BufferGeometry, matrix: THREE.Matrix4 | null, color: THREE.ColorRepresentation, key = 'std') {
+    const pr = this.proto(geo);
+    let part = this.parts.get(key);
+    if (!part) this.parts.set(key, (part = { p: [], n: [], u: [], c: [], i: [] }));
+    const base = part.p.length / 3, nv = pr.pos.length / 3;
+    _c.set(color);
+    if (matrix) _n3.getNormalMatrix(matrix);
+    for (let v = 0; v < nv; v++) {
+      _v.set(pr.pos[v * 3], pr.pos[v * 3 + 1], pr.pos[v * 3 + 2]);
+      if (matrix) _v.applyMatrix4(matrix);
+      part.p.push(_v.x, _v.y, _v.z);
+      _v.set(pr.nor[v * 3], pr.nor[v * 3 + 1], pr.nor[v * 3 + 2]);
+      if (matrix) _v.applyMatrix3(_n3).normalize();
+      part.n.push(_v.x, _v.y, _v.z);
+      part.u.push(pr.uv ? pr.uv[v * 2] : 0, pr.uv ? pr.uv[v * 2 + 1] : 0);
+      part.c.push(_c.r * (pr.col ? pr.col[v * 3] : 1), _c.g * (pr.col ? pr.col[v * 3 + 1] : 1), _c.b * (pr.col ? pr.col[v * 3 + 2] : 1));
+    }
+    for (let k = 0; k < pr.idx.length; k++) part.i.push(base + pr.idx[k]);
+    return this;
+  }
+
+  private unit(key: string, make: () => THREE.BufferGeometry) {
+    let g = unitShapes.get(key);
+    if (!g) unitShapes.set(key, (g = make()));
+    return g;
+  }
+
+  box(w: number, h: number, d: number, m: THREE.Matrix4 | null, color: THREE.ColorRepresentation, key = 'std') {
+    const s = new THREE.Matrix4().makeScale(w, h, d);
+    return this.add(this.unit('box', () => new THREE.BoxGeometry(1, 1, 1)), m ? m.clone().multiply(s) : s, color, key);
+  }
+
+  /** a cylinder (its taper kept to the nearest 5 %) */
+  cyl(rt: number, rb: number, h: number, seg: number, m: THREE.Matrix4 | null, color: THREE.ColorRepresentation, key = 'std') {
+    const k = rb > 0 ? Math.round((rt / rb) * 20) / 20 : 1, r = rb > 0 ? rb : rt;
+    const s = new THREE.Matrix4().makeScale(r, h, r);
+    return this.add(this.unit(`cyl:${k}:${seg}`, () => new THREE.CylinderGeometry(k, 1, 1, seg)), m ? m.clone().multiply(s) : s, color, key);
+  }
+
+  isEmpty() { return this.parts.size === 0; }
+
+  geometry(key = 'std') {
+    const part = this.parts.get(key);
+    if (!part || !part.i.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(part.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(part.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(part.u, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(part.c, 3));
+    g.setIndex(part.p.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(part.i, 1) : new THREE.Uint16BufferAttribute(part.i, 1));
+    return g;
+  }
+
+  build(materials: Record<string, THREE.Material>, shadows = true): THREE.Group {
+    const out = new THREE.Group();
+    for (const key of this.parts.keys()) {
+      const geo = this.geometry(key);
+      if (!geo) continue;
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, materials[key] ?? materials.std);
+      mesh.castShadow = shadows && key !== 'lamp' && key !== 'glass';
+      mesh.receiveShadow = shadows;
+      mesh.name = key;
+      out.add(mesh);
+    }
+    this.parts.clear();
+    return out;
+  }
+}

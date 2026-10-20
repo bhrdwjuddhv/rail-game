@@ -301,7 +301,7 @@ html.touch .cols { gap: 14px; }
 /* short landscape phones: main menu in two columns (logo left, buttons right), sized by height */
 @media (orientation: landscape) and (max-height: 500px) {
   html.touch #menus > .menu.main {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 1.1fr); grid-template-rows: minmax(0, 1fr) auto; column-gap: clamp(14px, 4vw, 32px);
+    display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(300px, 1.2fr); grid-template-rows: minmax(0, 1fr) auto auto; column-gap: clamp(14px, 4vw, 32px);
     width: min(760px, calc(100vw - var(--sl) - var(--sr) - 32px)); max-height: calc(calc(100 * var(--vh, 1dvh)) - var(--st) - var(--sb) - 16px); overflow: hidden;
     padding: clamp(10px, calc(3 * var(--vh, 1dvh)), 18px) clamp(14px, 3vw, 22px); text-align: left;
   }
@@ -309,11 +309,21 @@ html.touch .cols { gap: 14px; }
   html.touch .menu.main .title img.logo { max-width: 100%; max-height: clamp(70px, calc(38 * var(--vh, 1dvh)), 190px); width: auto; margin: 0 auto 4px; }
   html.touch .menu.main .title p { font-size: clamp(11px, calc(3.4 * var(--vh, 1dvh)), 14px); margin: 2px 0 0; text-align: center; }
   html.touch .menu.main .note { grid-column: 1; grid-row: 2; margin: 6px 0 0; font-size: 11px; text-align: center; }
+  /* the buttons: a two-column grid that fits the panel (a flex column capped in height wrapped into a third
+     column off its edge); scrolls if a screen is shorter still */
   html.touch .menu.main .buttons.vertical {
-    grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+    grid-column: 2; grid-row: 1 / span 3; align-self: center; margin: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: center; flex-wrap: nowrap;
     gap: clamp(5px, calc(1.6 * var(--vh, 1dvh)), 9px); padding: 2px;
   }
-  html.touch .menu.main .buttons.vertical button { min-height: 44px; height: clamp(44px, calc(12 * var(--vh, 1dvh)), 52px); padding: 0 14px; font-size: clamp(14px, calc(4 * var(--vh, 1dvh)), 16px); }
+  html.touch .menu.main .buttons.vertical button {
+    min-height: 44px; height: clamp(44px, calc(12 * var(--vh, 1dvh)), 52px); padding: 0 10px; font-size: clamp(13px, calc(3.8 * var(--vh, 1dvh)), 15px);
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  html.touch .menu.main .buttons.vertical button small { display: none; }
+  html.touch .menu.main .buttons.vertical button.soon { justify-content: flex-start; }
+  html.touch .menu.main .buttons.vertical > .tut-pick { grid-column: 1 / -1; margin: 0; }
+  html.touch .menu.main .drive-mode { grid-column: 1; grid-row: 3; flex-wrap: wrap; }
   html.touch .menu h1 { font-size: clamp(22px, calc(7 * var(--vh, 1dvh)), 30px); }
   html.touch #menus > .menu.loading .title img.logo { max-height: calc(30 * var(--vh, 1dvh)); width: auto; }
 }
