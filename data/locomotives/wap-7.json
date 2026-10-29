@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "30259",
   "type": "electric",
+  "role": "Passenger",
+  "description": "The most widely used passenger electric: reliable and powerful, at home on mail, express and superfast trains.",
 
   "prototype": {
     "class": "WAP-7",

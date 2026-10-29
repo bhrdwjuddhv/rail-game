@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "40112",
   "type": "diesel",
+  "role": "Passenger",
+  "description": "A powerful passenger diesel with a full-width cab, hauling express trains away from the wires.",
   "bodyStyle": "diesel-hood",
   "massT": 120,
   "lengthM": 21.25,

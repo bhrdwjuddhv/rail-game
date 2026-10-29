@@ -18,10 +18,10 @@ export interface RouteModeHost {
 
 const STEPS = ['Journey', 'Train', 'Plan', 'Start'];
 const TIMES: [string, string, IconName][] = [['Dawn', '05:40', 'sunHorizon'], ['Morning', '08:30', 'sun'], ['Noon', '12:30', 'sun'], ['Evening', '16:30', 'sun'], ['Sunset', '18:10', 'sunHorizon'], ['Night', '21:30', 'moon']];
-const WX_ICON: Record<WeatherId, IconName> = { clear: 'sun', hazy: 'hazy', fog: 'fog', rain: 'rain', storm: 'storm', snow: 'snow' };
+export const WX_ICON: Record<WeatherId, IconName> = { clear: 'sun', hazy: 'hazy', fog: 'fog', rain: 'rain', storm: 'storm', snow: 'snow' };
 const DWELLS = [30, 60, 120, 180, 300];
 const ROUTE_COLOURS = ['#5fb4ff', '#4cd28a', '#ffa64d', '#c38bff', '#ff6f91', '#7de0e6'];
-const PRESETS: Record<string, { loco?: string; coaches: ConsistSpec['coaches']; loaded?: boolean }> = {
+export const PRESETS: Record<string, { loco?: string; coaches: ConsistSpec['coaches']; loaded?: boolean }> = {
   'Express 22': { coaches: [{ type: 'icf', count: 2 }, { type: 'lhb', count: 18 }, { type: 'icf', count: 2 }] },
   'Local 12': { coaches: [{ type: 'icf', count: 12 }] },
   'Freight 40': { loco: 'wag-9', coaches: [{ type: 'boxcar', count: 40 }, { type: 'brakevan', count: 1 }], loaded: true },
@@ -54,6 +54,15 @@ const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 const mins = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const hhmm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m) % 60).padStart(2, '0')}`;
 const dur = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, '0')} min` : `${Math.round(m)} min`);
+
+// the pages share the free roam page's look (freeroam.css): picture header, numbered panels, footer
+const head = (back: string) => `<header class="fr-head" style="--img:url('${import.meta.env.BASE_URL}assets/menu/route-mode-card.webp')">
+  <button class="fr-x" data-a="${back}" title="Back" aria-label="Back">${icon('caretLeft')}</button>
+  <span class="fr-mark">${icon('mapPin')}</span>
+  <div class="fr-titles"><h2>Route Mode</h2><p class="fr-motto">Plan<i></i>Drive<i></i>Arrive</p></div>
+  <div class="title fr-brand"><h1>Rail Bharat</h1></div></header>`;
+const panel = (n: number | IconName, title: string, inner: string, cls = '') =>
+  `<section class="fr-panel${cls ? ` ${cls}` : ''}"><h3 class="fr-h">${typeof n === 'number' ? `<span class="fr-n">${n}</span>` : icon(n)}${title}</h3>${inner}</section>`;
 
 /**
  * Route Mode: plan a journey between any two stations (across routes, through the junctions), choose
@@ -114,16 +123,22 @@ export class RouteModeMenu {
   // ---------------------------------------------------------------- the start screen
   open() {
     const st = loadStore();
-    const row = (j: Journey, i: number, saved: boolean) => `<div class="rm-saved card">
+    const row = (j: Journey, i: number, saved: boolean) => `<div class="rm-saved">
       <div><b>${esc(j.name ?? `${this.name(j.from)} → ${this.name(j.to)}`)}</b>
       <small>${esc(this.name(j.from))} → ${esc(this.name(j.to))}${j.via.length ? ` · via ${j.via.map(v => esc(this.net.junctions.find(x => x.id === v)?.name ?? v)).join(', ')}` : ''} · ${esc(LOCOS[j.consist.loco]?.name ?? j.consist.loco)} · ${j.time}</small></div>
       <div class="rm-saved-btns"><button data-go="${saved ? 's' : 'r'}${i}">${icon('play')}Start</button><button data-edit="${saved ? 's' : 'r'}${i}">${icon('sliders')}Edit</button><button data-del="${saved ? 's' : 'r'}${i}" title="Delete this journey">${icon('trash')}Delete</button></div></div>`;
-    const el = html(`<div class="menu rm rm-start"><h2>${icon('route')} Route Mode</h2>
-      <p class="sub">Drive from any station to any other: across the routes, through the junctions. Plan the stops, pick up and leave coaches, change locos.</p>
-      <button class="btn-primary btn-lg rm-new" data-a="new">${icon('plus')}Plan a new journey</button>
-      ${st.saved.length ? `<h3>${icon('save')} Saved journeys</h3>${st.saved.map((j, i) => row(j, i, true)).join('')}` : ''}
-      ${st.recent.length ? `<h3>${icon('recent')} Recent journeys</h3>${st.recent.map((j, i) => row(j, i, false)).join('')}` : ''}
-      <div class="buttons"><button data-a="menu">${icon('arrowLeft')}Main menu</button></div></div>`);
+    const el = html(`<div class="menu fr-page rm-page">${head('menu')}
+      <button class="rm-hero" data-a="new" style="--img:url('${import.meta.env.BASE_URL}assets/menu/route-mode-card.webp')">
+        <span class="rm-hero-text"><small>Journeys across the network</small><b>Plan a new journey</b>
+        <span>Drive from any station to any other: across the routes, through the junctions. Plan the stops, pick up and leave coaches, change locos.</span></span>
+        <span class="rm-hero-go">${icon('plus')}</span></button>
+      <div class="rm-lists">
+        ${panel('save', 'Saved journeys', st.saved.length ? st.saved.map((j, i) => row(j, i, true)).join('') : '<p class="rm-empty">Journeys you save on the last step show here.</p>')}
+        ${panel('recent', 'Recent journeys', st.recent.length ? st.recent.map((j, i) => row(j, i, false)).join('') : '<p class="rm-empty">Your last six journeys show here.</p>')}
+      </div>
+      <footer class="fr-foot"><span class="fr-mark">${icon('mapPin')}</span>
+        <div class="fr-about"><b>Route Mode</b><p>Pick where from and where to, choose the train, plan the stops and the shunting, then drive the whole way.</p></div>
+        <button class="fr-back" data-a="menu">Main menu</button><button class="fr-go" data-a="new">${icon('plus')}New journey</button></footer></div>`);
     el.addEventListener('click', e => {
       const b = (e.target as HTMLElement).closest('button');
       if (!b) return;
@@ -190,12 +205,12 @@ export class RouteModeMenu {
     const body = [() => this.stepJourney(), () => this.stepTrain(), () => this.stepPlan(), () => this.stepReview()][this.step]();
     const blocks = this.warnings().filter(w => w.level === 'block');
     const ok = this.step === 0 ? !!this.path() : this.step === 3 ? !blocks.length : true;
-    const el = html(`<div class="menu rm">
-      <div class="rm-head"><h2>${icon('route')} Route Mode</h2>${stepper(STEPS, this.step)}</div>
+    const el = html(`<div class="menu fr-page rm-page">${head('back')}
+      <div class="fr-panel rm-steps">${stepper(STEPS, this.step)}</div>
       <div class="rm-body">${body}</div>
-      ${this.summary()}
-      <div class="buttons"><button data-a="back">${icon('arrowLeft')}${this.step ? 'Back' : 'Journeys'}</button>
-      <button data-a="next"${ok ? '' : ' disabled'} title="${ok ? '' : esc(this.step === 0 ? 'Choose where from and where to' : blocks.map(b => b.text).join(' '))}">${this.step === 3 ? `${icon('play')}Start journey` : `Next${icon('arrowRight')}`}</button></div></div>`);
+      <footer class="fr-foot rm-foot">${this.summary()}
+      <button class="fr-back" data-a="back">${this.step ? 'Back' : 'Journeys'}</button>
+      <button class="fr-go" data-a="next"${ok ? '' : ' disabled'} title="${ok ? '' : esc(this.step === 0 ? 'Choose where from and where to' : blocks.map(b => b.text).join(' '))}">${this.step === 3 ? `${icon('play')}Start journey` : `Next${icon('arrowRight')}`}</button></footer></div>`);
     this.el = el;
     this.bind(el);
     this.host.show(el, () => this.back());
@@ -219,7 +234,7 @@ export class RouteModeMenu {
   private stepJourney() {
     const ps = this.paths(), p = this.path();
     const wxOk = (w: WeatherId) => w !== 'snow' || !p || p.legs.some(l => l.route.includes('himalaya')) || (p.from === 'NVJ' || p.to === 'NVJ');
-    return `<div class="rm-journey">
+    return `${panel(1, 'Where from and where to', `<div class="rm-journey">
       <section class="rm-map-wrap">${this.mapSvg()}
         <p class="note">${icon('info')} Tap a station on the map or in the list: first where from, then where to.</p></section>
       <section class="rm-pick">
@@ -231,12 +246,11 @@ export class RouteModeMenu {
         <label class="rm-search">${icon('search')}<input type="search" data-f="search" placeholder="Search stations" value="${esc(this.query)}"></label>
         <div class="rm-list">${this.stationList()}</div>
       </section></div>
-      ${ps.length > 1 ? `<h3>${icon('route')} Ways</h3><div class="chips">${ps.map((x, i) => chip(`${x.junctions.length ? `via ${x.junctions.map(v => this.net.junctions.find(j => j.id === v)?.name ?? v).join(' + ')}` : 'direct'} · ${x.distanceKm.toFixed(0)} km${i ? '' : ' (shortest)'}`, { on: x.junctions.join() === (p?.junctions.join() ?? ''), data: { via: i }, icon: i ? 'route' : 'star' })).join('')}</div>` : ''}
-      <h3>${icon('clock')} Time of day</h3>
-      <div class="chips">${TIMES.map(([n, t, ic]) => chip(`${n} ${t}`, { icon: ic, on: this.j.time === t, data: { time: t } })).join('')}</div>
-      <label class="slider rm-time"><span>Fine</span><output>${this.j.time}</output><input type="range" min="0" max="1435" step="5" value="${mins(this.j.time)}" data-f="time"></label>
-      <h3>${icon('cloud')} Weather</h3>
-      <div class="rm-wx">${(Object.keys(WEATHER) as WeatherId[]).filter(wxOk).map(w => `<button class="rm-wx-card${this.j.weather === w ? ' on' : ''}" data-wx="${w}" aria-pressed="${this.j.weather === w}">${icon(WX_ICON[w])}<span>${esc(WEATHER[w].name)}</span></button>`).join('')}</div>`;
+      ${ps.length > 1 ? `<h3>${icon('route')} Ways</h3><div class="chips">${ps.map((x, i) => chip(`${x.junctions.length ? `via ${x.junctions.map(v => this.net.junctions.find(j => j.id === v)?.name ?? v).join(' + ')}` : 'direct'} · ${x.distanceKm.toFixed(0)} km${i ? '' : ' (shortest)'}`, { on: x.junctions.join() === (p?.junctions.join() ?? ''), data: { via: i }, icon: i ? 'route' : 'star' })).join('')}</div>` : ''}`)}
+      <div class="rm-cols">
+      ${panel(2, `${icon('clock')}Time of day`, `<div class="chips">${TIMES.map(([n, t, ic]) => chip(`${n} ${t}`, { icon: ic, on: this.j.time === t, data: { time: t } })).join('')}</div>
+      <label class="slider rm-time"><span>Fine</span><output>${this.j.time}</output><input type="range" min="0" max="1435" step="5" value="${mins(this.j.time)}" data-f="time"></label>`)}
+      ${panel(3, `${icon('cloud')}Weather`, `<div class="rm-wx">${(Object.keys(WEATHER) as WeatherId[]).filter(wxOk).map(w => `<button class="rm-wx-card${this.j.weather === w ? ' on' : ''}" data-wx="${w}" aria-pressed="${this.j.weather === w}">${icon(WX_ICON[w])}<span>${esc(WEATHER[w].name)}</span></button>`).join('')}</div>`)}</div>`;
   }
 
   /** stations grouped by route (junctions first), filtered by the search */
@@ -314,17 +328,16 @@ export class RouteModeMenu {
     const strip = [`<span class="rm-veh loco" title="${esc(L?.name ?? '')}"><img src="${svgUrl(L ? locoSvg(L) : '')}" alt="${esc(L?.name ?? '')}"></span>`,
       ...this.vehicles().map((t, i) => `<button class="rm-veh" data-veh="${i}" title="${esc(COACHES[t]?.name ?? t)}: tap to take off, drag to move"><img src="${svgUrl(coachSvg(COACHES[t]))}" alt="${esc(COACHES[t]?.name ?? t)}"></button>`)].join('');
     const freight = this.vehicles().some(t => COACHES[t]?.kind && COACHES[t].kind !== 'coach');
-    return `<h3>${icon('loco')} Locomotive</h3>${gallery(Object.keys(LOCOS).map(locoCard), { label: 'Locomotives', cardWidth: 220 })}
-      <h3>${icon('coach')} Coaches and wagons <small>tap to add at the end</small></h3>
-      ${locked ? `<p class="rm-locked">${icon('info')} ${esc(L.name)} is a fixed trainset: this train has its own cars.</p>` : gallery(Object.keys(COACHES).map(coachCard), { label: 'Coaches and wagons', cardWidth: 190 })}
-      <h3>${icon('train')} Your train <small>${n} ${freight ? 'wagons' : 'coaches'} · tap one to take it off, drag to move it</small></h3>
+    return `${panel(1, 'Locomotive', gallery(Object.keys(LOCOS).map(locoCard), { label: 'Locomotives', cardWidth: 220 }))}
+      ${panel(2, 'Coaches and wagons <small>tap to add at the end</small>', locked ? `<p class="rm-locked">${icon('info')} ${esc(L.name)} is a fixed trainset: this train has its own cars.</p>` : gallery(Object.keys(COACHES).map(coachCard), { label: 'Coaches and wagons', cardWidth: 190 }))}
+      ${panel(3, `Your train <small>${n} ${freight ? 'wagons' : 'coaches'} · tap one to take it off, drag to move it</small>`, `
       <div class="rm-strip" data-strip>${strip}</div>
       ${locked ? '' : `<div class="rm-strip-ctl">
         <div class="chips">${Object.keys(PRESETS).map(k => chip(k, { data: { preset: k }, icon: k.includes('Freight') ? 'wagon' : k.includes('Double') ? 'container' : 'coach' })).join('')}</div>
         <div class="rm-counts">${[...new Set(this.vehicles())].map(t => `<span class="rm-count"><span>${esc(COACHES[t]?.name ?? t)}</span><button class="icon-btn" data-subc="${t}" aria-label="One fewer">${icon('minus')}</button><b>${count(t)}</b><button class="icon-btn" data-addc="${t}" aria-label="One more">${icon('plus')}</button></span>`).join('')}</div>
         ${freight ? toggle('Loaded', { checked: this.j.consist.loaded !== false, data: { f: 'loaded' }, hint: 'Wagons full (heavier, slower to stop) or empty' }) : ''}</div>`}
       ${toggle('Realistic rules', { checked: this.j.realistic, data: { f: 'realistic' }, hint: 'On: passenger trains stay off freight-only lines, as in real life' })}
-      ${this.warningList()}`;
+      ${this.warningList()}`)}`;
   }
 
   private warningList(code?: string) {
@@ -335,9 +348,9 @@ export class RouteModeMenu {
 
   // ---------------------------------------------------------------- step 3: plan
   private stepPlan() {
-    return `<p class="sub">Every station on the way. Stop or pass; at a stop, how long, and the shunting work there.</p>
+    return panel(1, 'Stops and shunting', `<p class="sub">Every station on the way. Stop or pass; at a stop, how long, and the shunting work there.</p>
       ${toggle('Auto shunt', { checked: this.j.autoShunt, data: { f: 'auto' }, hint: 'The game makes the coupling moves for you' })}
-      ${this.goodsSuggestions()}${this.timeline()}${this.warningList()}`;
+      ${this.goodsSuggestions()}${this.timeline()}${this.warningList()}`);
   }
 
   /**
@@ -432,13 +445,13 @@ export class RouteModeMenu {
     const act = (p: JourneyStop) => [p.decouple ? `${icon('decouple')} leave the last ${p.decouple}` : '', p.couple?.length ? `${icon('couple')} pick up ${p.couple[0].count} ${esc(COACHES[p.couple[0].type]?.name ?? '')}` : '', p.changeLoco ? `${icon('loco')} change to ${esc(LOCOS[p.changeLoco]?.name ?? '')}` : ''].filter(Boolean).join(' · ');
     const stops = this.j.stops.filter(p => p.stop);
     return `<div class="rm-review">
-      <section class="card">${this.mapSvg(true)}</section>
-      <section class="card"><h3>${icon('platform')} Stops</h3><ol class="rm-rv-stops">${stops.map(p => { const s = st.find(x => x.code === p.code); return `<li><b>${esc(s?.name ?? p.code)}</b> <small>${((s?.km ?? first) - first).toFixed(1)} km${p.code === this.j.from ? '' : ` · ${p.dwellS < 60 ? `${p.dwellS} s` : `${p.dwellS / 60} min`}`}</small>${act(p) ? `<div class="rm-rv-act">${act(p)}</div>` : ''}</li>`; }).join('')}</ol></section>
-      <section class="card"><h3>${icon('train')} ${esc(L?.name ?? '')}</h3><div class="rm-strip small">${L ? `<span class="rm-veh loco"><img src="${svgUrl(locoSvg(L))}" alt=""></span>` : ''}${this.vehicles().map(t => `<span class="rm-veh"><img src="${svgUrl(coachSvg(COACHES[t]))}" alt=""></span>`).join('')}</div>
+      ${panel('route', 'The way', this.mapSvg(true))}
+      <section class="fr-panel"><h3 class="fr-h">${icon('platform')}Stops</h3><ol class="rm-rv-stops">${stops.map(p => { const s = st.find(x => x.code === p.code); return `<li><b>${esc(s?.name ?? p.code)}</b> <small>${((s?.km ?? first) - first).toFixed(1)} km${p.code === this.j.from ? '' : ` · ${p.dwellS < 60 ? `${p.dwellS} s` : `${p.dwellS / 60} min`}`}</small>${act(p) ? `<div class="rm-rv-act">${act(p)}</div>` : ''}</li>`; }).join('')}</ol></section>
+      <section class="fr-panel"><h3 class="fr-h">${icon('train')}${esc(L?.name ?? '')}</h3><div class="rm-strip small">${L ? `<span class="rm-veh loco"><img src="${svgUrl(locoSvg(L))}" alt=""></span>` : ''}${this.vehicles().map(t => `<span class="rm-veh"><img src="${svgUrl(coachSvg(COACHES[t]))}" alt=""></span>`).join('')}</div>
         <p>${icon(WX_ICON[this.j.weather])} ${esc(WEATHER[this.j.weather].name)} · ${icon('clock')} ${this.j.time} · ${this.j.autoShunt ? 'auto shunt' : 'you do the shunting'}</p></section></div>
       ${this.warningList()}
-      <div class="rm-save"><label><span>Name</span><input type="text" data-f="name" maxlength="60" placeholder="${esc(`${this.name(this.j.from)} → ${this.name(this.j.to)}`)}" value="${esc(this.j.name ?? '')}"></label>
-      <button data-a="save">${icon('save')}Save journey</button></div>`;
+      ${panel('save', 'Save this journey', `<div class="rm-save"><label><span>Name</span><input type="text" data-f="name" maxlength="60" placeholder="${esc(`${this.name(this.j.from)} → ${this.name(this.j.to)}`)}" value="${esc(this.j.name ?? '')}"></label>
+      <button data-a="save">${icon('save')}Save journey</button></div>`)}`;
   }
 
   // ---------------------------------------------------------------- events

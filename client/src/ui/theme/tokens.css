@@ -118,7 +118,6 @@ input[type='range']:focus-visible::-webkit-slider-thumb { box-shadow: var(--focu
 .buttons.vertical button { justify-content: flex-start; text-align: left; }
 .buttons.vertical button > .ic { color: var(--c-saffron); width: 1.35em; height: 1.35em; }
 .buttons.vertical button small { margin-left: auto; color: var(--c-text-dim); font-weight: 500; font-size: var(--fs-xs); }
-.menu.main button.soon small { color: var(--c-saffron); }
 .card, .menu.god section { background: rgba(255, 255, 255, 0.035); border: 1px solid var(--c-line); border-radius: var(--r-lg); }
 .loco-card.on { border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-soft); }
 .bar > div { background: linear-gradient(90deg, var(--c-primary), var(--c-saffron)); }

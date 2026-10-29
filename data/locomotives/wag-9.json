@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "31245",
   "type": "electric",
+  "role": "Freight",
+  "description": "The workhorse freight electric: strong at low speed, with regenerative braking for the long descents.",
   "massT": 123,
   "lengthM": 20.56,
   "axles": 6,

@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "E-401",
   "type": "trainset",
+  "role": "High speed",
+  "description": "A fixed high-speed trainset for the fastest runs on the network. The set is the whole train: no coaches to add.",
   "bodyStyle": "trainset",
   "massT": 210,
   "lengthM": 71.9,

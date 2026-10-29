@@ -1,10 +1,6 @@
 /* Route Mode wizard (RouteModeMenu.ts), on the design tokens */
 .menu.rm { width: min(1120px, 96vw); display: flex; flex-direction: column; gap: var(--sp-2); }
-.rm-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-5); }
-.rm-head h2 { margin: 0; }
-.rm-head .stepper { flex: 1; min-width: 300px; margin: 0; }
 .rm-body h3 small { color: var(--c-text-dim); font-weight: 500; font-size: var(--fs-xs); }
-.rm-new { width: 100%; margin: var(--sp-2) 0 var(--sp-3); }
 .rm-saved { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-direction: row; margin: var(--sp-2) 0; }
 .rm-saved small { display: block; color: var(--c-text-dim); margin-top: 2px; }
 .rm-saved-btns { display: flex; gap: var(--sp-2); flex: none; }
@@ -110,13 +106,53 @@ html.touch .rm-tl-name { min-height: 44px; }
 .rm-save label { flex: 1; min-width: 240px; margin: 0; }
 .rm-save input { flex: 1; }
 
-/* the summary bar under every step */
-.rm-summary { position: sticky; bottom: -26px; z-index: 2; display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); align-items: center; margin: var(--sp-3) -30px -26px; padding: 10px 30px; background: var(--c-base-1); border-top: 1px solid var(--c-line); font-size: var(--fs-sm); color: var(--c-text-dim); }
-.rm-summary span { display: inline-flex; align-items: center; gap: 6px; }
-.rm-summary b { color: var(--c-text); }
-.rm-summary .ic { color: var(--c-saffron); }
 .menu.rm > .buttons { margin-top: var(--sp-4); }
-html.touch .rm-summary { margin: var(--sp-3) -18px 0; padding: 8px 18px; bottom: -18px; }
+
+/* ---------------------------------------------------------------- the full-screen pages (start screen and the wizard)
+   On the free roam page's look (freeroam.css: header, numbered panels, footer); the accent is saffron, as there. */
+.rm-page { --c-primary: var(--c-saffron, #f0a030); --c-primary-hover: #ffb547; --c-primary-soft: rgba(240, 160, 48, 0.16); }
+.rm-page .stepper .step.now b, .rm-page .rm-saved-btns button:first-child { color: #1b1200; }
+.rm-page .fr-h small { font-size: 13px; font-weight: 400; color: rgba(255, 255, 255, 0.6); }
+.rm-page .fr-panel h3:not(.fr-h) { margin: 16px 0 8px; font-size: 15px; }
+.rm-page .rm-body { display: grid; gap: 14px; }
+.rm-page .rm-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.rm-page .rm-steps { margin-bottom: 14px; padding: 10px 16px; }
+.rm-page .stepper { margin: 0; }
+.rm-page .rm-review { gap: 14px; }
+.rm-page .rm-save { margin-top: 0; }
+/* the footer stays in view: the way so far on the left, Back and Next on the right */
+.menu.rm-page .rm-foot { position: sticky; bottom: 0; z-index: 3; flex-wrap: wrap; background: #12161e; box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4); }
+.menu.rm-page .rm-summary { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font-size: 14px; color: rgba(255, 255, 255, 0.7); }
+.rm-summary span { display: inline-flex; align-items: center; gap: 6px; }
+.rm-summary b { color: #fff; }
+.rm-summary .ic { color: var(--c-saffron); }
+.menu.rm-page button.fr-go:disabled { opacity: 0.45; box-shadow: none; }
+/* the start screen: the new-journey card, then the saved and recent journeys */
+.menu.rm-page button.rm-hero {
+  position: relative; display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: clamp(130px, 19vh, 180px); padding: 0 clamp(18px, 2.4vw, 30px); text-align: left; color: #fff;
+  border: 2px solid rgba(240, 160, 48, 0.85); border-radius: 16px; box-shadow: 0 0 24px rgba(240, 160, 48, 0.2);
+  background: linear-gradient(90deg, rgba(8, 10, 14, 0.92) 0%, rgba(8, 10, 14, 0.65) 40%, rgba(8, 10, 14, 0) 80%), #10141a var(--img) center 55% / cover no-repeat;
+}
+.rm-hero-text { display: flex; flex-direction: column; gap: 4px; max-width: min(560px, 70%); }
+.rm-hero-text small { font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(255, 255, 255, 0.8); font-weight: 600; }
+.rm-hero-text b { font-size: clamp(24px, 4vh, 36px); font-weight: 800; line-height: 1.1; }
+.rm-hero-text > span { font-size: 14px; line-height: 1.4; color: rgba(255, 255, 255, 0.85); }
+.rm-hero-go { position: absolute; right: 18px; bottom: 16px; display: grid; place-items: center; width: 50px; height: 50px; border-radius: 50%; background: var(--c-saffron, #f0a030); color: #1b1200; }
+.rm-hero-go .ic { width: 50%; height: 50%; }
+.rm-hero-go .ic, .rm-page .fr-go .ic { --icon-duo: 0; }
+.rm-page .rm-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.rm-page .rm-saved { margin: 0; padding: 10px 0; }
+.rm-page .rm-saved + .rm-saved { border-top: 1px solid rgba(255, 255, 255, 0.1); }
+.rm-page .rm-saved b { color: #fff; }
+.rm-empty { margin: 0; font-size: 13px; color: rgba(255, 255, 255, 0.55); }
+/* phones in landscape: the pinned footer kept to one short line (the way only) */
+@media (max-height: 500px) {
+  .menu.rm-page .rm-foot { padding: 6px 12px; gap: 10px; }
+  .menu.rm-page .rm-summary { font-size: 12px; }
+  .menu.rm-page .rm-summary span:not(:first-child) { display: none; }
+  .menu.rm-page .rm-foot button.fr-back, .menu.rm-page .rm-foot button.fr-go { height: 38px; padding: 0 18px; font-size: 14px; }
+}
+@media (max-width: 1000px) { .rm-page .rm-cols, .rm-page .rm-lists { grid-template-columns: minmax(0, 1fr); } .rm-page .rm-saved { flex-wrap: wrap; } }
 
 /* in game: the journey card (next stop, the next planned action, the action buttons, the coupling guide) */
 .journey-card { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 6; pointer-events: auto; display: grid; gap: 6px; min-width: 280px; max-width: min(520px, 60vw); padding: 10px 14px; background: var(--c-panel); border: 1px solid var(--c-line-strong); border-radius: var(--r-lg); box-shadow: var(--sh-2); font-size: var(--fs-sm); color: var(--c-text); }

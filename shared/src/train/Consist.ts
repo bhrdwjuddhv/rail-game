@@ -4,6 +4,8 @@ import type { Cargo } from '../track/StationProfile';
 export interface LocoData {
   /** electric loco, diesel loco, or a fixed electric trainset (EMU: powered cars, no coaches added) */
   id: string; name: string; operator: string; number: string; type: 'electric' | 'diesel' | 'trainset';
+  /** for the menus: its work (Passenger, Freight...) and a line about it */
+  role?: string; description?: string;
   massT: number; lengthM: number; axles: number; bogieCentresM: number; axleSpacingM: number; wheelDiameterM: number;
   maxPowerKW: number; maxTractiveEffortKN: number; maxSpeedKmph: number; notches: number;
   regen: { maxEffortKN: number; maxPowerKW: number; fadeStartKmph: number; fadeEndKmph: number; notches: number };

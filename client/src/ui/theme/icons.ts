@@ -68,6 +68,8 @@ import wind from '@phosphor-icons/core/duotone/wind-duotone.svg?raw';
 import sliders from '@phosphor-icons/core/duotone/sliders-duotone.svg?raw';
 import arrowLeft from '@phosphor-icons/core/duotone/arrow-left-duotone.svg?raw';
 import arrowRight from '@phosphor-icons/core/duotone/arrow-right-duotone.svg?raw';
+import gamepad from '@phosphor-icons/core/duotone/game-controller-duotone.svg?raw';
+import mapPin from '@phosphor-icons/core/duotone/map-pin-duotone.svg?raw';
 import eye from '@phosphor-icons/core/duotone/eye-duotone.svg?raw';
 import eyeSlash from '@phosphor-icons/core/duotone/eye-slash-duotone.svg?raw';
 import sound from '@phosphor-icons/core/duotone/speaker-high-duotone.svg?raw';
@@ -141,7 +143,7 @@ const REGISTRY = {
   download: ph(download), trash: ph(trash), plus: ph(plus), minus: ph(minus), warning: ph(warning), megaphone: ph(megaphone),
   save: ph(save), recent: ph(recent), pin: ph(pin), train: ph(train), mountains: ph(mountains), wind: ph(wind),
   sliders: ph(sliders), arrowLeft: ph(arrowLeft), arrowRight: ph(arrowRight), eye: ph(eye), eyeSlash: ph(eyeSlash),
-  sound: ph(sound), users: ph(users),
+  sound: ph(sound), users: ph(users), gamepad: ph(gamepad), mapPin: ph(mapPin),
   ...RAIL,
 };
 

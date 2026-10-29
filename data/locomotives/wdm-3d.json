@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "11512",
   "type": "diesel",
+  "role": "Mixed traffic",
+  "description": "A long-hood diesel for both goods and passenger work, at home on lines without overhead wires.",
   "bodyStyle": "diesel-hood",
   "massT": 117,
   "lengthM": 17.12,

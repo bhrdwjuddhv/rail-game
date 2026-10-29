@@ -147,8 +147,6 @@ button:focus-visible { outline: 2px solid #6ec1ff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .menu-bg .img { animation: none; } }
 #menus > .menu { position: relative; z-index: 1; }
 #menus.has-bg > .menu { background: rgba(12, 16, 21, 0.72); backdrop-filter: blur(6px); }
-#menus.has-bg > .menu.main { justify-self: start; margin-left: max(24px, 6vw); text-align: left; }
-#menus.has-bg > .menu.main .buttons.vertical { align-items: stretch; }
 #menus.has-bg > .menu.loading { background: rgba(10, 13, 18, 0.62); }
 .title.with-logo h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .title img.logo { display: block; width: 100%; max-width: 420px; margin: -6px auto 4px; border-radius: 10px; mix-blend-mode: lighten;
@@ -162,8 +160,6 @@ button:focus-visible { outline: 2px solid #6ec1ff; outline-offset: 2px; }
 .menu h1 { font-size: 46px; margin: 0; letter-spacing: 0.02em; }
 .menu h2 { margin: 0 0 14px; }
 .menu h3 { margin: 14px 0 8px; color: var(--accent); font-size: 15px; display: flex; gap: 10px; align-items: center; }
-.menu.main { width: min(520px, 94vw); text-align: center; }
-.menu.main .title p { color: var(--dim); margin-top: 6px; }
 .menu .note { color: var(--dim); font-size: 12px; }
 .buttons { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
 .buttons.vertical { flex-direction: column; align-items: stretch; }
@@ -281,8 +277,6 @@ pre.err { white-space: pre-wrap; font-size: 12px; color: #ffb3ad; max-height: 50
 .loco-card .lc-name { font-weight: 800; font-size: 15px; color: #fff; }
 .loco-card small { color: #cfd6dc; font-size: 11px; }
 .loco-card.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232, 178, 58, 0.35); }
-.menu.main button.soon { opacity: 0.75; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.menu.main button.soon small { color: var(--accent); font-weight: 700; font-size: 12px; }
 
 /* ---------- start of a run: the loading screen fades out over the first real frames ---------- */
 #game-canvas { background: #07090c; } /* same dark as the loading screen: never a white or grey flash */
@@ -317,14 +311,7 @@ html.touch .stop-card button { min-height: 44px; }
 .menu-corners .rec-corner:hover, .menu-corners .rec-corner:focus-visible { gap: 8px; padding: 0 16px 0 12px; }
 .menu-corners .rec-corner:hover span, .menu-corners .rec-corner:focus-visible span { max-width: 140px; opacity: 1; }
 /* driving controls: beginner / advanced */
-.menu.main .drive-mode { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px 0 2px; font-size: 13px; color: var(--dim); }
-#menus.has-bg > .menu.main .drive-mode { justify-content: flex-start; }
-.menu.main .drive-mode button { padding: 4px 12px; font-size: 13px; border-radius: 14px; }
-.menu.main .drive-mode button.on { background: var(--c-saffron-soft, rgba(240, 160, 48, 0.25)); border-color: var(--c-saffron, #f0a030); color: #fff; }
 /* the tutorial's choice of loco: two buttons stacked under its own, indented, laid out like the rest of the menu */
-.menu.main .buttons.vertical > .tut-pick { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: -2px 0 2px 22px; padding-left: 12px; border-left: 2px solid var(--c-line-strong, rgba(255, 255, 255, 0.18)); }
-.menu.main .buttons.vertical > .tut-pick[hidden] { display: none; }
-.menu.main .tut-pick > span { font-size: 12.5px; color: var(--dim); text-align: left; }
 
 /* main menu: Instagram, bottom right */
 .menu-corners .social-ig { position: fixed; right: 16px; bottom: 16px; z-index: 25; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(9, 11, 15, 0.78); border: 1px solid rgba(255, 255, 255, 0.18); color: #eef2f5; transition: transform 0.15s, color 0.15s; }

@@ -1,0 +1,182 @@
+/* ---------------------------------------------------------------- the free roam page
+   Full screen, scrolling (the page box itself is shared with the scenarios page, see scenarios.css; the header, panels and
+   footer with the Route Mode pages, see routemode.css): a picture header,
+   five numbered panels (route, starting point, conditions, locomotive, consist) and a footer with Start.
+   Pictures are cropped to fit (cover), never stretched. Button rules carry `.menu.fr-page` to beat touch.css sizes. */
+
+.fr-page { --fx: max(16px, 1.8vw, var(--sl, 0px)); --sf: var(--c-saffron, #f0a030); --pl: rgba(255, 255, 255, 0.11); }
+#menus.has-bg > .menu.fr-page:not(.main):not(.loading) { padding: 0 var(--fx) 18px; }
+
+/* header: the free-roam picture, dark at the left for the title */
+.fr-page .fr-head {
+  display: flex; align-items: center; gap: 16px; margin: 0 calc(-1 * var(--fx)) 14px; padding: clamp(14px, 2.4vh, 24px) var(--fx);
+  min-height: clamp(84px, 12vh, 118px);
+  background: linear-gradient(90deg, rgba(10, 14, 20, 0.94) 0%, rgba(10, 14, 20, 0.6) 40%, rgba(10, 14, 20, 0.15) 75%), linear-gradient(180deg, rgba(10, 14, 20, 0) 50%, #0a0e14 100%), var(--img) center 40% / cover no-repeat;
+}
+.menu.fr-page button.fr-x { min-height: 0; padding: 6px; background: none; border: 0; color: rgba(255, 255, 255, 0.75); }
+.fr-page .fr-x .ic { width: 28px; height: 28px; }
+.fr-page .fr-mark { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--sf); color: var(--sf); }
+.fr-page .fr-mark .ic { width: 60%; height: 60%; }
+.fr-page .fr-head h2 { margin: 0; font-size: clamp(30px, 5vh, 46px); font-weight: 900; font-style: italic; line-height: 1; color: #fff; }
+.fr-page .fr-motto { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; font-size: 12px; letter-spacing: 0.32em; text-transform: uppercase; color: rgba(255, 255, 255, 0.7); }
+.fr-page .fr-motto i { width: 1px; height: 12px; background: rgba(255, 255, 255, 0.4); }
+.fr-page .fr-brand { margin: 0 0 0 auto; display: flex; }
+.fr-page .fr-brand h1 { margin: 0; font-size: 16px; letter-spacing: 0.2em; color: #fff; }
+.fr-page .fr-brand.with-logo h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.fr-page .fr-brand img.logo { display: block; height: clamp(34px, 6vh, 56px); width: auto; max-width: none; margin: 0; }
+
+/* the panels: 3 across, then locomotive and consist */
+.fr-page .fr-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+.fr-page .fr-route, .fr-page .fr-start, .fr-page .fr-cond { grid-column: span 4; }
+.fr-page .fr-loco { grid-column: span 7; }
+.fr-page .fr-consist { grid-column: span 5; }
+.fr-page .fr-panel { min-width: 0; padding: 14px 16px 16px; border: 1px solid var(--pl); border-radius: 14px; background: rgba(18, 22, 30, 0.9); }
+.fr-page .fr-h { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: clamp(16px, 2.1vh, 19px); font-weight: 700; color: #fff; }
+.fr-page .fr-h > .ic { width: 22px; height: 22px; color: var(--sf); }
+.fr-page .fr-n { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--sf); color: #1b1200; font-size: 15px; font-weight: 800; }
+
+/* little round arrows (route card, loco strip) */
+.menu.fr-page button.fr-arr {
+  display: grid; place-items: center; min-height: 0; width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  background: rgba(10, 14, 20, 0.6); border: 1px solid rgba(255, 255, 255, 0.3); color: #fff;
+}
+.menu.fr-page button.fr-arr:hover { border-color: var(--sf); }
+.fr-page .fr-arr .ic { width: 18px; height: 18px; }
+
+/* 1: the route card */
+.fr-page .fr-route-card { position: relative; height: clamp(150px, 19vh, 176px); border-radius: 10px; overflow: hidden; border: 1px solid var(--pl); }
+.fr-page .fr-route-img { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(10, 14, 20, 0.85), rgba(10, 14, 20, 0.2) 70%), var(--img) center 45% / cover no-repeat; }
+.fr-page .fr-route-card .fr-arr { position: absolute; top: 34%; transform: translateY(-50%); }
+.fr-page .fr-route-card .fr-arr[data-d="-1"] { left: 8px; }
+.fr-page .fr-route-card .fr-arr[data-d="1"] { right: 8px; }
+.fr-page .fr-route-text { position: absolute; left: 52px; right: 52px; top: 22%; }
+.fr-page .fr-route-text b { display: block; font-size: clamp(18px, 2.6vh, 23px); color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7); }
+.fr-page .fr-route-text small { display: block; margin-top: 4px; font-size: 13px; color: rgba(255, 255, 255, 0.85); }
+.fr-page .fr-route-stats {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px 18px; flex-wrap: wrap; padding: 8px 14px;
+  font-size: 13px; color: #fff; background: rgba(10, 14, 20, 0.78);
+}
+.fr-page .fr-route-stats span { display: inline-flex; align-items: center; gap: 6px; }
+.fr-page .fr-route-stats .ic { width: 16px; height: 16px; }
+.fr-page .fr-dots { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+.menu.fr-page .fr-dots button { min-height: 0; width: 14px; height: 4px; padding: 0; border: 0; border-radius: 2px; background: rgba(255, 255, 255, 0.3); }
+.menu.fr-page .fr-dots button.on { width: 30px; background: var(--sf); }
+
+/* 2 and 3: fields */
+.fr-page .fr-field { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 12px; margin: 0 0 12px; font-size: 14px; color: #fff; }
+.fr-page .fr-start .fr-field { grid-template-columns: 1fr; }
+.fr-page .fr-field[hidden] { display: none; }
+.fr-page .fr-field > span { display: inline-flex; align-items: center; gap: 8px; }
+.fr-page .fr-field .ic { width: 20px; height: 20px; color: var(--sf); }
+.fr-page .fr-field select, .fr-page .fr-field input {
+  width: 100%; min-width: 0; height: 40px; padding: 0 10px; font: inherit; font-size: 14px; color: #fff;
+  background: rgba(10, 14, 20, 0.8); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 8px; color-scheme: dark;
+}
+.fr-page .fr-note { margin: 0; font-size: 12px; color: rgba(255, 255, 255, 0.55); }
+.fr-page .fr-cond-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 0.8fr); gap: 14px; }
+.fr-page .fr-cond-fields .fr-field { grid-template-columns: auto auto minmax(0, 1fr); }
+.fr-page .fr-cond-fields .fr-field:first-child { grid-template-columns: auto minmax(0, 1fr); }
+.fr-page .fr-light { min-height: 140px; border-radius: 10px; border: 1px solid var(--pl); background: #121820 var(--img) center / cover no-repeat; }
+
+/* 4: the loco: picture, facts, then the strip of all locos */
+.fr-page .fr-loco-show { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); min-height: clamp(260px, 34vh, 330px); border: 1px solid var(--pl); border-radius: 10px; overflow: hidden; }
+.fr-page .fr-loco-img { background: var(--liv, #222) var(--img) center / cover no-repeat; -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent); mask-image: linear-gradient(90deg, #000 80%, transparent); }
+.fr-page .fr-loco-info { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 18px 18px 16px 8px; }
+.fr-page .fr-loco-info h4 { margin: 0; font-size: clamp(24px, 3.6vh, 32px); font-weight: 800; color: #fff; }
+.fr-page .fr-kind { margin: 0; font-size: 14px; color: rgba(255, 255, 255, 0.7); }
+.fr-page .fr-desc { margin: 4px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255, 255, 255, 0.78); }
+.fr-page .fr-loco-info dl { align-self: stretch; margin: 8px 0 4px; padding: 6px 12px; border: 1px solid var(--pl); border-radius: 8px; }
+.fr-page .fr-loco-info dl > div { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.fr-page .fr-loco-info dl > div + div { border-top: 1px solid var(--pl); }
+.fr-page .fr-loco-info dl .ic { width: 18px; height: 18px; color: var(--sf); }
+.fr-page .fr-loco-info dt { flex: 1; color: rgba(255, 255, 255, 0.7); }
+.fr-page .fr-loco-info dd { margin: 0; font-weight: 700; color: #fff; }
+.fr-page .fr-tag { margin-top: auto; padding: 4px 12px; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid rgba(255, 255, 255, 0.6); border-radius: 6px; color: #fff; }
+.fr-page .fr-strip-wrap { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.fr-page .fr-strip { display: flex; gap: 10px; flex: 1; min-width: 0; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 3px; }
+.fr-page .fr-strip::-webkit-scrollbar { display: none; }
+.menu.fr-page button.fr-thumb {
+  position: relative; flex: none; display: flex; align-items: flex-end; justify-content: center; width: clamp(110px, 8.6vw, 140px); height: clamp(72px, 9vh, 92px);
+  min-height: 0; padding: 0 0 6px; scroll-snap-align: start; overflow: hidden; border-radius: 8px; border: 2px solid transparent;
+  background: linear-gradient(180deg, transparent 45%, rgba(0, 0, 0, 0.85)), var(--liv, #222) var(--img) center / cover no-repeat;
+  font-size: 13px; font-weight: 700; color: #fff;
+}
+.menu.fr-page button.fr-thumb:hover { border-color: rgba(240, 160, 48, 0.6); }
+.menu.fr-page button.fr-thumb.on { border-color: var(--sf); box-shadow: 0 0 0 1px var(--sf); }
+
+/* 5: the consist: preset or custom, coach rows with steppers, the totals */
+.fr-page .fr-seg { display: flex; margin-left: auto; padding: 2px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; }
+.menu.fr-page .fr-seg button { min-height: 0; padding: 5px 16px; font-size: 13px; border: 0; border-radius: 999px; background: none; color: #fff; }
+.menu.fr-page .fr-seg button[aria-selected="true"] { background: var(--sf); color: #1b1200; font-weight: 700; }
+.fr-page .fr-presets { display: grid; gap: 8px; }
+.fr-page .fr-presets[hidden], .fr-page .fr-coaches[hidden] { display: none; }
+.menu.fr-page button.fr-preset { display: block; min-height: 0; padding: 10px 14px; text-align: left; border-radius: 10px; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--pl); color: #fff; }
+.menu.fr-page button.fr-preset:hover { border-color: var(--sf); }
+.fr-page .fr-preset b { display: block; font-size: 14px; }
+.fr-page .fr-preset small { display: block; margin-top: 2px; font-size: 12px; color: rgba(255, 255, 255, 0.65); }
+.fr-page .fr-coaches { display: grid; }
+.fr-page .fr-row { display: grid; grid-template-columns: clamp(90px, 8vw, 130px) minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 7px 8px; border-radius: 8px; }
+.fr-page .fr-row + .fr-row { border-top: 1px solid var(--pl); }
+.fr-page .fr-row.on { background: rgba(240, 160, 48, 0.07); }
+.fr-page .fr-coach-art {
+  display: block; height: clamp(28px, 4vh, 38px); border-radius: 4px 4px 2px 2px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 7px, var(--win) 7px 15px) 0 30% / 100% 24% no-repeat,
+    linear-gradient(180deg, var(--roof) 0 16%, var(--body) 16% 64%, var(--band) 64% 74%, var(--body) 74% 86%, #1a1d21 86% 100%);
+}
+.fr-page .fr-cname b { display: block; font-size: 14px; font-weight: 600; color: #fff; }
+.fr-page .fr-cname small { display: block; font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.fr-page .fr-step { display: flex; align-items: center; gap: 6px; }
+.menu.fr-page .fr-step button { display: grid; place-items: center; min-height: 0; width: 34px; height: 34px; padding: 0; border-radius: 8px; background: rgba(10, 14, 20, 0.8); border: 1px solid rgba(255, 255, 255, 0.22); color: #fff; }
+.menu.fr-page .fr-step button[data-d="1"]:hover:not(:disabled), .fr-page .fr-row.on .fr-step button[data-d="1"] { background: var(--sf); border-color: var(--sf); color: #1b1200; }
+.fr-page .fr-step .ic { width: 16px; height: 16px; --icon-duo: 0; }
+.fr-page .fr-step input { width: 40px; height: 34px; padding: 0; text-align: center; font: inherit; font-size: 15px; color: #fff; background: none; border: 0; -moz-appearance: textfield; appearance: textfield; }
+.fr-page .fr-step input::-webkit-inner-spin-button, .fr-page .fr-step input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.fr-page .fr-loaded { display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin: 10px 0 0 8px; font-size: 13px; color: rgba(255, 255, 255, 0.75); }
+.fr-page .fr-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; padding: 12px 6px; border: 1px solid var(--pl); border-radius: 10px; }
+.fr-page .fr-sum > div { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px; padding: 0 12px; }
+.fr-page .fr-sum > div + div { border-left: 1px solid var(--pl); }
+.fr-page .fr-sum .ic { grid-row: span 2; width: 24px; height: 24px; color: var(--sf); }
+.fr-page .fr-sum b { font-size: clamp(16px, 2.3vh, 20px); color: #fff; }
+.fr-page .fr-sum small { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.fr-page .fr-warn { margin: 8px 0 0; font-size: 13px; color: #f0c867; }
+.fr-page .fr-warn:empty { display: none; }
+
+/* footer */
+.fr-page .fr-foot { display: flex; align-items: center; gap: 16px; margin-top: 14px; padding: 12px 16px; border: 1px solid var(--pl); border-radius: 14px; background: rgba(18, 22, 30, 0.9); }
+.fr-page .fr-about { flex: 1; min-width: 0; }
+.fr-page .fr-about b { font-size: 16px; color: #fff; }
+.fr-page .fr-about p { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255, 255, 255, 0.65); }
+.menu.fr-page button.fr-back { min-height: 0; height: 52px; padding: 0 40px; font-size: 16px; font-weight: 700; border-radius: 10px; background: rgba(10, 14, 20, 0.8); border: 1px solid rgba(255, 255, 255, 0.35); color: #fff; }
+.menu.fr-page button.fr-go {
+  display: flex; align-items: center; gap: 12px; min-height: 0; height: 52px; padding: 0 30px; font-size: 17px; font-weight: 800; border-radius: 10px; border: 0;
+  background: var(--sf); color: #1b1200; box-shadow: 0 6px 22px rgba(240, 160, 48, 0.35);
+}
+.menu.fr-page button.fr-go:hover:not(:disabled) { background: #ffb547; }
+.fr-page .fr-go .ic { width: 18px; height: 18px; }
+
+/* narrower screens: two columns, then one */
+@media (max-width: 1150px) {
+  .fr-page .fr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fr-page .fr-route, .fr-page .fr-loco, .fr-page .fr-consist { grid-column: 1 / -1; }
+  .fr-page .fr-start, .fr-page .fr-cond { grid-column: span 1; }
+}
+@media (max-width: 720px) {
+  .fr-page .fr-grid { grid-template-columns: minmax(0, 1fr); }
+  .fr-page .fr-start, .fr-page .fr-cond { grid-column: 1 / -1; }
+  .fr-page .fr-loco-show { grid-template-columns: 1fr; }
+  .fr-page .fr-loco-img { min-height: 160px; -webkit-mask-image: none; mask-image: none; }
+  .fr-page .fr-loco-info { padding: 12px 14px; }
+  .fr-page .fr-foot { flex-wrap: wrap; }
+  .fr-page .fr-foot .fr-mark { display: none; }
+}
+/* phones in landscape: a shorter header, the loco picture beside its facts but smaller */
+@media (max-height: 500px) {
+  .fr-page .fr-head { min-height: 0; padding-top: 10px; padding-bottom: 10px; }
+  .fr-page .fr-head h2 { font-size: 28px; }
+  .fr-page .fr-motto { display: none; }
+  .fr-page .fr-mark { width: 38px; height: 38px; }
+  .fr-page .fr-loco-show { min-height: 200px; }
+  .fr-page .fr-about p { display: none; }
+  .menu.fr-page button.fr-back, .menu.fr-page button.fr-go { height: 44px; }
+}

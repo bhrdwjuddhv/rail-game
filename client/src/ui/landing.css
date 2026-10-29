@@ -1,0 +1,151 @@
+/* ---------------------------------------------------------------- the landing page (main menu)
+   Full screen over the artwork: logo and motto, the Scenarios card, three cards (Free Roam, Route Mode, Tutorial),
+   the driving-controls switch; quick links top right, a footer bar. Card pictures are cropped to fit (cover), never
+   stretched, each kept on its subject (--pos). Sizes follow the screen's height (phones in landscape: compact). */
+
+#menus.has-bg > .menu.main.landing {
+  position: absolute; inset: 0; width: auto; max-width: none; height: auto; max-height: none; margin: 0; padding: 0;
+  background: none; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; overflow: hidden;
+  display: grid; grid-template-rows: minmax(0, 1fr) auto; text-align: left; justify-self: stretch; align-self: stretch;
+}
+/* the artwork: the train is on its right, kept in view on narrow screens */
+#menus.has-bg .menu-bg[data-mode="main"] .img { background-position: 72% 50%; }
+
+.landing .lp-main {
+  display: flex; flex-direction: column; justify-content: center; gap: clamp(10px, 2.2vh, 20px); min-height: 0;
+  width: min(900px, 60vw); padding: clamp(14px, 4vh, 40px) 0 clamp(10px, 2vh, 20px) max(28px, 4vw);
+}
+
+/* logo, tagline, motto */
+.landing .lp-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.landing .lp-brand h1 { margin: 0; font-size: clamp(30px, 6vh, 54px); letter-spacing: 0.02em; }
+.landing .lp-brand.with-logo h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.landing .lp-brand img.logo { display: block; max-height: clamp(80px, 24vh, 220px); max-width: min(520px, 100%); width: auto; margin: 0; }
+.landing .lp-tag { margin: 2px 0 0; font-size: clamp(11px, 1.6vh, 14px); letter-spacing: 0.42em; text-transform: uppercase; color: #e8e4dc; font-weight: 600; }
+.landing .lp-motto { display: flex; align-items: center; gap: 10px; margin: 0; font-size: clamp(9px, 1.25vh, 11px); letter-spacing: 0.3em; text-transform: uppercase; color: rgba(232, 228, 220, 0.7); }
+.landing .lp-motto b { color: #fff; }
+.landing .lp-motto i { display: block; width: 46px; height: 2px; border-radius: 1px; background: var(--c-saffron, #f0a030); }
+.landing .lp-motto i:last-child { background: #2fa84f; }
+
+/* the cards: a picture under a dark wash, so the text reads */
+.landing .lp-hero, .landing .lp-card {
+  position: relative; display: flex; align-items: center; justify-content: flex-start; text-align: left; color: #fff; overflow: hidden; cursor: pointer;
+  background-color: #10141a; background-image: var(--wash), var(--img); background-size: cover, cover; background-repeat: no-repeat; background-position: center, var(--pos, center);
+  border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 16px; transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+.landing .lp-hero:hover, .landing .lp-card:hover, .landing .lp-hero:focus-visible, .landing .lp-card:focus-visible { border-color: var(--c-saffron, #f0a030); box-shadow: 0 0 0 1px var(--c-saffron, #f0a030), 0 8px 30px rgba(240, 160, 48, 0.25); }
+.landing .lp-hero {
+  --wash: linear-gradient(90deg, rgba(8, 10, 14, 0.92) 0%, rgba(8, 10, 14, 0.7) 34%, rgba(8, 10, 14, 0.1) 70%, rgba(8, 10, 14, 0) 100%);
+  height: clamp(130px, 21vh, 200px); padding: 0 clamp(18px, 2.4vw, 30px); border: 2px solid rgba(240, 160, 48, 0.85);
+  box-shadow: 0 0 24px rgba(240, 160, 48, 0.28);
+}
+.landing .lp-hero .lp-text { display: flex; flex-direction: column; gap: 4px; max-width: 54%; }
+.landing .lp-kicker { font-size: clamp(9px, 1.25vh, 12px); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(255, 255, 255, 0.85); font-weight: 600; }
+.landing .lp-h { font-size: clamp(24px, 4.6vh, 40px); font-weight: 800; line-height: 1.05; }
+.landing .lp-sub { font-size: clamp(12px, 1.7vh, 16px); color: rgba(255, 255, 255, 0.86); line-height: 1.35; }
+.landing .lp-go {
+  /* bottom right: clear of the engine in the picture */
+  position: absolute; right: clamp(14px, 1.8vw, 24px); bottom: clamp(12px, 1.8vh, 20px);
+  width: clamp(40px, 6.4vh, 58px); height: clamp(40px, 6.4vh, 58px); border-radius: 50%; display: grid; place-items: center;
+  background: var(--c-saffron, #f0a030); color: #1b1200; box-shadow: 0 4px 18px rgba(240, 160, 48, 0.45);
+}
+.landing .lp-go .ic { width: 48%; height: 48%; }
+
+.landing .lp-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(10px, 1.4vw, 18px); }
+.landing .lp-card {
+  --wash: linear-gradient(90deg, rgba(8, 10, 14, 0.9) 0%, rgba(8, 10, 14, 0.55) 55%, rgba(8, 10, 14, 0.15) 100%);
+  height: clamp(78px, 13vh, 120px); gap: 12px; padding: 0 clamp(12px, 1.4vw, 20px);
+}
+.landing .lp-card > .ic { width: clamp(24px, 4.2vh, 38px); height: clamp(24px, 4.2vh, 38px); flex: none; color: #fff; }
+.landing .lp-card b { display: block; font-size: clamp(14px, 2.2vh, 20px); }
+.landing .lp-card small { display: block; font-size: clamp(10.5px, 1.45vh, 13px); color: rgba(255, 255, 255, 0.78); margin-top: 2px; }
+.landing .lp-card[aria-expanded="true"] { border-color: var(--c-saffron, #f0a030); }
+
+/* the tutorial's loco choice, under the cards */
+.landing .tut-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+.landing .tut-pick[hidden] { display: none; }
+.landing .tut-pick button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px; background: rgba(12, 16, 21, 0.82); }
+.landing .tut-pick button small { color: rgba(255, 255, 255, 0.65); }
+
+/* driving controls */
+.landing .lp-drive { display: flex; flex-direction: column; gap: 6px; }
+.landing .lp-label { font-size: clamp(9px, 1.25vh, 12px); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(255, 255, 255, 0.7); font-weight: 600; }
+.landing .lp-seg { display: grid; grid-template-columns: repeat(2, minmax(0, 290px)); gap: 10px; }
+.landing .lp-seg button {
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px; text-align: left; padding: 0 16px; height: clamp(44px, 6.6vh, 58px);
+  border-radius: 12px; background: rgba(10, 13, 18, 0.7); border: 1px solid rgba(255, 255, 255, 0.18); color: #fff;
+}
+.landing .lp-seg button .ic { width: 26px; height: 26px; flex: none; color: rgba(255, 255, 255, 0.85); }
+.landing .lp-seg button b { display: block; font-size: clamp(13px, 1.9vh, 16px); }
+.landing .lp-seg button small { display: block; font-size: clamp(10.5px, 1.4vh, 12.5px); color: rgba(255, 255, 255, 0.7); }
+.landing .lp-seg button.on { border: 2px solid var(--c-saffron, #f0a030); background: rgba(240, 160, 48, 0.16); }
+.landing .lp-seg button.on .ic, .landing .lp-seg button.on b { color: var(--c-saffron, #f0a030); }
+
+/* top right: quick links */
+.landing .lp-top { position: absolute; top: clamp(12px, 3vh, 28px); right: max(16px, 2.4vw); display: flex; gap: clamp(8px, 1.2vw, 16px); z-index: 2; }
+.landing .lp-top > * {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; background: none; border: 0; color: #fff; text-decoration: none;
+  font-size: 12px; font-weight: 600; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7); min-height: 0; height: auto; justify-content: flex-start;
+}
+.landing .lp-top .ic-box {
+  display: grid; place-items: center; width: clamp(40px, 6.4vh, 56px); height: clamp(40px, 6.4vh, 56px); border-radius: 14px;
+  background: rgba(10, 13, 18, 0.72); border: 1px solid rgba(255, 255, 255, 0.2); transition: border-color 0.18s;
+}
+.landing .lp-top .ic-box .ic { width: 52%; height: 52%; }
+.landing .lp-top > *:hover .ic-box, .landing .lp-top > *:focus-visible .ic-box { border-color: var(--c-saffron, #f0a030); }
+.landing .lp-top .lp-ig:hover .ic { color: #e1306c; }
+
+/* footer bar */
+.landing .lp-foot {
+  display: flex; align-items: center; gap: 0; padding: 0 max(20px, 3vw); min-height: clamp(52px, 9vh, 80px);
+  background: linear-gradient(180deg, rgba(8, 10, 14, 0.78), rgba(8, 10, 14, 0.94)); border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.landing .lp-foot > button {
+  display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 8px clamp(14px, 2.4vw, 40px); background: none; border: 0; border-radius: 10px; color: #fff; text-align: left;
+}
+.landing .lp-foot > button + button { border-left: 1px solid rgba(255, 255, 255, 0.14); border-radius: 0; }
+.landing .lp-foot > button:first-child { padding-left: 0; }
+.landing .lp-foot .ic { width: 26px; height: 26px; flex: none; color: rgba(255, 255, 255, 0.85); }
+.landing .lp-foot b { display: block; font-size: clamp(13px, 1.9vh, 16px); font-weight: 600; }
+.landing .lp-foot small { display: block; font-size: 12px; color: rgba(255, 255, 255, 0.62); }
+.landing .lp-foot em {
+  font-style: normal; font-size: 12px; font-weight: 600; color: var(--c-saffron, #f0a030); padding: 3px 10px; border-radius: 999px;
+  border: 1px solid rgba(240, 160, 48, 0.6); background: rgba(240, 160, 48, 0.12); white-space: nowrap;
+}
+.landing .lp-foot .soon { opacity: 0.9; }
+.landing .lp-foot .note { margin: 0 0 0 auto; max-width: 260px; font-size: 11px; color: rgba(255, 255, 255, 0.5); text-align: right; }
+
+/* narrower desktops: the column takes more of the width */
+@media (max-width: 1100px) { .landing .lp-main { width: min(900px, 72vw); } }
+
+/* phones in landscape (and other short screens): compact, everything still on one screen */
+@media (max-height: 500px) {
+  .landing .lp-main { width: min(640px, 68vw); gap: 7px; padding: 8px 0 6px max(16px, calc(10px + var(--sl, 0px))); }
+  .landing .lp-brand img.logo { max-height: clamp(48px, 17vh, 90px); }
+  .landing .lp-motto { display: none; }
+  .landing .lp-tag { letter-spacing: 0.3em; font-size: 10px; }
+  .landing .lp-hero { height: clamp(78px, 24vh, 120px); border-radius: 12px; }
+  .landing .lp-hero .lp-text { max-width: 62%; gap: 2px; }
+  .landing .lp-kicker { display: none; }
+  .landing .lp-h { font-size: clamp(18px, 6.4vh, 26px); }
+  .landing .lp-sub { font-size: 11px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .landing .lp-go { width: 34px; height: 34px; right: 10px; bottom: 8px; }
+  .landing .lp-cards { gap: 8px; }
+  .landing .lp-card { height: clamp(52px, 16vh, 78px); gap: 8px; border-radius: 12px; padding: 0 10px; }
+  .landing .lp-card > .ic { width: 22px; height: 22px; }
+  .landing .lp-card b { font-size: 13px; }
+  .landing .lp-card small { display: none; }
+  .landing .lp-label { display: none; }
+  .landing .lp-seg button { height: 38px; padding: 0 12px; gap: 8px; }
+  .landing .lp-seg button .ic { width: 20px; height: 20px; }
+  .landing .lp-seg button b { font-size: 13px; }
+  .landing .lp-seg button small { display: none; }
+  .landing .lp-top { top: 8px; right: max(10px, calc(6px + var(--sr, 0px))); gap: 8px; }
+  .landing .lp-top > * > span:last-child { display: none; }
+  .landing .lp-top .ic-box { width: 38px; height: 38px; border-radius: 11px; }
+  .landing .lp-foot { min-height: 44px; padding: 0 max(16px, calc(10px + var(--sl, 0px))); }
+  .landing .lp-foot > button { padding: 4px 16px; gap: 8px; }
+  .landing .lp-foot small, .landing .lp-foot .note { display: none; }
+  .landing .lp-foot .ic { width: 20px; height: 20px; }
+  .landing .lp-foot b { font-size: 13px; }
+}

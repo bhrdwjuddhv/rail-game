@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "37112",
   "type": "electric",
+  "role": "Passenger",
+  "description": "A modern three-phase electric for express passenger work: quick off the mark, with regenerative braking.",
   "massT": 123,
   "lengthM": 20.56,
   "axles": 6,

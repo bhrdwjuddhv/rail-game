@@ -4,6 +4,8 @@
   "operator": "Bharat Rail Network",
   "number": "60127",
   "type": "electric",
+  "role": "Heavy freight",
+  "description": "A twin-section electric built for the heaviest freight: long coal rakes and double-stack container trains.",
   "bodyStyle": "freight-section",
   "sections": 2,
   "massT": 180,
